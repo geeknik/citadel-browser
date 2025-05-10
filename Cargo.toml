@@ -16,7 +16,18 @@ version = "0.1.0"
 authors = ["Your Name <your.email@example.com>"]
 
 [workspace.dependencies]
-bytes = { workspace = true }
+bytes               = { workspace = true }
+tokio               = { workspace = true }
+rustls              = { workspace = true }
+trust-dns-resolver  = { workspace = true }
+reqwest             = { workspace = true }
+futures             = { workspace = true }
+thiserror           = { workspace = true }
+log                 = { workspace = true }
+rand                = { workspace = true }
+serde               = { workspace = true }
+serde_json          = { workspace = true }
+url                 = { workspace = true }
 
 [profile.dev]
 opt-level = 1
