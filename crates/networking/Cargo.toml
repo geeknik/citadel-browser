@@ -1,0 +1,29 @@
+[package]
+name = "citadel-networking"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Privacy-preserving networking components for the Citadel browser engine"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+hyper = { version = "0.14", features = ["full"] }
+rustls = { workspace = true }
+rustls-native-certs = "0.6"
+hyper-rustls = { version = "0.24", features = ["http2"] }
+trust-dns-resolver = { workspace = true }
+reqwest = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+
+[[example]]
+name = "fetch_html"
+path = "examples/fetch_html.rs" 
