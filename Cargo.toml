@@ -1,9 +1,5 @@
 [workspace]
 resolver = "2"
-
-[workspace.package]
-edition = "2021"
-
 members = [
     "crates/networking",
     "crates/parser",
@@ -13,6 +9,9 @@ members = [
     "crates/ui",
     "fuzz",
 ]
+
+[workspace.package]
+edition = "2021"
 
 [profile.dev]
 opt-level = 1
