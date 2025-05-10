@@ -1,47 +1,16 @@
 [package]
 name = "citadel-fuzz"
-version = "0.0.0"
-publish = false
+version = "0.1.0"
 edition = "2021"
-
-[package.metadata]
-cargo-fuzz = true
+publish = false
 
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
+citadel-networking = { path = "../crates/networking" }
 
-# Dependencies from the main project
-antifingerprint = { path = "../crates/antifingerprint" }
-networking = { path = "../crates/networking" }
-parser = { path = "../crates/parser" }
-security = { path = "../crates/security" }
-tabs = { path = "../crates/tabs" }
-zkvm = { path = "../crates/zkvm" }
-
-[[bin]]
-name = "html_parser"
-path = "fuzz_targets/html_parser.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "css_parser"
-path = "fuzz_targets/css_parser.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "url_parser"
-path = "fuzz_targets/url_parser.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "header_fuzzer"
-path = "fuzz_targets/header_fuzzer.rs"
-test = false
-doc = false
+[build-dependencies]
+arbitrary = { version = "1", features = ["derive"] }
 
 [workspace]
-members = ["."]
+# This section should NOT be present if it's not the root workspace
