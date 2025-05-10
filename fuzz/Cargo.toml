@@ -1,0 +1,47 @@
+[package]
+name = "citadel-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+# Dependencies from the main project
+antifingerprint = { path = "../crates/antifingerprint" }
+networking = { path = "../crates/networking" }
+parser = { path = "../crates/parser" }
+security = { path = "../crates/security" }
+tabs = { path = "../crates/tabs" }
+zkvm = { path = "../crates/zkvm" }
+
+[[bin]]
+name = "html_parser"
+path = "fuzz_targets/html_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "css_parser"
+path = "fuzz_targets/css_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "url_parser"
+path = "fuzz_targets/url_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "header_fuzzer"
+path = "fuzz_targets/header_fuzzer.rs"
+test = false
+doc = false
+
+[workspace]
+members = ["."]
