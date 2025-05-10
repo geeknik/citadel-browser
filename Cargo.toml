@@ -15,6 +15,9 @@ edition = "2021"
 version = "0.1.0"
 authors = ["Your Name <your.email@example.com>"]
 
+[workspace.dependencies]
+bytes = { workspace = true }
+
 [profile.dev]
 opt-level = 1
 
