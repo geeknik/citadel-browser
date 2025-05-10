@@ -12,6 +12,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
+version = "0.1.0"
 
 [profile.dev]
 opt-level = 1
