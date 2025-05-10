@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 description = "Privacy-preserving networking components for the Citadel browser engine"
 repository.workspace = true
-license.workspace = true
+license = "MIT"
 
 [dependencies]
 tokio = { workspace = true }
