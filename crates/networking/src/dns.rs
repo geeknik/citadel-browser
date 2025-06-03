@@ -51,6 +51,16 @@ pub struct CitadelDnsResolver {
     default_ttl: Duration,
 }
 
+impl std::fmt::Debug for CitadelDnsResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CitadelDnsResolver")
+            .field("mode", &self.mode)
+            .field("default_ttl", &self.default_ttl)
+            .field("cache_entries", &self.cache.read().unwrap().len())
+            .finish()
+    }
+}
+
 impl CitadelDnsResolver {
     /// Create a new resolver with default privacy-preserving settings (LocalCache mode)
     pub async fn new() -> Result<Self, NetworkError> {

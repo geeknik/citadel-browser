@@ -49,10 +49,7 @@ metal               = "0.25.0"
 objc-foundation     = "0.1.1"
 
 # UI dependencies
-iced                = { version = "0.10.0", features = ["canvas", "image", "tokio"] }
-iced_native         = "0.10.1"
-iced_style          = "0.9.0"
-iced_futures        = "0.6.0"
+iced                = { version = "0.12", features = ["canvas", "image", "svg", "tokio"] }
 
 [profile.dev]
 opt-level = 1
@@ -63,5 +60,7 @@ codegen-units = 1
 opt-level = 3
 strip = true
 panic = "abort"
+
+
 
 

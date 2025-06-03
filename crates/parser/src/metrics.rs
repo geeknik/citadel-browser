@@ -164,12 +164,10 @@ mod tests {
 
     #[test]
     fn test_parse_timer() {
-        let metrics = ParserMetrics::new();
+        let mut metrics = ParserMetrics::new();
+        metrics.start_parse();
 
-        {
-            let _timer = ParseTimer::new();
-            thread::sleep(Duration::from_millis(10));
-        }
+        thread::sleep(Duration::from_millis(10));
 
         assert!(metrics.parse_time_ms().unwrap() >= 10);
     }

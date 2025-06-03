@@ -28,8 +28,7 @@ log = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 
 # UI and state management
-iced = { version = "0.9", features = ["tokio", "debug"] }
-iced_native = "0.10"
+iced = { version = "0.12", features = ["tokio", "debug"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

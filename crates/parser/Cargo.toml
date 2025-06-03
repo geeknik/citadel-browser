@@ -27,6 +27,9 @@ futures = "0.3"
 # Security & sanitization
 ammonia = "3.3"  # HTML sanitization
 
+# JavaScript engine
+rquickjs = { version = "0.4", features = ["array-buffer", "bindgen", "classes", "futures", "loader"] }
+
 # Logging and metrics
 tracing = "0.1"
 

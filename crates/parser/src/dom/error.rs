@@ -11,5 +11,8 @@ pub enum DomError {
     #[error("Node not found: {0}")]
     NodeNotFound(String),
 
+    #[error("Security violation: {0}")]
+    SecurityViolation(String),
+
     // Add other DOM-specific errors as needed
 } 

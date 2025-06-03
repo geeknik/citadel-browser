@@ -168,12 +168,23 @@ impl SecurityContext {
         }
     }
 
+    /// Create a new security context with specified maximum nesting depth
+    /// Note: max_depth is accepted for compatibility but not currently used
+    pub fn new_with_depth(_max_depth: usize) -> Self {
+        Self::new()
+    }
+
     /// Check if an element is blocked
     pub fn is_element_blocked(&self, element_name: &str) -> bool {
         self.blocked_elements
             .read()
             .unwrap()
             .contains(&element_name.to_lowercase())
+    }
+
+    /// Check if an element is allowed (not blocked)
+    pub fn is_element_allowed(&self, element_name: &str) -> bool {
+        !self.is_element_blocked(element_name)
     }
 
     /// Check if an attribute is allowed

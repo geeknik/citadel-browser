@@ -94,3 +94,4 @@ fuzz-*.log
 # Project specific
 .cursorignore
 .cursorrules
+rules.mdc

@@ -8,7 +8,7 @@ pub mod error;
 
 /// Re-export common types for easier usage
 pub use dns::{DnsMode, CitadelDnsResolver};
-pub use request::Request;
+pub use request::{Request, Method};
 pub use response::Response;
 pub use connection::Connection;
 pub use resource::Resource;

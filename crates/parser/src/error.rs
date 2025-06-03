@@ -19,6 +19,8 @@ pub enum ParserError {
     TooManyTokens(usize),
     /// IO Error
     IoError(String),
+    /// JavaScript execution error
+    JsError(String),
     /// Unknown error
     Unknown(String),
 }
@@ -33,6 +35,7 @@ impl fmt::Display for ParserError {
             ParserError::NestingTooDeep(depth) => write!(f, "Nesting too deep: {}", depth),
             ParserError::TooManyTokens(count) => write!(f, "Too many tokens: {}", count),
             ParserError::IoError(msg) => write!(f, "IO Error: {}", msg),
+            ParserError::JsError(msg) => write!(f, "JavaScript error: {}", msg),
             ParserError::Unknown(msg) => write!(f, "Unknown error: {}", msg),
         }
     }

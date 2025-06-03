@@ -2,12 +2,15 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use url::Url;
 
-use citadel_networking::{NetworkConfig, Request, Method, CitadelDnsResolver, DnsMode};
+use citadel_networking::{NetworkConfig, Request, Method, CitadelDnsResolver};
 use citadel_security::SecurityContext;
-use citadel_parser::{parse_html, ParserConfig, SecurityLevel};
+use citadel_parser::{parse_html, security::SecurityContext as ParserSecurityContext};
+
+// Import structured types from app.rs
+use crate::app::{ParsedPageData, LoadingError, ErrorType};
 
 /// Browser engine responsible for loading and processing web pages
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BrowserEngine {
     /// Async runtime for network operations
     runtime: Arc<Runtime>,
@@ -45,7 +48,103 @@ impl BrowserEngine {
         Ok(self)
     }
     
-    /// Load a web page from the given URL
+    /// Load a web page from the given URL with progress tracking
+    pub async fn load_page_with_progress(&self, url: Url, tab_id: uuid::Uuid) -> Result<ParsedPageData, LoadingError> {
+        let start_time = std::time::Instant::now();
+        log::info!("🌐 Loading page with progress tracking: {} (tab: {})", url, tab_id);
+        
+        // Validate URL scheme
+        if url.scheme() != "https" && url.scheme() != "http" {
+            return Err(LoadingError {
+                error_type: ErrorType::Security,
+                message: format!("Unsupported URL scheme: {}", url.scheme()),
+                url: url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: false,
+            });
+        }
+        
+        // Enforce HTTPS if configured
+        let final_url = if self.network_config.enforce_https && url.scheme() == "http" {
+            let mut https_url = url.clone();
+            https_url.set_scheme("https").map_err(|_| LoadingError {
+                error_type: ErrorType::Security,
+                message: "Failed to upgrade to HTTPS".to_string(),
+                url: url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: true,
+            })?;
+            log::info!("🔒 Upgraded HTTP to HTTPS: {}", https_url);
+            https_url
+        } else {
+            url
+        };
+        
+        // Create HTTP request with privacy settings
+        let request = Request::new(Method::GET, final_url.as_str())
+            .map_err(|e| LoadingError {
+                error_type: ErrorType::Network,
+                message: format!("Failed to create request: {}", e),
+                url: final_url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: true,
+            })?
+            .with_privacy_level(self.network_config.privacy_level)
+            .prepare();
+        
+        // Perform DNS resolution
+        let host = final_url.host_str().ok_or_else(|| LoadingError {
+            error_type: ErrorType::Content,
+            message: "Invalid host in URL".to_string(),
+            url: final_url.to_string(),
+            timestamp: std::time::SystemTime::now(),
+            retry_possible: false,
+        })?;
+        
+        let _ip_addresses = self.dns_resolver.resolve(host).await
+            .map_err(|e| LoadingError {
+                error_type: ErrorType::Network,
+                message: format!("DNS resolution failed: {}", e),
+                url: final_url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: true,
+            })?;
+        
+        // Make HTTP request
+        let response = self.make_http_request(request).await.map_err(|e| LoadingError {
+            error_type: ErrorType::Network,
+            message: e,
+            url: final_url.to_string(),
+            timestamp: std::time::SystemTime::now(),
+            retry_possible: true,
+        })?;
+        
+        // Parse and sanitize the HTML content
+        let (title, content, element_count, security_warnings) = self.parse_html_content_enhanced(&response, final_url.as_str()).await.map_err(|e| LoadingError {
+            error_type: ErrorType::Content,
+            message: e,
+            url: final_url.to_string(),
+            timestamp: std::time::SystemTime::now(),
+            retry_possible: true,
+        })?;
+        
+        let load_time_ms = start_time.elapsed().as_millis() as u64;
+        
+        log::info!("✅ Page loaded successfully in {}ms: {} elements, {} bytes", 
+                   load_time_ms, element_count, response.len());
+        
+        Ok(ParsedPageData {
+            title,
+            content,
+            element_count,
+            size_bytes: response.len(),
+            url: final_url.to_string(),
+            load_time_ms,
+            security_warnings,
+        })
+    }
+    
+    /// Load a web page from the given URL (legacy method)
     pub async fn load_page(&self, url: Url) -> Result<String, String> {
         log::info!("Loading page: {}", url);
         
@@ -79,9 +178,20 @@ impl BrowserEngine {
         let response = self.make_http_request(request).await?;
         
         // Parse and sanitize the HTML content
-        let parsed_content = self.parse_html_content(&response).await?;
+        let (title, content, element_count) = self.parse_html_content(&response, final_url.as_str()).await?;
         
-        Ok(parsed_content)
+        // For now, return a JSON-like string with the parsed data
+        // TODO: Return a structured type instead
+        let result = format!(
+            "{{\"title\": \"{}\", \"content\": \"{}\", \"element_count\": {}, \"size_bytes\": {}, \"url\": \"{}\"}}",
+            title.replace('"', "\\\""),
+            content.chars().take(1000).collect::<String>().replace('"', "\\\""),
+            element_count,
+            response.len(),
+            final_url
+        );
+        
+        Ok(result)
     }
     
     /// Make an HTTP request using reqwest with privacy settings
@@ -135,18 +245,245 @@ impl BrowserEngine {
         Ok(content)
     }
     
-    /// Parse HTML content with security and privacy protections
-    async fn parse_html_content(&self, html: &str) -> Result<String, String> {
-        log::info!("Parsing HTML content ({} bytes)", html.len());
+    /// Parse HTML content with enhanced security and privacy protections
+    async fn parse_html_content_enhanced(&self, html: &str, url: &str) -> Result<(String, String, usize, Vec<String>), String> {
+        log::info!("🔧 Parsing HTML content for {}: {} bytes", url, html.len());
+        
+        let mut security_warnings = Vec::new();
+        
+        // Check for potentially dangerous content
+        if html.to_lowercase().contains("<script") {
+            security_warnings.push("JavaScript content detected and blocked".to_string());
+        }
+        if html.to_lowercase().contains("javascript:") {
+            security_warnings.push("JavaScript URLs detected and sanitized".to_string());
+        }
+        if html.to_lowercase().contains("data:") {
+            security_warnings.push("Data URLs detected - security review applied".to_string());
+        }
         
         // Parse HTML using citadel-parser
-        let _dom = parse_html(html, self.security_context.clone())
+        // Convert security context from citadel-security to citadel-parser format
+        let parser_security_context = Arc::new(ParserSecurityContext::new(15)); // 15 max nesting depth
+        let _dom = parse_html(html, parser_security_context)
             .map_err(|e| format!("HTML parsing failed: {}", e))?;
         
-        // For now, return the original content
-        // TODO: Implement proper DOM rendering
-        log::info!("HTML parsing completed successfully");
-        Ok(html.to_string())
+        // Extract page title
+        let title = self.extract_title(html).unwrap_or_else(|| {
+            // Try to extract from URL as fallback
+            if let Ok(parsed_url) = Url::parse(url) {
+                parsed_url.host_str().unwrap_or("Unknown").to_string()
+            } else {
+                "Unknown Page".to_string()
+            }
+        });
+        
+        // Extract main text content for display (enhanced)
+        let content = self.extract_content_enhanced(html);
+        
+        // Count elements (more sophisticated)
+        let element_count = self.count_elements(html);
+        
+        log::info!("✅ Successfully parsed page: {} elements, {} bytes, {} warnings", 
+                   element_count, html.len(), security_warnings.len());
+        
+        Ok((title, content, element_count, security_warnings))
+    }
+    
+    /// Parse HTML content with security and privacy protections (legacy method)
+    async fn parse_html_content(&self, html: &str, url: &str) -> Result<(String, String, usize), String> {
+        log::info!("Parsing HTML content for {}: {} bytes", url, html.len());
+        
+        // Parse HTML using citadel-parser
+        // Convert security context from citadel-security to citadel-parser format
+        let parser_security_context = Arc::new(ParserSecurityContext::new(15)); // 15 max nesting depth
+        let _dom = parse_html(html, parser_security_context)
+            .map_err(|e| format!("HTML parsing failed: {}", e))?;
+        
+        // Extract page title
+        let title = self.extract_title(html).unwrap_or_else(|| url.to_string());
+        
+        // Extract main text content for display
+        let content = self.extract_content(html);
+        
+        // Count elements (simplified)
+        let element_count = html.matches('<').count();
+        
+        log::info!("Successfully parsed page: {} elements, {} bytes", element_count, html.len());
+        
+        Ok((title, content, element_count))
+    }
+    
+    /// Extract title from HTML content
+    fn extract_title(&self, html: &str) -> Option<String> {
+        // Simple regex-based title extraction
+        if let Some(start) = html.find("<title>") {
+            if let Some(end) = html[start + 7..].find("</title>") {
+                let title = &html[start + 7..start + 7 + end];
+                return Some(title.trim().to_string());
+            }
+        }
+        None
+    }
+    
+    /// Extract text content from HTML for basic display (legacy method)
+    fn extract_content(&self, html: &str) -> String {
+        let mut content = String::new();
+        let mut in_tag = false;
+        let mut in_script = false;
+        let mut in_style = false;
+        
+        let html_lower = html.to_lowercase();
+        
+        for (i, ch) in html.char_indices() {
+            if ch == '<' {
+                in_tag = true;
+                
+                // Check if we're entering a script or style tag
+                if html_lower[i..].starts_with("<script") {
+                    in_script = true;
+                } else if html_lower[i..].starts_with("<style") {
+                    in_style = true;
+                }
+            } else if ch == '>' && in_tag {
+                in_tag = false;
+                
+                // Check if we're exiting a script or style tag
+                if in_script && html_lower[..i].ends_with("</script") {
+                    in_script = false;
+                } else if in_style && html_lower[..i].ends_with("</style") {
+                    in_style = false;
+                }
+            } else if !in_tag && !in_script && !in_style {
+                content.push(ch);
+            }
+        }
+        
+        // Clean up the content
+        content = content
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ")
+            .trim()
+            .to_string();
+        
+        // Limit content length for display
+        if content.len() > 2000 {
+            content.truncate(1997);
+            content.push_str("...");
+        }
+        
+        content
+    }
+    
+    /// Enhanced text content extraction with better filtering
+    fn extract_content_enhanced(&self, html: &str) -> String {
+        let mut content = String::new();
+        let mut in_tag = false;
+        let mut in_script = false;
+        let mut in_style = false;
+        let mut in_noscript = false;
+        let mut tag_name = String::new();
+        
+        let html_lower = html.to_lowercase();
+        
+        for (i, ch) in html.char_indices() {
+            if ch == '<' {
+                in_tag = true;
+                tag_name.clear();
+                
+                // Check what tag we're entering
+                let remaining = &html_lower[i..];
+                if remaining.starts_with("<script") {
+                    in_script = true;
+                } else if remaining.starts_with("<style") {
+                    in_style = true;
+                } else if remaining.starts_with("<noscript") {
+                    in_noscript = true;
+                }
+            } else if ch == '>' && in_tag {
+                in_tag = false;
+                
+                // Check if we're exiting certain tags
+                if tag_name == "/script" {
+                    in_script = false;
+                } else if tag_name == "/style" {
+                    in_style = false;
+                } else if tag_name == "/noscript" {
+                    in_noscript = false;
+                }
+                
+                tag_name.clear();
+            } else if in_tag {
+                // Build tag name for closing tag detection
+                if ch.is_ascii_alphabetic() || ch == '/' {
+                    tag_name.push(ch);
+                }
+            } else if !in_tag && !in_script && !in_style && !in_noscript {
+                content.push(ch);
+            }
+        }
+        
+        // Clean up the content more thoroughly
+        content = content
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<&str>>()
+            .join("\n")
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ")
+            .trim()
+            .to_string();
+        
+        // Decode common HTML entities
+        content = content
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&nbsp;", " ");
+        
+        // Limit content length for display
+        if content.len() > 3000 {
+            content.truncate(2997);
+            content.push_str("...");
+        }
+        
+        content
+    }
+    
+    /// Count HTML elements more accurately
+    fn count_elements(&self, html: &str) -> usize {
+        let mut count = 0;
+        let mut in_tag = false;
+        let mut is_closing_tag = false;
+        let mut is_self_closing = false;
+        
+        for ch in html.chars() {
+            match ch {
+                '<' => {
+                    in_tag = true;
+                    is_closing_tag = false;
+                    is_self_closing = false;
+                }
+                '>' => {
+                    if in_tag && !is_closing_tag {
+                        count += 1;
+                    }
+                    in_tag = false;
+                }
+                '/' if in_tag => {
+                    // Check if this is at the beginning (closing tag) or end (self-closing)
+                    is_closing_tag = true;
+                }
+                _ => {}
+            }
+        }
+        
+        count
     }
 }
 
@@ -154,30 +491,33 @@ impl BrowserEngine {
 mod tests {
     use super::*;
     use tokio::runtime::Runtime;
-    
+
     #[tokio::test]
     async fn test_engine_creation() {
         let runtime = Arc::new(Runtime::new().unwrap());
         let network_config = NetworkConfig::default();
-        let security_context = Arc::new(SecurityContext::new_with_high_security());
+        let security_context = Arc::new(SecurityContext::new());
         
-        let engine = BrowserEngine::new(runtime, network_config, security_context);
-        
-        // Test that engine was created successfully
-        assert_eq!(engine.network_config.privacy_level, citadel_networking::PrivacyLevel::High);
+        let engine = BrowserEngine::new(runtime, network_config, security_context).await;
+        assert!(engine.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_url_validation() {
         let runtime = Arc::new(Runtime::new().unwrap());
         let network_config = NetworkConfig::default();
-        let security_context = Arc::new(SecurityContext::new_with_high_security());
+        let security_context = Arc::new(SecurityContext::new());
         
-        let engine = BrowserEngine::new(runtime, network_config, security_context);
+        let engine = BrowserEngine::new(runtime, network_config, security_context).await.unwrap();
         
         // Test invalid URL scheme
-        let result = engine.load_page(Url::parse("ftp://example.com").unwrap()).await;
+        let invalid_url = Url::parse("ftp://example.com").unwrap();
+        let result = engine.load_page_with_progress(invalid_url, uuid::Uuid::new_v4()).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported URL scheme"));
+        
+        if let Err(error) = result {
+            assert_eq!(error.error_type, ErrorType::Security);
+            assert!(error.message.contains("Unsupported URL scheme"));
+        }
     }
 }

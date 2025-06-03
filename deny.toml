@@ -1,0 +1,121 @@
+# Configuration for cargo-deny
+# This file defines policies for dependencies, licenses, and security
+
+[graph]
+# Dependency graph settings
+all-features = true
+no-default-features = false
+
+[output]
+# Output formatting
+feature-depth = 1
+
+[advisories]
+# Security advisory settings
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"   # Deny any known vulnerabilities
+unmaintained = "warn"    # Warn about unmaintained crates
+yanked = "deny"          # Deny yanked crates
+notice = "warn"          # Warn about security notices
+ignore = [
+    # Add specific advisories to ignore if needed
+    # "RUSTSEC-0000-0000",
+]
+
+[licenses]
+# License policy settings
+unlicensed = "deny"      # Deny crates without licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+    "EUPL-1.0",
+    "EUPL-1.1",
+    "EUPL-1.2",
+    "CPAL-1.0",
+    "OSL-1.0",
+    "OSL-1.1",
+    "OSL-2.0",
+    "OSL-2.1",
+    "OSL-3.0",
+    "EPL-1.0",
+    "EPL-2.0",
+    "MPL-2.0",
+]
+copyleft = "deny"        # Deny copyleft licenses
+allow-osi-fsf-free = "neither"
+default = "deny"         # Default to deny unknown licenses
+confidence-threshold = 0.8
+
+[licenses.private]
+# Settings for private/unpublished crates
+ignore = false
+registries = []
+
+[bans]
+# Banned crates and features
+multiple-versions = "warn"  # Warn about multiple versions of same crate
+wildcards = "allow"         # Allow wildcard dependencies in dev-dependencies
+highlight = "all"           # Highlight all issues
+
+# Deny specific crates that could be problematic for a security browser
+deny = [
+    # Crates with known security issues
+    { name = "openssl", version = "*" },  # Prefer rustls for better security
+    { name = "native-tls", version = "*" }, # Prefer rustls
+    
+    # Crates that might compromise privacy
+    { name = "reqwest", version = "*" },    # Use our custom networking
+    { name = "ureq", version = "*" },       # Use our custom networking
+    { name = "curl", version = "*" },       # Use our custom networking
+    
+    # Crates with C bindings that could introduce vulnerabilities
+    { name = "libsqlite3-sys", version = "*" }, # If using SQLite, use pure Rust impl
+    
+    # Debugging/development crates that shouldn't be in production
+    { name = "env_logger", version = "*" },     # Use our custom logging
+]
+
+# Skip certain crates from bans (if they're indirect dependencies we can't avoid)
+skip = [
+    # Core system crates that are unavoidable
+    { name = "windows-sys" },
+    { name = "libc" },
+    { name = "winapi" },
+]
+
+# Skip trees (entire dependency subtrees)
+skip-tree = [
+    # Skip certain dependency trees if needed
+    # { name = "some-crate", version = "1.0" },
+]
+
+[sources]
+# Source registry settings
+unknown-registry = "deny"   # Deny unknown registries
+unknown-git = "deny"        # Deny unknown git sources
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index"
+]
+allow-git = [
+    # Allow specific git sources if needed for development
+    # "https://github.com/organization/repo",
+]
+
+[sources.allow-org]
+# Allowed GitHub organizations (if using git dependencies)
+# github = ["organization-name"] 

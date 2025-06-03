@@ -23,24 +23,7 @@ fn main() -> iced::Result {
     let rt = Arc::new(Runtime::new().expect("Failed to create Tokio runtime"));
     
     // Configure the application window
-    let settings = Settings {
-        window: window::Settings {
-            size: (1200, 800),
-            min_size: Some((800, 600)),
-            position: window::Position::Centered,
-            resizable: true,
-            decorations: true,
-            transparent: false,
-            always_on_top: false,
-            icon: None,
-        },
-        flags: rt,
-        default_font: None,
-        default_text_size: 14,
-        antialiasing: true,
-        exit_on_close_request: true,
-        try_opengles_first: false,
-    };
+    let settings = Settings::with_flags(rt);
     
     CitadelBrowser::run(settings)
 }

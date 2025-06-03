@@ -3,7 +3,7 @@ use iced::{
     Element, Length, Padding, Theme,
 };
 use uuid::Uuid;
-use crate::{TabState, TabType, TabManager};
+use crate::{TabState, TabType, SendSafeTabManager as TabManager};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -30,16 +30,26 @@ impl TabBar {
     pub fn update(&mut self, message: Message) {
         match message {
             Message::TabSelected(id) => {
-                let _ = futures::executor::block_on(self.manager.switch_tab(id));
+                // For UI operations, we spawn async tasks
+                let manager = self.manager.clone();
+                tokio::spawn(async move {
+                    let _ = manager.switch_tab(id).await;
+                });
             }
             Message::TabClosed(id) => {
-                let _ = futures::executor::block_on(self.manager.close_tab(id));
+                let manager = self.manager.clone();
+                tokio::spawn(async move {
+                    let _ = manager.close_tab(id).await;
+                });
             }
             Message::ConvertToContainerRequested(id) => {
                 self.show_conversion_dialog = Some(id);
             }
             Message::ConvertToContainerConfirmed(id) => {
-                let _ = futures::executor::block_on(self.manager.convert_to_container(id));
+                let manager = self.manager.clone();
+                tokio::spawn(async move {
+                    let _ = manager.convert_to_container(id).await;
+                });
                 self.show_conversion_dialog = None;
             }
             Message::ConvertToContainerCancelled => {
@@ -164,23 +174,29 @@ mod theme {
             match self {
                 Container::Default => container::Appearance {
                     background: Some(Background::Color(Color::from_rgb(0.9, 0.9, 0.9))),
-                    border_radius: 5.0,
-                    border_width: 1.0,
-                    border_color: Color::from_rgb(0.8, 0.8, 0.8),
+                    border: iced::Border {
+                        color: Color::from_rgb(0.8, 0.8, 0.8),
+                        width: 1.0,
+                        radius: iced::border::Radius::from(5.0),
+                    },
                     ..Default::default()
                 },
                 Container::Primary => container::Appearance {
                     background: Some(Background::Color(Color::from_rgb(0.8, 0.8, 1.0))),
-                    border_radius: 5.0,
-                    border_width: 1.0,
-                    border_color: Color::from_rgb(0.7, 0.7, 0.9),
+                    border: iced::Border {
+                        color: Color::from_rgb(0.7, 0.7, 0.9),
+                        width: 1.0,
+                        radius: iced::border::Radius::from(5.0),
+                    },
                     ..Default::default()
                 },
                 Container::Box => container::Appearance {
                     background: Some(Background::Color(Color::from_rgb(1.0, 1.0, 1.0))),
-                    border_radius: 10.0,
-                    border_width: 2.0,
-                    border_color: Color::from_rgb(0.8, 0.8, 0.8),
+                    border: iced::Border {
+                        color: Color::from_rgb(0.8, 0.8, 0.8),
+                        width: 2.0,
+                        radius: iced::border::Radius::from(10.0),
+                    },
                     ..Default::default()
                 },
             }

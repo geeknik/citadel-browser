@@ -1,54 +1,53 @@
 [package]
 name = "citadel-browser"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-repository.workspace = true
-license.workspace = true
-description.workspace = true
-homepage.workspace = true
-readme.workspace = true
-keywords.workspace = true
-categories.workspace = true
-
-[[bin]]
-name = "citadel"
-path = "src/main.rs"
+version = "0.0.1-alpha"
+edition = "2021"
+authors = ["Citadel Browser Team"]
+description = "Privacy-first web browser with ZKVM tab isolation"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-# Workspace dependencies
+# Core dependencies
+tokio = { version = "1.0", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"
+
+# Async runtime for network operations
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# JSON parsing (for API responses)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# URL handling
+url = "2.4"
+urlencoding = "2.1"
+
+# UUID support
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# UI framework
+iced = { version = "0.12", features = ["image", "svg", "canvas", "tokio"] }
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Internal crates
 citadel-networking = { path = "../networking" }
 citadel-parser = { path = "../parser" }
 citadel-security = { path = "../security" }
-citadel-antifingerprint = { path = "../antifingerprint" }
 citadel-tabs = { path = "../tabs" }
+citadel-zkvm = { path = "../zkvm" }
 
-# Core dependencies
-tokio = { workspace = true }
-futures = { workspace = true }
-thiserror = { workspace = true }
-log = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-url = { workspace = true }
-bytes = { workspace = true }
-reqwest = { workspace = true }
-uuid = "1.6.1"
-env_logger = "0.10.1"
+# Cryptography (if needed for secure operations)
+# ring = "0.16"
+# rand = "0.8"
 
-# UI dependencies
-iced = { workspace = true, optional = true }
-
-# macOS specific dependencies
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = { workspace = true }
-core-graphics = { workspace = true }
-objc = { workspace = true }
-cocoa = { workspace = true }
-metal = { workspace = true }
-objc-foundation = { workspace = true }
+[dev-dependencies]
+tokio-test = "0.4"
 
 [features]
-default = ["ui"]
-ui = ["iced"]
-headless = []
+default = []
+
+# Development features
+dev = ["tokio/tracing"]
