@@ -12,5 +12,9 @@ citadel-networking = { path = "../crates/networking" }
 [build-dependencies]
 arbitrary = { version = "1", features = ["derive"] }
 
-[workspace]
-# This section should NOT be present if it's not the root workspace
+# Remove the workspace section since this is part of the main workspace
+
+# Add a lib target to satisfy Cargo
+[lib]
+name = "citadel_fuzz"
+path = "src/lib.rs"

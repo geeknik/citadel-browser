@@ -1,0 +1,33 @@
+[package]
+name = "citadel-zkvm"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-Knowledge Virtual Machine implementation for Citadel Browser"
+license = "MIT"
+
+[dependencies]
+# Core dependencies
+tokio = { version = "1.28", features = ["full"] }
+futures = "0.3"
+thiserror = "1.0"
+log = "0.4"
+
+# Cryptographic dependencies
+zeroize = "1.6"  # Secure memory wiping
+rand = "0.8"     # Cryptographic randomness
+blake3 = "1.3"   # Fast cryptographic hashing
+aes-gcm = "0.10" # AES-GCM encryption
+
+# Memory and resource management
+region = "3.0"   # Memory page management
+memmap2 = "0.5"  # Memory mapping
+parking_lot = "0.12" # More efficient synchronization primitives
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+proptest = "1.2" 

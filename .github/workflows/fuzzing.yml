@@ -1,0 +1,93 @@
+name: Fuzzing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly on Sundays
+
+jobs:
+  fuzz:
+    name: Continuous Fuzzing
+    runs-on: ubuntu-latest  # Linux is preferred for fuzzing
+    strategy:
+      fail-fast: false
+      matrix:
+        fuzz_target:
+          - dns_resolver
+          - html_parser
+          - css_parser
+          - network_request
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install nightly Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      
+      - name: Add LLVM tools
+        run: rustup component add llvm-tools-preview
+      
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      
+      - name: Generate corpus
+        run: |
+          mkdir -p fuzz/corpus
+          chmod +x fuzz/scripts/generate_corpus.sh
+          fuzz/scripts/generate_corpus.sh
+
+      - name: Build fuzz target
+        run: |
+          cd fuzz
+          cargo fuzz build ${{ matrix.fuzz_target }}
+      
+      - name: Run fuzzer with dictionary and corpus
+        run: |
+          cd fuzz
+          # Run fuzzer for 3 minutes with aggressive settings
+          timeout 180s cargo fuzz run ${{ matrix.fuzz_target }} corpus/${{ matrix.fuzz_target }} \
+            -dict=dictionaries/${{ matrix.fuzz_target }}.dict \
+            -max_total_time=180 \
+            -detect_leaks=1 \
+            -max_len=65536 \
+            -rss_limit_mb=4096 \
+            -print_final_stats=1 \
+            -use_value_profile=1 \
+            || if [ $? -eq 124 ]; then echo "Timeout reached, no bugs found"; else exit 1; fi
+        
+      - name: Generate code coverage report
+        run: |
+          cd fuzz
+          # Generate HTML coverage report
+          mkdir -p coverage_reports
+          if [ -d "corpus/${{ matrix.fuzz_target }}" ]; then
+            RUSTFLAGS="-Zinstrument-coverage" cargo run --bin ${{ matrix.fuzz_target }} -- \
+              corpus/${{ matrix.fuzz_target }}/* \
+              2>/dev/null || true
+            
+            grcov . --binary-path ./target/debug/ -s . -t html --branch --ignore-not-existing \
+              --ignore "/*" --ignore "target/*" \
+              -o coverage_reports/${{ matrix.fuzz_target }}
+          fi
+        
+      - name: Upload crash artifacts (if any)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.fuzz_target }}-crashes
+          path: fuzz/artifacts/${{ matrix.fuzz_target }}
+          retention-days: 7
+          
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.fuzz_target }}-coverage
+          path: fuzz/coverage_reports/${{ matrix.fuzz_target }}
+          retention-days: 7 

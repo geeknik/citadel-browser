@@ -1,0 +1,96 @@
+# Rust specific ignores
+/target/
+**/*.rs.bk
+Cargo.lock
+.cargo/credentials
+.cargo/credentials.toml
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.exe
+*.out
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.atom/
+.buildlog/
+.history/
+.svn/
+*.sublime-*
+
+# Debug and profiling artifacts
+*.dSYM/
+*.su
+*.idb
+*.pdb
+perf.data
+perf.data.old
+flamegraph.svg
+callgrind.out.*
+cachegrind.out.*
+massif.out.*
+
+# Security and privacy sensitive files
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.priv
+*.pub
+*.gpg
+*.asc
+*.sig
+*.sign
+*.keystore
+*.jks
+*.p8
+secrets/
+credentials/
+tokens/
+.netrc
+.npmrc
+.yarnrc
+.pypirc
+
+# Logs and temporary files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tmp/
+temp/
+.tmp/
+.temp/
+
+# AI assistant files
+.aider*
+.cursor*
+.copilot*
+.codeium*
+.github/copilot/
+
+# Fuzzing artifacts
+fuzz/artifacts/
+fuzz/corpus/
+fuzz/coverage/
+fuzz-*.log
+
+# Project specific
+.cursorignore
+.cursorrules

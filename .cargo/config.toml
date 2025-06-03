@@ -1,0 +1,7 @@
+[build]
+# Exclude fuzz directory on non-Linux platforms
+exclude = ["fuzz"]
+
+[target.'cfg(target_os = "linux")'.build]
+# Include all directories on Linux
+exclude = [] 

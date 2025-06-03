@@ -1,0 +1,129 @@
+# Common DNS domains
+"example.com"
+"google.com"
+"microsoft.com"
+"apple.com"
+"amazon.com"
+"cloudflare.com"
+"localhost"
+"dns.google"
+
+# Internal domains
+"localhost"
+"intranet"
+"internal"
+"private"
+"corp"
+"local"
+".test"
+".invalid"
+".localhost"
+".example"
+
+# Special characters in DNS
+"xn--"  # Punycode prefix
+"_"
+"-"
+"."
+"@"
+"*"
+"#"
+"$"
+"%"
+"&"
+"+"
+"="
+";"
+"["
+"]"
+"{"
+"}"
+"<"
+">"
+"|"
+"~"
+"`"
+"'"
+"\""
+
+# DNS label edge cases
+"a"  # Single character label
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  # Max label length
+"a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a"  # Many labels
+""  # Empty label
+
+# Domain TLDs
+".com"
+".org"
+".net"
+".io"
+".co"
+".ru"
+".cn"
+".jp"
+".uk"
+".gov"
+".edu"
+".mil"
+".arpa"
+".int"
+".dev"
+".app"
+".onion"
+".bit"
+".eth"
+
+# DNS record types (not directly related to resolution but useful for fuzzing)
+"A"
+"AAAA"
+"MX"
+"CNAME"
+"TXT"
+"SRV"
+"NS"
+"SOA"
+"PTR"
+"CAA"
+"DNSKEY"
+"RRSIG"
+"NSEC"
+"NSEC3"
+
+# IP addresses formats
+"0.0.0.0"
+"255.255.255.255"
+"127.0.0.1"
+"169.254.0.1"
+"192.168.0.1"
+"10.0.0.1"
+"172.16.0.1"
+"fe80::"
+"::1"
+"2001:db8::"
+
+# Malicious/malformed input patterns
+"..com"
+".com."
+"..."
+".."
+"example..com"
+"example.com.."
+".example.com"
+"example..com"
+"example com"
+"example\x00.com"  # Null byte injection
+"example\ncom"    # Newline injection
+"example\rcom"    # Carriage return injection
+"example\tcom"    # Tab injection
+"<script>alert(1)</script>.com"  # XSS attempt
+"'; DROP TABLE domains; --"      # SQL injection attempt
+"example.com/%2e%2e/"            # Path traversal attempt
+
+# DoH/DoT endpoints
+"https://dns.google/dns-query"
+"https://cloudflare-dns.com/dns-query"
+"https://dns.quad9.net/dns-query"
+"dns.google"
+"one.one.one.one"
+"9.9.9.9"
+"8.8.8.8" 

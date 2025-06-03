@@ -4,15 +4,15 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "Privacy-preserving networking components for the Citadel browser engine"
-repository = "https://github.com/yourusername/citadel-browser-rust"  # Update with the actual repository URL
+repository = "https://github.com/citadel-browser/citadel-browser-rust"
 license = "MIT"
 
 [dependencies]
 tokio = { workspace = true }
 hyper = { version = "0.14", features = ["full"] }
 rustls = { workspace = true }
-rustls-native-certs = "0.6"
-hyper-rustls = { version = "0.24", features = ["http2"] }
+rustls-native-certs = { workspace = true }
+hyper-rustls = { workspace = true }
 trust-dns-resolver = { workspace = true }
 reqwest = { workspace = true }
 bytes = { workspace = true }

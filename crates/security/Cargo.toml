@@ -1,0 +1,14 @@
+[package]
+name = "citadel-security"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Security context and policy enforcement for Citadel Browser Engine"
+repository = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+thiserror = { workspace = true }
+log = { workspace = true }
+# Add url dependency if needed for scheme validation or origin checks later
+# url = { workspace = true } 

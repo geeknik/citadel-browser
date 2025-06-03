@@ -1,0 +1,77 @@
+# Common search terms
+"search"
+"test"
+"example"
+"citadel"
+"browser"
+"privacy"
+"security"
+
+# Special characters
+" "
+"+"
+"-"
+"*"
+"?"
+"/"
+"\\"
+"|"
+"&"
+"="
+
+# URL components
+"http://"
+"https://"
+"www."
+".com"
+".org"
+".net"
+
+# HTML entities
+"&lt;"
+"&gt;"
+"&amp;"
+"&quot;"
+
+# Common words
+"the"
+"and"
+"or"
+"not"
+"in"
+"at"
+"on"
+"to"
+"from"
+
+# Numbers
+"0"
+"1"
+"123"
+"9999"
+
+# UUIDs
+"00000000-0000-0000-0000-000000000000"
+"12345678-1234-5678-1234-567812345678"
+
+# Special patterns
+"<script>"
+"</script>"
+"SELECT"
+"DROP"
+"DELETE"
+"INSERT"
+"UPDATE"
+
+# Malicious patterns
+"'; DROP TABLE"
+"<img src=x onerror=alert(1)>"
+"javascript:alert(1)"
+"data:text/html,<script>alert(1)</script>"
+
+# Unicode characters
+"é"
+"ñ"
+"漢"
+"🔍"
+"👾" 

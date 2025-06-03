@@ -1,0 +1,43 @@
+[package]
+name = "citadel-antifingerprint"
+version = "0.1.0"
+edition = "2021"
+description = "Anti-fingerprinting protections for Citadel Browser"
+license = "MIT"
+
+[dependencies]
+# Internal crates
+citadel-security = { path = "../security" }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Randomization
+rand = "0.8"
+rand_distr = "0.4"  # For more complex random distributions
+rand_chacha = "0.3" # Cryptographically secure ChaCha20 RNG
+
+# UUID generation
+uuid = { version = "1.3", features = ["v4"] }
+
+# Logging
+log = "0.4"
+tracing = "0.1"
+
+# Async support
+tokio = { version = "1.28", features = ["full"] }
+futures = "0.3"
+
+# Utilities
+lazy_static = "1.4"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tokio-test = "0.4"
+test-log = "0.2"
+pretty_assertions = "1.3" 

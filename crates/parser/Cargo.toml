@@ -1,0 +1,60 @@
+[package]
+name = "citadel-parser"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+description = "HTML/CSS parser for the Citadel Browser Engine"
+repository = "https://github.com/citadel-browser/citadel-browser-rust"
+license = { workspace = true }
+
+[dependencies]
+# Core parsing dependencies
+html5ever = "0.26.0"
+cssparser = "0.31"  # CSS parsing
+selectors = "0.24"  # CSS selector matching
+markup5ever = "0.11" # Shared types between html5ever and xml5ever
+string_cache = "0.8"  # String interning for efficient DOM operations
+lazy_static = "1.4"  # For static resources
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+# Async support
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# Security & sanitization
+ammonia = "3.3"  # HTML sanitization
+
+# Logging and metrics
+tracing = "0.1"
+
+# Testing
+criterion = { version = "0.5", optional = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# URL handling
+url = { workspace = true }
+
+# Citadel crates
+citadel-networking = { path = "../networking" }
+
+# Local dependency on the security crate
+citadel-security = { path = "../security" }
+
+[dev-dependencies]
+tokio-test = "0.4"
+pretty_assertions = "1.0"
+
+[features]
+default = []
+benchmarks = ["criterion"]
+
+[[bench]]
+name = "parser_benchmarks"
+harness = false
+required-features = ["benchmarks"] 
