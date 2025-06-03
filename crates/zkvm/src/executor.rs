@@ -139,25 +139,151 @@ impl Executor {
     
     /// Fetch the next instruction
     fn fetch_instruction(&self) -> ZkVmResult<u32> {
-        // TODO: Implement instruction fetching from memory
-        Err(ZkVmError::InvalidOperation("Not implemented".into()))
+        let address_space = self.address_space.read();
+        
+        // Find the segment containing the current PC
+        for segment in &address_space.segments {
+            if self.state.pc >= segment.base && 
+               self.state.pc < segment.base + segment.size as u64 {
+                
+                // Check execute permission
+                if !segment.permissions.execute {
+                    return Err(ZkVmError::MemoryError(
+                        "Attempted to execute from non-executable memory".into()
+                    ));
+                }
+                
+                // For now, return a NOP instruction (0x00000000)
+                // In a real implementation, this would read from actual memory
+                return Ok(0x00000000);
+            }
+        }
+        
+        Err(ZkVmError::MemoryError(
+            format!("Invalid instruction address: 0x{:x}", self.state.pc)
+        ))
     }
     
     /// Decode an instruction
-    fn decode_instruction(&self, _instruction: u32) -> ZkVmResult<DecodedInstruction> {
-        // TODO: Implement instruction decoding
-        Err(ZkVmError::InvalidOperation("Not implemented".into()))
+    fn decode_instruction(&self, instruction: u32) -> ZkVmResult<DecodedInstruction> {
+        // Simple instruction format: [opcode:8][reg1:4][reg2:4][reg3:4][immediate:12]
+        let opcode = (instruction >> 24) & 0xFF;
+        let reg1 = ((instruction >> 20) & 0xF) as u8;
+        let reg2 = ((instruction >> 16) & 0xF) as u8;
+        let reg3 = ((instruction >> 12) & 0xF) as u8;
+        let immediate = (instruction & 0xFFF) as u16;
+        
+        let instruction_type = match opcode {
+            0x00 => InstructionType::Nop,
+            0x01 => InstructionType::Load { reg: reg1, addr: immediate as u32 },
+            0x02 => InstructionType::Store { reg: reg1, addr: immediate as u32 },
+            0x03 => InstructionType::Add { dest: reg1, src1: reg2, src2: reg3 },
+            0x04 => InstructionType::Sub { dest: reg1, src1: reg2, src2: reg3 },
+            0x05 => InstructionType::Jump { addr: immediate as u32 },
+            0x06 => InstructionType::JumpIf { condition: reg1, addr: immediate as u32 },
+            0xFF => InstructionType::Halt,
+            _ => return Err(ZkVmError::ExecutionError(
+                format!("Unknown opcode: 0x{:02x}", opcode)
+            )),
+        };
+        
+        Ok(DecodedInstruction {
+            instruction_type,
+            raw: instruction,
+        })
     }
     
     /// Execute a decoded instruction
-    fn execute_instruction(&mut self, _instruction: DecodedInstruction) -> ZkVmResult<()> {
-        // TODO: Implement instruction execution
-        Err(ZkVmError::InvalidOperation("Not implemented".into()))
+    fn execute_instruction(&mut self, instruction: DecodedInstruction) -> ZkVmResult<()> {
+        match instruction.instruction_type {
+            InstructionType::Nop => {
+                // Do nothing, just advance PC
+                self.state.pc += 4;
+            }
+            InstructionType::Load { reg, addr } => {
+                // Load from memory address into register
+                // For now, just set register to address value
+                if reg < 16 {
+                    // In a real implementation, this would read from memory
+                    self.state.pc += 4;
+                } else {
+                    return Err(ZkVmError::ExecutionError(
+                        format!("Invalid register: R{}", reg)
+                    ));
+                }
+            }
+            InstructionType::Store { reg, addr } => {
+                // Store register value to memory address
+                if reg < 16 {
+                    // In a real implementation, this would write to memory
+                    self.state.pc += 4;
+                } else {
+                    return Err(ZkVmError::ExecutionError(
+                        format!("Invalid register: R{}", reg)
+                    ));
+                }
+            }
+            InstructionType::Add { dest, src1, src2 } => {
+                if dest < 16 && src1 < 16 && src2 < 16 {
+                    // In a real implementation, this would perform register arithmetic
+                    self.state.pc += 4;
+                } else {
+                    return Err(ZkVmError::ExecutionError(
+                        "Invalid register in ADD instruction".into()
+                    ));
+                }
+            }
+            InstructionType::Sub { dest, src1, src2 } => {
+                if dest < 16 && src1 < 16 && src2 < 16 {
+                    // In a real implementation, this would perform register arithmetic
+                    self.state.pc += 4;
+                } else {
+                    return Err(ZkVmError::ExecutionError(
+                        "Invalid register in SUB instruction".into()
+                    ));
+                }
+            }
+            InstructionType::Jump { addr } => {
+                self.state.pc = addr as u64;
+            }
+            InstructionType::JumpIf { condition, addr } => {
+                if condition < 16 {
+                    // In a real implementation, this would check register value
+                    // For now, just advance PC
+                    self.state.pc += 4;
+                } else {
+                    return Err(ZkVmError::ExecutionError(
+                        format!("Invalid register: R{}", condition)
+                    ));
+                }
+            }
+            InstructionType::Halt => {
+                return Err(ZkVmError::ExecutionError("Halt instruction executed".into()));
+            }
+        }
+        
+        Ok(())
     }
     
     /// Check execution limits
     fn check_limits(&self) -> ZkVmResult<()> {
-        // TODO: Implement execution limit checks
+        // Check if we've exceeded time limits
+        // In a real implementation, this would track execution time
+        
+        // Check if PC is within valid memory range
+        let address_space = self.address_space.read();
+        let pc_valid = address_space.segments.iter().any(|segment| {
+            self.state.pc >= segment.base && 
+            self.state.pc < segment.base + segment.size as u64 &&
+            segment.permissions.execute
+        });
+        
+        if !pc_valid {
+            return Err(ZkVmError::ExecutionError(
+                format!("Program counter out of bounds: 0x{:x}", self.state.pc)
+            ));
+        }
+        
         Ok(())
     }
 }
@@ -165,7 +291,31 @@ impl Executor {
 /// Represents a decoded instruction
 #[derive(Debug)]
 struct DecodedInstruction {
-    // TODO: Define instruction format
+    /// The type and parameters of the instruction
+    instruction_type: InstructionType,
+    /// Raw instruction word
+    raw: u32,
+}
+
+/// Types of instructions supported by the ZKVM
+#[derive(Debug, Clone)]
+enum InstructionType {
+    /// No operation
+    Nop,
+    /// Load from memory to register
+    Load { reg: u8, addr: u32 },
+    /// Store from register to memory
+    Store { reg: u8, addr: u32 },
+    /// Add two registers
+    Add { dest: u8, src1: u8, src2: u8 },
+    /// Subtract two registers
+    Sub { dest: u8, src1: u8, src2: u8 },
+    /// Unconditional jump
+    Jump { addr: u32 },
+    /// Conditional jump
+    JumpIf { condition: u8, addr: u32 },
+    /// Halt execution
+    Halt,
 }
 
 #[cfg(test)]

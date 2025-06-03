@@ -1,6 +1,6 @@
 [package]
 name = "citadel-tabs"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Privacy-focused tab management for Citadel Browser"
 license = "MIT"

@@ -7,12 +7,13 @@ members = [
     "crates/antifingerprint",
     "crates/tabs",
     "crates/zkvm",
+    "crates/browser",
     "fuzz",
 ]
 
 [workspace.package]
 edition = "2021"
-version = "0.1.0"
+version = "0.0.1-alpha"
 authors = ["geeknik <b@deepforkcyber.com>"]
 repository = "https://github.com/geeknik/citadel-browser"
 license = "MIT"
@@ -63,11 +64,4 @@ opt-level = 3
 strip = true
 panic = "abort"
 
-# macOS specific optimizations
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = { workspace = true }
-core-graphics = { workspace = true }
-objc = { workspace = true }
-cocoa = { workspace = true }
-metal = { workspace = true }
-objc-foundation = { workspace = true }
+

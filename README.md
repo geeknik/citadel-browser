@@ -4,6 +4,30 @@
 
 A from-scratch browser engine engineered to obliterate tracking, crush fingerprinting, and restore user sovereignty with extreme technical precision.
 
+## ⚠️ ALPHA SOFTWARE DISCLAIMER ⚠️
+
+**Version: 0.0.1-alpha**
+
+🚨 **THIS IS ALPHA SOFTWARE - USE AT YOUR OWN RISK** 🚨
+
+- **NOT FOR PRODUCTION USE**: This software is experimental and under active development
+- **EXPECT BUGS**: Features may not work as expected, crash, or behave unpredictably
+- **DATA LOSS POSSIBLE**: Do not rely on this software for critical browsing or data storage
+- **SECURITY VULNERABILITIES**: Alpha software may contain security flaws - do not use for sensitive activities
+- **NO WARRANTY**: This software is provided "as is" without any warranty of any kind
+- **BREAKING CHANGES**: APIs, features, and functionality may change dramatically between releases
+- **NOT RESPONSIBLE**: We are not responsible if this software causes any issues, including but not limited to:
+  - System crashes or instability
+  - Data corruption or loss
+  - Security breaches
+  - Being eaten by a Gru
+  - Spontaneous combustion of your computer
+  - Temporal paradoxes
+  - Existential crises
+  - Or any other unforeseen consequences
+
+**By using this software, you acknowledge that you understand these risks and use it entirely at your own discretion.**
+
 ## Project Status
 
 ⚠️ **EARLY DEVELOPMENT** ⚠️  

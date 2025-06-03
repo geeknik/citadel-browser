@@ -14,4 +14,7 @@ pub enum ZkVmError {
     
     #[error("Communication channel error: {0}")]
     ChannelError(String),
+    
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
 } 

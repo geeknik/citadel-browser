@@ -74,6 +74,152 @@ pub struct Tab {
     channel: Channel,
 }
 
+/// Simple tab implementation for browser compatibility
+pub struct SimpleTab {
+    /// Unique identifier for the tab
+    id: Uuid,
+    /// Current URL of the tab
+    url: Arc<RwLock<String>>,
+    /// Tab title
+    title: Arc<RwLock<String>>,
+    /// Whether the tab is currently loading
+    is_loading: Arc<RwLock<bool>>,
+}
+
+impl SimpleTab {
+    /// Create a new simple tab with the given URL
+    pub fn new(url: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            url: Arc::new(RwLock::new(url)),
+            title: Arc::new(RwLock::new(String::new())),
+            is_loading: Arc::new(RwLock::new(false)),
+        }
+    }
+
+    /// Get the tab's ID
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// Get the current URL
+    pub fn url(&self) -> String {
+        self.url.read().clone()
+    }
+
+    /// Set a new URL for the tab
+    pub fn set_url(&self, new_url: String) {
+        *self.url.write() = new_url;
+    }
+
+    /// Get the tab's title
+    pub fn title(&self) -> String {
+        self.title.read().clone()
+    }
+
+    /// Set the tab's title
+    pub fn set_title(&self, new_title: String) {
+        *self.title.write() = new_title;
+    }
+
+    /// Check if the tab is currently loading
+    pub fn is_loading(&self) -> bool {
+        *self.is_loading.read()
+    }
+
+    /// Set the loading state
+    pub fn set_loading(&self, loading: bool) {
+        *self.is_loading.write() = loading;
+    }
+}
+
+/// Simple tab manager for browser compatibility
+pub struct SimpleTabManager {
+    /// All open tabs
+    tabs: Arc<RwLock<std::collections::HashMap<Uuid, Arc<SimpleTab>>>>,
+    /// Currently active tab ID
+    active_tab: Arc<RwLock<Option<Uuid>>>,
+}
+
+impl SimpleTabManager {
+    /// Create a new simple tab manager
+    pub fn new() -> Self {
+        Self {
+            tabs: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            active_tab: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Create a new tab and return its ID
+    pub fn create_tab(&self, url: String) -> Uuid {
+        let tab = Arc::new(SimpleTab::new(url));
+        let id = tab.id();
+        
+        let mut tabs = self.tabs.write();
+        tabs.insert(id, tab);
+        
+        // If this is the first tab, make it active
+        if tabs.len() == 1 {
+            *self.active_tab.write() = Some(id);
+        }
+        
+        id
+    }
+
+    /// Close a tab by ID
+    pub fn close_tab(&self, id: Uuid) -> bool {
+        let mut tabs = self.tabs.write();
+        let mut active_tab = self.active_tab.write();
+        
+        if tabs.remove(&id).is_some() {
+            // If we closed the active tab, activate the next available tab
+            if active_tab.map_or(false, |active_id| active_id == id) {
+                *active_tab = tabs.keys().next().copied();
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get a reference to a tab by ID
+    pub fn get_tab(&self, id: Uuid) -> Option<Arc<SimpleTab>> {
+        self.tabs.read().get(&id).cloned()
+    }
+
+    /// Get the active tab
+    pub fn active_tab(&self) -> Option<Arc<SimpleTab>> {
+        let active_id = *self.active_tab.read();
+        active_id.and_then(|id| self.get_tab(id))
+    }
+
+    /// Set the active tab
+    pub fn set_active_tab(&self, id: Uuid) -> bool {
+        if self.tabs.read().contains_key(&id) {
+            *self.active_tab.write() = Some(id);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get all open tabs
+    pub fn all_tabs(&self) -> Vec<Arc<SimpleTab>> {
+        self.tabs.read().values().cloned().collect()
+    }
+
+    /// Get the number of open tabs
+    pub fn tab_count(&self) -> usize {
+        self.tabs.read().len()
+    }
+}
+
+impl Default for SimpleTabManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Manages all browser tabs
 pub struct TabManager {
     /// All active tabs

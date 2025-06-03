@@ -1,6 +1,6 @@
 [package]
 name = "citadel-zkvm"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Zero-Knowledge Virtual Machine implementation for Citadel Browser"
 license = "MIT"
