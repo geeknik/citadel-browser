@@ -28,6 +28,8 @@ A from-scratch browser engine engineered to obliterate tracking, crush fingerpri
 
 **By using this software, you acknowledge that you understand these risks and use it entirely at your own discretion.**
 
+![image](https://github.com/user-attachments/assets/facfd73d-6552-4f11-9685-fd142b7ed33d)
+
 ## Project Status
 
 ⚠️ **EARLY DEVELOPMENT** ⚠️  
