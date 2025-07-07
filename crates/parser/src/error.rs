@@ -21,6 +21,8 @@ pub enum ParserError {
     IoError(String),
     /// JavaScript execution error
     JsError(String),
+    /// Layout error
+    LayoutError(String),
     /// Unknown error
     Unknown(String),
 }
@@ -36,6 +38,7 @@ impl fmt::Display for ParserError {
             ParserError::TooManyTokens(count) => write!(f, "Too many tokens: {}", count),
             ParserError::IoError(msg) => write!(f, "IO Error: {}", msg),
             ParserError::JsError(msg) => write!(f, "JavaScript error: {}", msg),
+            ParserError::LayoutError(msg) => write!(f, "Layout error: {}", msg),
             ParserError::Unknown(msg) => write!(f, "Unknown error: {}", msg),
         }
     }

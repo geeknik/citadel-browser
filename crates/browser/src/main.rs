@@ -6,6 +6,7 @@ mod app;
 mod ui;
 mod engine;
 mod resource_loader;
+mod renderer;
 
 use app::CitadelBrowser;
 

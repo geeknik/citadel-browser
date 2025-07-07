@@ -9,12 +9,17 @@ license = { workspace = true }
 
 [dependencies]
 # Core parsing dependencies
-html5ever = "0.26.0"
-cssparser = "0.31"  # CSS parsing
-selectors = "0.24"  # CSS selector matching
-markup5ever = "0.11" # Shared types between html5ever and xml5ever
+html5ever = "0.27.0"  # Updated to latest version
+cssparser = "0.34"    # CSS parsing - updated to latest
+selectors = "0.26"    # CSS selector matching - updated
+markup5ever = "0.12"  # Shared types between html5ever and xml5ever
 string_cache = "0.8"  # String interning for efficient DOM operations
-lazy_static = "1.4"  # For static resources
+lazy_static = "1.4"   # For static resources
+
+# Servo rendering components (macOS optimized) - simplified approach
+taffy = "0.5"             # Modern layout engine (Servo's layout 2020)
+euclid = "0.22"           # Geometric primitives for rendering
+app_units = "0.7"         # Application units for measurements
 
 # Error handling
 thiserror = { workspace = true }
@@ -44,7 +49,7 @@ serde_json = { workspace = true }
 url = { workspace = true }
 
 # Citadel crates
-citadel-networking = { path = "../networking" }
+# citadel-networking = { path = "../networking" }  # Temporarily disabled
 
 # Local dependency on the security crate
 citadel-security = { path = "../security" }

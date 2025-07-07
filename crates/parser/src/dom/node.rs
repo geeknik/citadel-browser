@@ -45,6 +45,21 @@ impl Element {
     pub fn local_name(&self) -> &str {
         &self.name.local
     }
+    
+    /// Get attribute value by name
+    pub fn get_attribute(&self, name: &str) -> Option<String> {
+        for attr in &self.attributes {
+            if &*attr.name.local == name {
+                return Some(attr.value.clone());
+            }
+        }
+        None
+    }
+    
+    /// Check if the element has a specific attribute
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes.iter().any(|attr| &*attr.name.local == name)
+    }
 }
 
 /// Represents the different types of nodes in the DOM
@@ -120,6 +135,86 @@ impl Node {
         match &self.data {
             NodeData::Element(elem) => Some(elem),
             _ => None,
+        }
+    }
+
+    /// Get a simple ID for this node (for layout engine integration)
+    pub fn id(&self) -> u32 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        std::ptr::addr_of!(*self).hash(&mut hasher);
+        hasher.finish() as u32
+    }
+
+    /// Get the tag name if this is an element node
+    pub fn tag_name(&self) -> Option<&str> {
+        match &self.data {
+            NodeData::Element(elem) => Some(&elem.name.local),
+            _ => None,
+        }
+    }
+
+    /// Get CSS classes from class attribute if this is an element
+    pub fn classes(&self) -> Option<Vec<String>> {
+        match &self.data {
+            NodeData::Element(elem) => {
+                for attr in &elem.attributes {
+                    if &*attr.name.local == "class" {
+                        return Some(
+                            attr.value
+                                .split_whitespace()
+                                .map(|s| s.to_string())
+                                .collect()
+                        );
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Get element ID from id attribute if this is an element
+    pub fn element_id(&self) -> Option<String> {
+        match &self.data {
+            NodeData::Element(elem) => {
+                for attr in &elem.attributes {
+                    if &*attr.name.local == "id" {
+                        return Some(attr.value.clone());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Get child nodes (direct references for layout engine)
+    pub fn children(&self) -> &Vec<Arc<RwLock<Node>>> {
+        &self.children
+    }
+
+    /// Add a child node
+    pub fn add_child(&mut self, child: Arc<RwLock<Node>>) {
+        self.children.push(child);
+    }
+
+    /// Get text content of this node
+    pub fn text_content(&self) -> String {
+        match &self.data {
+            NodeData::Text(text) => text.clone(),
+            NodeData::Element(_) => {
+                let mut content = String::new();
+                for child in &self.children {
+                    if let Ok(child_guard) = child.read() {
+                        content.push_str(&child_guard.text_content());
+                    }
+                }
+                content
+            }
+            _ => String::new(),
         }
     }
 }

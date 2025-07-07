@@ -1,7 +1,5 @@
-[build]
-# Exclude fuzz directory on non-Linux platforms
-exclude = ["fuzz"]
+# Cargo configuration for Citadel Browser - macOS Apple Silicon focused
 
-[target.'cfg(target_os = "linux")'.build]
-# Include all directories on Linux
-exclude = [] 
+[target.aarch64-apple-darwin]
+# Apple Silicon optimizations  
+rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"] 

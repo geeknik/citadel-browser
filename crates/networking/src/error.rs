@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum NetworkError {
     /// DNS resolution errors
     #[error("DNS resolution error: {0}")]
-    DnsError(#[from] trust_dns_resolver::error::ResolveError),
+    DnsError(String),
 
     /// HTTP request errors
     #[error("HTTP request error: {0}")]

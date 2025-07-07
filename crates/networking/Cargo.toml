@@ -13,7 +13,7 @@ hyper = { version = "0.14", features = ["full"] }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 hyper-rustls = { workspace = true }
-trust-dns-resolver = { workspace = true }
+hickory-resolver = { workspace = true }
 reqwest = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }

@@ -12,6 +12,7 @@ pub mod ui;
 pub mod engine;
 pub mod resource_loader;
 pub mod tabs;
+pub mod renderer;
 
 // Re-export the main application
 pub use app::CitadelBrowser;
@@ -20,3 +21,4 @@ pub use app::CitadelBrowser;
 pub use engine::BrowserEngine;
 pub use resource_loader::ResourceLoader;
 pub use ui::{CitadelUI, UIMessage};
+pub use renderer::CitadelRenderer;

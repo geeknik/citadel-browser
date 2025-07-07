@@ -4,7 +4,7 @@ use url::Url;
 
 use citadel_networking::{NetworkConfig, Request, Method, CitadelDnsResolver};
 use citadel_security::SecurityContext;
-use citadel_parser::{parse_html, security::SecurityContext as ParserSecurityContext};
+use citadel_parser::{parse_html, parse_css, security::SecurityContext as ParserSecurityContext, Dom, CitadelStylesheet};
 
 // Import structured types from app.rs
 use crate::app::{ParsedPageData, LoadingError, ErrorType};
@@ -52,7 +52,47 @@ impl BrowserEngine {
     pub async fn load_page_with_progress(&self, url: Url, tab_id: uuid::Uuid) -> Result<ParsedPageData, LoadingError> {
         let start_time = std::time::Instant::now();
         log::info!("🌐 Loading page with progress tracking: {} (tab: {})", url, tab_id);
-        
+
+        if url.scheme() == "file" {
+            let path = url.to_file_path().map_err(|_| LoadingError {
+                error_type: ErrorType::Content,
+                message: "Invalid file path".to_string(),
+                url: url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: false,
+            })?;
+
+            let content = std::fs::read_to_string(path).map_err(|e| LoadingError {
+                error_type: ErrorType::Network, // Or a new file-specific error type
+                message: format!("Failed to read file: {}", e),
+                url: url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: true,
+            })?;
+
+            let (title, content, element_count, security_warnings, dom, stylesheet) = self.parse_html_content_enhanced(&content, url.as_str()).await.map_err(|e| LoadingError {
+                error_type: ErrorType::Content,
+                message: e,
+                url: url.to_string(),
+                timestamp: std::time::SystemTime::now(),
+                retry_possible: true,
+            })?;
+
+            let load_time_ms = start_time.elapsed().as_millis() as u64;
+
+            return Ok(ParsedPageData {
+                title,
+                content: content.clone(),
+                element_count,
+                size_bytes: content.len(),
+                url: url.to_string(),
+                load_time_ms,
+                security_warnings,
+                dom: Some(dom),
+                stylesheet: Some(stylesheet),
+            });
+        }
+
         // Validate URL scheme
         if url.scheme() != "https" && url.scheme() != "http" {
             return Err(LoadingError {
@@ -120,7 +160,7 @@ impl BrowserEngine {
         })?;
         
         // Parse and sanitize the HTML content
-        let (title, content, element_count, security_warnings) = self.parse_html_content_enhanced(&response, final_url.as_str()).await.map_err(|e| LoadingError {
+        let (title, content, element_count, security_warnings, dom, stylesheet) = self.parse_html_content_enhanced(&response, final_url.as_str()).await.map_err(|e| LoadingError {
             error_type: ErrorType::Content,
             message: e,
             url: final_url.to_string(),
@@ -141,6 +181,8 @@ impl BrowserEngine {
             url: final_url.to_string(),
             load_time_ms,
             security_warnings,
+            dom: Some(dom),
+            stylesheet: Some(stylesheet),
         })
     }
     
@@ -246,7 +288,7 @@ impl BrowserEngine {
     }
     
     /// Parse HTML content with enhanced security and privacy protections
-    async fn parse_html_content_enhanced(&self, html: &str, url: &str) -> Result<(String, String, usize, Vec<String>), String> {
+    async fn parse_html_content_enhanced(&self, html: &str, url: &str) -> Result<(String, String, usize, Vec<String>, Arc<Dom>, Arc<CitadelStylesheet>), String> {
         log::info!("🔧 Parsing HTML content for {}: {} bytes", url, html.len());
         
         let mut security_warnings = Vec::new();
@@ -265,29 +307,65 @@ impl BrowserEngine {
         // Parse HTML using citadel-parser
         // Convert security context from citadel-security to citadel-parser format
         let parser_security_context = Arc::new(ParserSecurityContext::new(15)); // 15 max nesting depth
-        let _dom = parse_html(html, parser_security_context)
-            .map_err(|e| format!("HTML parsing failed: {}", e))?;
         
-        // Extract page title
-        let title = self.extract_title(html).unwrap_or_else(|| {
+        log::info!("🔍 Starting HTML parsing for {} ({} bytes)", url, html.len());
+        let dom = parse_html(html, parser_security_context)
+            .map_err(|e| format!("HTML parsing failed: {}", e))?;
+        log::info!("✅ DOM parsing completed successfully");
+        
+        // Extract page title from DOM
+        let title = dom.get_title();
+        log::info!("📄 Extracted title: '{}'", title);
+        let title = if title.is_empty() {
             // Try to extract from URL as fallback
             if let Ok(parsed_url) = Url::parse(url) {
                 parsed_url.host_str().unwrap_or("Unknown").to_string()
             } else {
                 "Unknown Page".to_string()
             }
-        });
+        } else {
+            title
+        };
         
-        // Extract main text content for display (enhanced)
-        let content = self.extract_content_enhanced(html);
+        // Extract main text content for display from DOM
+        let content = dom.get_text_content();
+        log::info!("📝 Extracted content: {} characters", content.len());
+        
+        // Log a preview of the content for debugging (first 200 chars)
+        if content.len() > 0 {
+            let preview = if content.len() > 200 {
+                format!("{}...", &content[..200])
+            } else {
+                content.clone()
+            };
+            log::info!("📖 Content preview: {}", preview);
+        } else {
+            log::warn!("⚠️  No content extracted from DOM!");
+        }
         
         // Count elements (more sophisticated)
         let element_count = self.count_elements(html);
         
+        // Create a basic stylesheet for now
+        // TODO: Extract CSS from <style> tags and <link> elements
+        let parser_security_context_css = Arc::new(ParserSecurityContext::new(15));
+        let basic_css = r#"
+            body { font-family: sans-serif; margin: 16px; }
+            h1 { font-size: 24px; margin: 16px 0; }
+            h2 { font-size: 22px; margin: 14px 0; }
+            h3 { font-size: 20px; margin: 12px 0; }
+            p { margin: 8px 0; }
+            a { color: #0066cc; }
+            ul, ol { margin: 8px 0; padding-left: 20px; }
+        "#;
+        
+        let stylesheet = parse_css(basic_css, parser_security_context_css)
+            .map_err(|e| format!("CSS parsing failed: {}", e))?;
+        
         log::info!("✅ Successfully parsed page: {} elements, {} bytes, {} warnings", 
                    element_count, html.len(), security_warnings.len());
         
-        Ok((title, content, element_count, security_warnings))
+        Ok((title, content, element_count, security_warnings, Arc::new(dom), Arc::new(stylesheet)))
     }
     
     /// Parse HTML content with security and privacy protections (legacy method)
@@ -297,14 +375,15 @@ impl BrowserEngine {
         // Parse HTML using citadel-parser
         // Convert security context from citadel-security to citadel-parser format
         let parser_security_context = Arc::new(ParserSecurityContext::new(15)); // 15 max nesting depth
-        let _dom = parse_html(html, parser_security_context)
+        let dom = parse_html(html, parser_security_context)
             .map_err(|e| format!("HTML parsing failed: {}", e))?;
         
-        // Extract page title
-        let title = self.extract_title(html).unwrap_or_else(|| url.to_string());
+        // Extract page title from DOM
+        let title = dom.get_title();
+        let title = if title.is_empty() { url.to_string() } else { title };
         
-        // Extract main text content for display
-        let content = self.extract_content(html);
+        // Extract main text content for display from DOM
+        let content = dom.get_text_content();
         
         // Count elements (simplified)
         let element_count = html.matches('<').count();

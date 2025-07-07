@@ -30,7 +30,7 @@ tokio               = { version = "1.36.0", features = ["full"] }
 rustls              = "0.21.10"
 rustls-native-certs = "0.6.3"
 hyper-rustls        = { version = "0.24.2", features = ["http2"] }
-trust-dns-resolver  = "0.23.2"
+hickory-resolver    = "0.26.0-alpha.1"  # Migration from trust-dns for security
 reqwest             = { version = "0.11.24", features = ["json"] }
 futures             = "0.3.30"
 thiserror           = "1.0.56"
@@ -38,7 +38,8 @@ log                 = "0.4.20"
 rand                = "0.8.5"
 serde               = { version = "1.0.197", features = ["derive"] }
 serde_json          = "1.0.114"
-url                 = "2.5.0"
+url                 = "2.5.4"
+idna                = "1.0.3"  # Security fix for CVE affecting < 1.0.0
 
 # macOS specific dependencies
 core-foundation     = "0.9.4"
@@ -60,6 +61,9 @@ codegen-units = 1
 opt-level = 3
 strip = true
 panic = "abort"
+
+
+
 
 
 

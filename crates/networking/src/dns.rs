@@ -3,15 +3,15 @@ use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use trust_dns_resolver::{
-    config::{ResolverConfig, ResolverOpts},
-    TokioAsyncResolver,
+use hickory_resolver::{
+    config::{ResolverConfig, ResolverOpts, ResolveHosts},
+    TokioResolver,
 };
 
 use crate::error::NetworkError;
 
 /// DNS resolution modes available in Citadel
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DnsMode {
     /// Local cache with system resolver as fallback (DEFAULT)
     /// This is the privacy-preserving default that doesn't rely on third-party services
@@ -24,7 +24,7 @@ pub enum DnsMode {
     DoT(String), // Address of DoT provider
     
     /// Custom resolver configuration (advanced users only)
-    Custom(ResolverConfig),
+    Custom,
 }
 
 /// A DNS resolution entry with time-based expiration
@@ -45,7 +45,7 @@ pub struct CitadelDnsResolver {
     mode: DnsMode,
     
     /// Underlying async resolver
-    resolver: TokioAsyncResolver,
+    resolver: TokioResolver,
     
     /// Default TTL for cached entries
     default_ttl: Duration,
@@ -103,21 +103,23 @@ impl CitadelDnsResolver {
                 log::warn!("DoT not yet implemented, falling back to system resolver");
                 (ResolverConfig::default(), opts)
             },
-            DnsMode::Custom(custom_config) => {
-                // Use the custom config with default options
+            DnsMode::Custom => {
+                // Use the default config with default options for custom mode
                 let mut opts = ResolverOpts::default();
                 // Still ensure minimum privacy
                 opts.positive_min_ttl = Some(Duration::from_secs(60)); // 1 minute minimum
-                (custom_config.clone(), opts)
+                (ResolverConfig::default(), opts)
             },
         };
         
         // Common privacy-enhancing settings for all modes
         opts.preserve_intermediates = false; // Don't keep intermediate records
-        opts.use_hosts_file = true;         // Use hosts file to reduce network queries
+        opts.use_hosts_file = ResolveHosts::Always;         // Use hosts file to reduce network queries
         
         // Create the resolver - this returns the resolver directly, no need to await
-        let resolver = TokioAsyncResolver::tokio(config, opts);
+        let resolver = TokioResolver::builder_tokio()
+            .map_err(|e| NetworkError::DnsError(format!("Failed to create resolver builder: {}", e)))?
+            .build();
         
         Ok(Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
@@ -137,7 +139,7 @@ impl CitadelDnsResolver {
         // If not in cache, perform resolution
         let response = self.resolver.lookup_ip(hostname)
             .await
-            .map_err(NetworkError::DnsError)?;
+            .map_err(|e| NetworkError::DnsError(format!("DNS lookup failed: {}", e)))?;
         
         let addresses: Vec<IpAddr> = response.iter().collect();
         
@@ -195,19 +197,21 @@ impl CitadelDnsResolver {
                 log::warn!("DoT not yet implemented, falling back to system resolver");
                 (ResolverConfig::default(), opts)
             },
-            DnsMode::Custom(custom_config) => {
+            DnsMode::Custom => {
                 let mut opts = ResolverOpts::default();
                 opts.positive_min_ttl = Some(Duration::from_secs(60));
-                (custom_config.clone(), opts)
+                (ResolverConfig::default(), opts)
             },
         };
         
         // Common privacy settings
         opts.preserve_intermediates = false;
-        opts.use_hosts_file = true;
+        opts.use_hosts_file = ResolveHosts::Always;
         
-        // Create the resolver directly, no need to await
-        self.resolver = TokioAsyncResolver::tokio(config, opts);
+        // Create the resolver 
+        self.resolver = TokioResolver::builder_tokio()
+            .map_err(|e| NetworkError::DnsError(format!("Failed to create resolver builder: {}", e)))?
+            .build();
         self.mode = mode;
         
         // Clear cache on mode change for privacy reasons

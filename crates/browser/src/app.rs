@@ -11,6 +11,7 @@ use url::Url;
 
 use crate::ui::{CitadelUI, UIMessage};
 use crate::engine::BrowserEngine;
+use crate::renderer::CitadelRenderer;
 use citadel_tabs::{SendSafeTabManager as TabManager, TabType, PageContent};
 use citadel_networking::{NetworkConfig, PrivacyLevel};
 use citadel_security::SecurityContext;
@@ -23,6 +24,8 @@ pub struct CitadelBrowser {
     engine: Option<BrowserEngine>,
     /// UI state and components
     ui: CitadelUI,
+    /// HTML/CSS renderer
+    renderer: CitadelRenderer,
     /// Tab management with ZKVM isolation
     tab_manager: Arc<TabManager>,
     /// Network configuration for privacy
@@ -120,6 +123,8 @@ pub struct ParsedPageData {
     pub url: String,
     pub load_time_ms: u64,
     pub security_warnings: Vec<String>,
+    pub dom: Option<std::sync::Arc<citadel_parser::Dom>>,
+    pub stylesheet: Option<std::sync::Arc<citadel_parser::CitadelStylesheet>>,
 }
 
 impl Application for CitadelBrowser {
@@ -149,10 +154,14 @@ impl Application for CitadelBrowser {
         // Initialize UI with enhanced features
         let ui = CitadelUI::new();
         
+        // Initialize HTML/CSS renderer
+        let renderer = CitadelRenderer::new();
+        
         let browser = Self {
             runtime: runtime.clone(),
             engine: None,
             ui,
+            renderer,
             tab_manager,
             network_config: network_config.clone(),
             security_context: security_context.clone(),
@@ -338,6 +347,13 @@ impl Application for CitadelBrowser {
                         
                         // Clear any error state
                         self.error_states.remove(&tab_id);
+                        
+                        // Update renderer with DOM and stylesheet if available
+                        if let (Some(dom), Some(stylesheet)) = (&page_data.dom, &page_data.stylesheet) {
+                            if let Err(e) = self.renderer.update_content(dom.clone(), stylesheet.clone()) {
+                                log::warn!("Failed to update renderer: {}", e);
+                            }
+                        }
                         
                                                  // Update tab with loaded content
                          let tab_manager = self.tab_manager.clone();
@@ -526,7 +542,7 @@ impl Application for CitadelBrowser {
     }
 
     fn view(&self) -> Element<Message> {
-        self.ui.view(&self.tab_manager, &self.network_config)
+        self.ui.view(&self.tab_manager, &self.network_config, &self.renderer)
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -543,24 +559,30 @@ impl CitadelBrowser {
     /// Normalize and validate URLs with security considerations
     fn normalize_url(&self, url_str: &str) -> String {
         let trimmed = url_str.trim();
-        
-        // Handle common URL patterns
+
         if trimmed.is_empty() {
             return "about:blank".to_string();
         }
+
+        // If it's already a full URL, let it be.
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") || trimmed.starts_with("about:") || trimmed.starts_with("file://") {
+            return trimmed.to_string();
+        }
+
+        // Check if it's a local file path.
+        if let Ok(path) = std::fs::canonicalize(trimmed) {
+            if let Ok(url) = Url::from_file_path(path) {
+                return url.to_string();
+            }
+        }
         
-        // If it looks like a search query, don't try to navigate
-        if !trimmed.contains('.') && !trimmed.contains('/') && !trimmed.starts_with("http") {
-            // This could be enhanced to use a privacy-preserving search engine
+        // If not a file, treat as a search query or domain.
+        if !trimmed.contains('.') && !trimmed.contains('/') {
             return format!("https://duckduckgo.com/?q={}", urlencoding::encode(trimmed));
         }
-        
-        // Add https:// if no protocol specified
-        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") && !trimmed.starts_with("about:") {
-            format!("https://{}", trimmed)
-        } else {
-            trimmed.to_string()
-        }
+
+        // Default to https for things that look like domains.
+        format!("https://{}", trimmed)
     }
 }
 

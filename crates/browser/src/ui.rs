@@ -5,6 +5,7 @@ use iced::{
 };
 use citadel_tabs::{SendSafeTabManager as TabManager};
 use crate::app::Message;
+use crate::renderer::CitadelRenderer;
 use citadel_networking::{NetworkConfig, PrivacyLevel};
 
 /// Main UI state and components
@@ -69,14 +70,15 @@ impl CitadelUI {
     }
 
     /// Create the main UI view
-    pub fn view(
-        &self,
+    pub fn view<'a>(
+        &'a self,
         tab_manager: &Arc<TabManager>,
         network_config: &NetworkConfig,
-    ) -> Element<Message> {
+        renderer: &'a CitadelRenderer,
+    ) -> Element<'a, Message> {
         let content = Column::new()
             .push(self.create_toolbar(tab_manager, network_config))
-            .push(self.create_content_area(tab_manager))
+            .push(self.create_content_area(tab_manager, renderer))
             .spacing(0);
         
         container(content)
@@ -143,9 +145,9 @@ impl CitadelUI {
     }
     
     /// Create the main content area
-    fn create_content_area(&self, tab_manager: &Arc<TabManager>) -> Element<Message> {
+    fn create_content_area<'a>(&'a self, tab_manager: &Arc<TabManager>, renderer: &'a CitadelRenderer) -> Element<'a, Message> {
         let tabs_bar = self.create_tabs_bar(tab_manager);
-        let page_content = self.create_page_content(tab_manager);
+        let page_content = self.create_page_content(tab_manager, renderer);
         
         Column::new()
             .push(tabs_bar)
@@ -194,7 +196,7 @@ impl CitadelUI {
     }
     
     /// Create the page content area
-    fn create_page_content(&self, tab_manager: &Arc<TabManager>) -> Element<Message> {
+    fn create_page_content<'a>(&'a self, tab_manager: &Arc<TabManager>, renderer: &'a CitadelRenderer) -> Element<'a, Message> {
         let tab_states = tab_manager.get_tab_states();
         
         if let Some(active_tab) = tab_states.iter().find(|tab| tab.is_active) {
@@ -229,13 +231,13 @@ impl CitadelUI {
                 citadel_tabs::PageContent::Loaded { 
                     url, 
                     title, 
-                    content, 
+                    content: _, 
                     element_count, 
                     size_bytes 
                 } => {
                     let header = Column::new()
                         .push(Space::with_height(10))
-                        .push(text("🌐 Page Loaded Successfully")
+                        .push(text("🌐 Page Rendered Successfully")
                             .size(20)
                             .style(Color::from_rgb(0.0, 0.8, 0.0)))
                         .push(Space::with_height(5))
@@ -251,44 +253,18 @@ impl CitadelUI {
                             .size(12)
                             .style(Color::from_rgb(0.5, 0.5, 0.5)))
                         .push(Space::with_height(10))
-                        .push(text("🛡️ ZKVM Isolation Active - Content Sanitized")
+                        .push(text("🛡️ ZKVM Isolation Active - Content Rendered")
                             .size(14)
                             .style(Color::from_rgb(0.0, 0.6, 0.8)))
                         .push(Space::with_height(15))
                         .align_items(Alignment::Center);
                     
-                    let content_area = if content.trim().is_empty() {
-                        Column::new()
-                            .push(text("No readable content found")
-                                .size(14)
-                                .style(Color::from_rgb(0.6, 0.6, 0.6)))
-                            .push(Space::with_height(10))
-                            .push(text("The page may contain only scripts, styles, or other non-text content")
-                                .size(12)
-                                .style(Color::from_rgb(0.5, 0.5, 0.5)))
-                            .align_items(Alignment::Center)
-                    } else {
-                        Column::new()
-                            .push(text("📄 Page Content:")
-                                .size(16)
-                                .style(Color::from_rgb(0.7, 0.7, 0.7)))
-                            .push(Space::with_height(10))
-                            .push(container(
-                                scrollable(
-                                    text(content)
-                                        .size(14)
-                                        .style(Color::from_rgb(0.9, 0.9, 0.9))
-                                )
-                                .direction(scrollable::Direction::Vertical(
-                                    scrollable::Properties::default()
-                                ))
-                            ).padding(10))
-                            .spacing(5)
-                    };
+                    // Use the renderer for actual HTML/CSS rendering
+                    let rendered_content = renderer.render();
                     
                     let full_content = Column::new()
                         .push(header)
-                        .push(content_area)
+                        .push(rendered_content)
                         .spacing(0);
                     
                     container(full_content)

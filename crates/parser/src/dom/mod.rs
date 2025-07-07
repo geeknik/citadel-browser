@@ -130,7 +130,32 @@ impl Dom {
 
     /// Get the text content of the entire document
     pub fn get_text_content(&self) -> String {
-        self.extract_text_recursive(&self.document_node_handle)
+        let raw_content = self.extract_text_recursive(&self.document_node_handle);
+        
+        // Debug logging
+        if raw_content.is_empty() {
+            tracing::warn!("🔍 DOM text extraction: Raw content is empty");
+        } else {
+            tracing::debug!("🔍 DOM text extraction: Raw content {} chars", raw_content.len());
+        }
+        
+        // Clean up the extracted content
+        // Replace multiple spaces with single spaces
+        let cleaned = raw_content
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ");
+            
+        // Replace multiple newlines with double newlines for paragraph spacing
+        let final_content = cleaned
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<&str>>()
+            .join("\n\n");
+            
+        tracing::debug!("🔍 DOM text extraction: Final content {} chars", final_content.len());
+        final_content
     }
 
     /// Recursively extract title from DOM tree
@@ -166,16 +191,33 @@ impl Dom {
         if let Ok(node) = node_handle.read() {
             match &node.data {
                 crate::dom::node::NodeData::Text(text) => {
-                    text_content.push_str(text);
-                    // Don't add extra spaces - let natural HTML spacing handle this
+                    // Add the text content, trimming excessive whitespace
+                    let trimmed_text = text.trim();
+                    if !trimmed_text.is_empty() {
+                        text_content.push_str(trimmed_text);
+                        text_content.push(' '); // Add space after text nodes
+                    }
                 }
                 crate::dom::node::NodeData::Element(element) => {
                     // Skip script and style elements
                     let tag_name = element.local_name();
                     if tag_name != "script" && tag_name != "style" {
+                        // Check if this is a block element that should have spacing
+                        let is_block_element = matches!(tag_name, 
+                            "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | 
+                            "section" | "article" | "header" | "footer" | "main" | 
+                            "aside" | "nav" | "blockquote" | "pre" | "address" |
+                            "li" | "dt" | "dd" | "td" | "th" | "tr"
+                        );
+                        
                         // Add text content from children
                         for child in &node.children {
                             text_content.push_str(&self.extract_text_recursive(child));
+                        }
+                        
+                        // Add spacing after block elements
+                        if is_block_element && !text_content.is_empty() && !text_content.ends_with('\n') {
+                            text_content.push('\n');
                         }
                     }
                 }

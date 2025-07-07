@@ -17,14 +17,20 @@ pub mod security;
 pub mod metrics;
 pub mod config;
 pub mod js;
+pub mod layout_simple;
+pub mod layout;
+// Use the full Taffy layout engine for proper CSS layout support
+pub use layout::{CitadelLayoutEngine, LayoutResult, LayoutMetrics, LayoutRect, LayoutSize};
 
 use error::ParserResult;
 
 /// Re-export common types
 pub use error::ParserError;
 pub use dom::node::{Node, NodeData};
+pub use dom::Dom;
 pub use html::parse_html;
-pub use css::CitadelCssParser as CssParser;
+pub use css::{CitadelCssParser as CssParser, CitadelStylesheet, ComputedStyle, StyleRule, Declaration};
+// Re-export layout types from the full Taffy engine
 pub use metrics::{ParserMetrics, DocumentMetrics, ParseTimer};
 pub use config::ParserConfig;
 
@@ -174,18 +180,27 @@ impl std::fmt::Display for Stylesheet {
 
 // parse_html is already re-exported at line 24
 
-/// Parse CSS content into a stylesheet
-pub fn parse_css(content: &str, _security_context: std::sync::Arc<security::SecurityContext>) -> ParserResult<Stylesheet> {
-    // TODO: Implement proper CSS parsing
-    // For now, create a basic stylesheet for testing
-    let mut stylesheet = Stylesheet::new();
+/// Parse CSS content into a Citadel stylesheet with Servo integration
+pub fn parse_css(content: &str, security_context: std::sync::Arc<security::SecurityContext>) -> ParserResult<CitadelStylesheet> {
+    let config = ParserConfig::default();
+    let metrics = Arc::new(ParserMetrics::default());
+    let parser = css::CitadelCssParser::new(config, metrics);
     
-    // Basic rule detection (very simplified)
-    if content.contains("{") && content.contains("}") {
-        stylesheet.rules.push("body { color: red; }".to_string());
-    }
+    parser.parse_stylesheet(content)
+}
+
+/// Compute layout for a DOM tree with styles using Taffy
+pub fn compute_layout(
+    dom: &Dom,
+    stylesheet: &CitadelStylesheet,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> ParserResult<LayoutResult> {
+    let security_context = Arc::new(security::SecurityContext::new(10));
+    let mut layout_engine = layout::CitadelLayoutEngine::new(security_context);
     
-    Ok(stylesheet)
+    let viewport_size = layout::LayoutSize::new(viewport_width, viewport_height);
+    layout_engine.compute_layout(dom, stylesheet, viewport_size)
 }
 
 /// Create a JavaScript engine for testing or browser integration
