@@ -383,6 +383,39 @@ impl TabManager {
         // Return empty for now - the actual implementation requires async context
         Vec::new()
     }
+    
+    /// Get the number of open tabs
+    pub fn tab_count(&self) -> usize {
+        if let Ok(tabs) = self.tabs.read() {
+            tabs.len()
+        } else {
+            0
+        }
+    }
+    
+    /// Get the currently active tab ID
+    pub fn get_active_tab_id(&self) -> Option<Uuid> {
+        if let Ok(active_tab) = self.active_tab.read() {
+            *active_tab
+        } else {
+            None
+        }
+    }
+    
+    /// Set the active tab
+    pub fn set_active_tab(&self, tab_id: Option<Uuid>) -> bool {
+        if let Ok(mut active_tab) = self.active_tab.write() {
+            *active_tab = tab_id;
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Check if there are any tabs open
+    pub fn has_tabs(&self) -> bool {
+        self.tab_count() > 0
+    }
 }
 
 // NOTE: The full TabManager implementation is disabled to avoid Send safety issues.

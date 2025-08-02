@@ -411,6 +411,13 @@ impl CitadelCssParser {
     pub fn parse_stylesheet(&self, content: &str) -> ParserResult<CitadelStylesheet> {
         self.metrics.increment_elements(); // Track parsing attempt
         
+        // Apply resource limits from config
+        if content.len() > self.config.max_css_size {
+            return Err(ParserError::SecurityViolation(
+                format!("CSS content too large: {} > {}", content.len(), self.config.max_css_size)
+            ));
+        }
+        
         // Security pre-scan
         if self.contains_dangerous_css(content)? {
             self.metrics.increment_violations();
@@ -419,8 +426,30 @@ impl CitadelCssParser {
             ));
         }
 
-        // Use a simpler parsing approach for now
-        let rules = self.parse_css_simple(content)?;
+        // Use cssparser for more robust parsing
+        let mut input = cssparser::ParserInput::new(content);
+        let mut parser = CssParserImpl::new(&mut input);
+        
+        let mut rules = Vec::new();
+        
+        while !parser.is_exhausted() {
+            // Skip whitespace and comments
+            parser.skip_whitespace();
+            
+            if parser.is_exhausted() {
+                break;
+            }
+            
+            match self.parse_rule(&mut parser) {
+                Ok(rule) => {
+                    rules.push(rule);
+                }
+                Err(_e) => {
+                    // Try to skip to next rule on error
+                    self.skip_to_next_rule(&mut parser);
+                }
+            }
+        }
 
         Ok(CitadelStylesheet {
             rules,

@@ -810,32 +810,51 @@ impl BrowserEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::runtime::Runtime;
 
-    #[tokio::test]
-    async fn test_engine_creation() {
-        let runtime = Arc::new(Runtime::new().unwrap());
-        let network_config = NetworkConfig::default();
-        let security_context = Arc::new(SecurityContext::new(10));
+    #[test]
+    fn test_engine_creation() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
         
-        let engine = BrowserEngine::new(runtime, network_config, security_context).await;
-        assert!(engine.is_ok());
+        let result = rt.block_on(async {
+            // Create a separate runtime for the BrowserEngine to own
+            let engine_rt = tokio::runtime::Runtime::new().unwrap();
+            let runtime = Arc::new(engine_rt);
+            let network_config = NetworkConfig::default();
+            let security_context = Arc::new(SecurityContext::new(10));
+            
+            BrowserEngine::new(runtime, network_config, security_context).await
+        });
+        
+        assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn test_url_validation() {
-        let runtime = Arc::new(Runtime::new().unwrap());
-        let network_config = NetworkConfig::default();
-        let security_context = Arc::new(SecurityContext::new(10));
+    #[test]
+    fn test_url_validation() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
         
-        let engine = BrowserEngine::new(runtime, network_config, security_context).await.unwrap();
+        let result = rt.block_on(async {
+            // Create a separate runtime for the BrowserEngine to own
+            let engine_rt = tokio::runtime::Runtime::new().unwrap();
+            let runtime = Arc::new(engine_rt);
+            let network_config = NetworkConfig::default();
+            let security_context = Arc::new(SecurityContext::new(10));
+            
+            let engine = BrowserEngine::new(runtime, network_config, security_context).await?;
+            
+            // Test invalid URL scheme
+            let invalid_url = Url::parse("ftp://example.com").unwrap();
+            let load_result = engine.load_page_with_progress(invalid_url, uuid::Uuid::new_v4()).await;
+            
+            // Return both engine and load_result so we can drop engine outside the async context
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((engine, load_result))
+        });
         
-        // Test invalid URL scheme
-        let invalid_url = Url::parse("ftp://example.com").unwrap();
-        let result = engine.load_page_with_progress(invalid_url, uuid::Uuid::new_v4()).await;
-        assert!(result.is_err());
+        let (engine, load_result) = result.unwrap();
+        drop(engine); // Explicitly drop the engine (and its runtime) outside the async context
         
-        if let Err(error) = result {
+        assert!(load_result.is_err());
+        
+        if let Err(error) = load_result {
             assert_eq!(error.error_type, ErrorType::Security);
             assert!(error.message.contains("Unsupported URL scheme"));
         }

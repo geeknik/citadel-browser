@@ -361,10 +361,7 @@ impl CitadelLayoutEngine {
         self.clear_layout();
         
         // Build Taffy tree from DOM with viewport culling
-        let root = dom.root();
-        if let Ok(root_guard) = root.read() {
-            self.build_node_recursive(&*root_guard, dom, stylesheet)?;
-        }
+        self.build_taffy_tree(dom, stylesheet)?;
         
         // Update viewport context
         self.viewport_context.width = viewport_size.width;
@@ -443,6 +440,10 @@ impl CitadelLayoutEngine {
     
     /// Build Taffy layout tree from DOM
     fn build_taffy_tree(&mut self, dom: &Dom, stylesheet: &CitadelStylesheet) -> ParserResult<()> {
+        // Check security limits before building
+        let node_count = self.count_dom_nodes(dom);
+        self.check_security_limits(node_count)?;
+        
         let root = dom.root();
         if let Ok(root_guard) = root.read() {
             self.build_node_recursive(&*root_guard, dom, stylesheet)?;
@@ -472,6 +473,29 @@ impl CitadelLayoutEngine {
             
             self.register_node_mapping(dom_node.id(), taffy_node);
             return Ok(taffy_node);
+        }
+        
+        // Viewport culling optimization
+        if self.viewport_culling_enabled {
+            if let Some(estimated_bounds) = self.estimate_node_bounds(dom_node, stylesheet) {
+                let viewport_size = LayoutSize {
+                    width: self.viewport_context.width,
+                    height: self.viewport_context.height,
+                };
+                
+                if !self.intersects_viewport(&estimated_bounds, &viewport_size) {
+                    // Create a minimal node for out-of-viewport elements
+                    let taffy_node = self.taffy
+                        .new_leaf(Style {
+                            display: taffy::Display::None,
+                            ..Style::default()
+                        })
+                        .map_err(|e| ParserError::LayoutError(format!("Failed to create culled node: {:?}", e)))?;
+                    
+                    self.register_node_mapping(dom_node.id(), taffy_node);
+                    return Ok(taffy_node);
+                }
+            }
         }
         
         // Create Taffy style from computed style
@@ -1257,6 +1281,28 @@ impl CitadelLayoutEngine {
         Ok(())
     }
     
+    /// Count DOM nodes for security validation
+    fn count_dom_nodes(&self, dom: &Dom) -> usize {
+        let mut count = 0;
+        let root = dom.root();
+        if let Ok(root_guard) = root.read() {
+            self.count_node_recursive(&*root_guard, &mut count);
+        }
+        count
+    }
+    
+    /// Recursively count DOM nodes
+    fn count_node_recursive(&self, node: &Node, count: &mut usize) {
+        *count += 1;
+        if let Ok(children) = node.children() {
+            for child in children.iter() {
+                if let Ok(child_guard) = child.read() {
+                    self.count_node_recursive(&*child_guard, count);
+                }
+            }
+        }
+    }
+    
     // ==================== PERFORMANCE OPTIMIZATION METHODS ====================
     
     /// Generate cache key for layout result
@@ -1730,6 +1776,8 @@ mod tests {
             width: 1000.0,
             height: 800.0,
             root_font_size: 16.0,
+            zoom_factor: 1.0,
+            device_pixel_ratio: 1.0,
         };
         let layout_engine = CitadelLayoutEngine::with_context(
             security_context,

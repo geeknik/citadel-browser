@@ -14,8 +14,6 @@ pub use metrics::DomMetrics;
 pub use node::{Attribute, Element, Node, NodeBuilder, NodeHandle, NodeData};
 
 use std::sync::Arc;
-use crate::security::SecurityContext;
-use tracing::{info, debug, warn};
 use html5ever::namespace_url;
 
 /// Represents the top-level DOM structure for a parsed document.

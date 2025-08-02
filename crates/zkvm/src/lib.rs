@@ -97,6 +97,21 @@ impl MemoryPage {
         self.data = plaintext;
         Ok(())
     }
+    
+    /// Check if the page allows read access
+    fn can_read(&self) -> bool {
+        self.permissions.read
+    }
+    
+    /// Check if the page allows write access
+    fn can_write(&self) -> bool {
+        self.permissions.write
+    }
+    
+    /// Check if the page allows execute access
+    fn can_execute(&self) -> bool {
+        self.permissions.execute
+    }
 }
 
 /// Core ZKVM implementation
@@ -223,6 +238,22 @@ impl ZkVm {
     /// Get the VM's unique identifier
     pub fn id(&self) -> Arc<[u8; 32]> {
         self.id.clone()
+    }
+    
+    /// Execute bytecode using the internal executor
+    pub async fn execute_code(&self, bytecode: &[u8]) -> ZkVmResult<ExecutionResult> {
+        let state = self.state.read().await;
+        match *state {
+            ZkVmState::Running => {
+                drop(state); // Release read lock
+                
+                // Use the executor to run the code
+                self.executor.execute(bytecode).await
+            }
+            _ => Err(ZkVmError::InvalidOperation(
+                "VM must be running to execute code".into()
+            ))
+        }
     }
 }
 

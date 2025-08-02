@@ -6,7 +6,7 @@
 use rquickjs::{Context, Result as QjsResult};
 use crate::dom::Dom;
 use crate::error::ParserResult;
-use super::{CitadelJSEngine, security, dom_bindings};
+use super::{CitadelJSEngine, security};
 
 impl CitadelJSEngine {
     /// Execute JavaScript found in script tags during HTML parsing

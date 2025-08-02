@@ -55,6 +55,23 @@ impl BrowserCategory {
             BrowserCategory::Other => "other",
         }
     }
+    
+    /// Get a display name for this browser category
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            BrowserCategory::Chrome => "Google Chrome",
+            BrowserCategory::Firefox => "Mozilla Firefox", 
+            BrowserCategory::Safari => "Apple Safari",
+            BrowserCategory::Edge => "Microsoft Edge",
+            BrowserCategory::Opera => "Opera",
+            BrowserCategory::Other => "Unknown Browser",
+        }
+    }
+    
+    /// Check if this browser category matches a string identifier
+    pub fn matches_str(&self, identifier: &str) -> bool {
+        self.as_str() == identifier.to_lowercase()
+    }
 }
 
 /// Normalized navigator information
@@ -301,6 +318,25 @@ mod tests {
         // Edge
         let edge_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59";
         assert_eq!(BrowserCategory::from_user_agent(edge_ua), BrowserCategory::Edge);
+    }
+    
+    #[test]
+    fn test_browser_category_methods() {
+        let chrome = BrowserCategory::Chrome;
+        let firefox = BrowserCategory::Firefox;
+        
+        // Test as_str method
+        assert_eq!(chrome.as_str(), "chrome");
+        assert_eq!(firefox.as_str(), "firefox");
+        
+        // Test display_name method
+        assert_eq!(chrome.display_name(), "Google Chrome");
+        assert_eq!(firefox.display_name(), "Mozilla Firefox");
+        
+        // Test matches_str method
+        assert!(chrome.matches_str("chrome"));
+        assert!(chrome.matches_str("CHROME"));
+        assert!(!chrome.matches_str("firefox"));
     }
     
     #[test]

@@ -259,7 +259,40 @@ impl AdvancedResourceLoader {
             });
         }
         
+        // Update the priority queue with discovered resources
+        self.update_priority_queue(prioritized.clone()).await;
+        
         prioritized
+    }
+    
+    /// Update the internal priority queue with new resources
+    async fn update_priority_queue(&self, prioritized: HashMap<Priority, Vec<ResourceRef>>) {
+        if let Ok(mut queue) = self.priority_queue.lock().await {
+            for (priority, resources) in prioritized {
+                queue.entry(priority).or_insert_with(Vec::new).extend(resources);
+            }
+        }
+    }
+    
+    /// Get the next batch of resources to load from priority queue
+    async fn get_next_priority_batch(&self, priority: Priority) -> Vec<ResourceRef> {
+        if let Ok(mut queue) = self.priority_queue.lock().await {
+            if let Some(resources) = queue.get_mut(&priority) {
+                let batch_size = self.max_concurrent_per_priority;
+                resources.drain(..resources.len().min(batch_size)).collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    }
+    
+    /// Clear completed resources from priority queue
+    async fn clear_priority_queue(&self) {
+        if let Ok(mut queue) = self.priority_queue.lock().await {
+            queue.clear();
+        }
     }
 
     /// Calculate resource priority based on multiple factors

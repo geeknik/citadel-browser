@@ -253,6 +253,27 @@ struct PendingRequest {
     timestamp: Instant,
 }
 
+impl PendingRequest {
+    /// Create a new pending request
+    fn new(url: Url, priority: RequestPriority) -> Self {
+        Self {
+            url,
+            priority,
+            timestamp: Instant::now(),
+        }
+    }
+    
+    /// Get the age of this request in milliseconds
+    fn age_ms(&self) -> u64 {
+        self.timestamp.elapsed().as_millis() as u64
+    }
+    
+    /// Check if this request has been pending too long
+    fn is_stale(&self, timeout_ms: u64) -> bool {
+        self.age_ms() > timeout_ms
+    }
+}
+
 /// Request priority for batching and scheduling
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RequestPriority {

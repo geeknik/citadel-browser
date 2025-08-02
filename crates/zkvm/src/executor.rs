@@ -27,6 +27,59 @@ struct ExecutorState {
     registers: [u32; 16],
 }
 
+impl ExecutorState {
+    /// Create a new executor state
+    fn new() -> Self {
+        Self {
+            pc: 0,
+            sp: 0x7FFFFFFF, // Start at high memory for stack
+            bp: 0x7FFFFFFF,
+            flags: 0,
+            registers: [0; 16],
+        }
+    }
+    
+    /// Push value onto stack
+    fn push_stack(&mut self, _value: u32) {
+        self.sp -= 4; // Decrement stack pointer
+        // Stack grows downward
+    }
+    
+    /// Pop value from stack
+    fn pop_stack(&mut self) -> u32 {
+        let value = 0; // Would read from memory at sp
+        self.sp += 4; // Increment stack pointer
+        value
+    }
+    
+    /// Set status flags
+    fn set_flags(&mut self, zero: bool, negative: bool, carry: bool, overflow: bool) {
+        self.flags = 0;
+        if zero { self.flags |= 0x01; }
+        if negative { self.flags |= 0x02; }
+        if carry { self.flags |= 0x04; }
+        if overflow { self.flags |= 0x08; }
+    }
+    
+    /// Check if zero flag is set
+    fn is_zero(&self) -> bool {
+        (self.flags & 0x01) != 0
+    }
+    
+    /// Set up function call frame
+    fn setup_call_frame(&mut self, return_address: u64) {
+        self.push_stack(self.bp as u32); // Save old base pointer
+        self.bp = self.sp; // Set new base pointer
+        self.push_stack(return_address as u32); // Save return address
+    }
+    
+    /// Restore from function call
+    fn restore_call_frame(&mut self) {
+        self.sp = self.bp; // Restore stack pointer
+        self.bp = self.pop_stack() as u64; // Restore base pointer
+    }
+}
+
 /// Configuration flags for execution
 #[derive(Debug, Clone)]
 struct ExecutionFlags {
@@ -36,6 +89,35 @@ struct ExecutionFlags {
     memory_limit: usize,
     /// Maximum execution time in milliseconds
     time_limit: u64,
+}
+
+impl ExecutionFlags {
+    /// Create default execution flags
+    fn default() -> Self {
+        Self {
+            enable_jit: false,
+            memory_limit: 1024 * 1024 * 16, // 16MB default
+            time_limit: 5000, // 5 seconds default
+        }
+    }
+    
+    /// Create execution flags with JIT enabled
+    fn with_jit() -> Self {
+        Self {
+            enable_jit: true,
+            ..Self::default()
+        }
+    }
+    
+    /// Check if execution should timeout
+    fn should_timeout(&self, elapsed_ms: u64) -> bool {
+        elapsed_ms >= self.time_limit
+    }
+    
+    /// Check if JIT compilation is enabled
+    fn jit_enabled(&self) -> bool {
+        self.enable_jit
+    }
 }
 
 /// Represents a virtual address space
@@ -62,6 +144,26 @@ impl MemorySegment {
     /// Check if this segment is shared between processes
     fn is_shared(&self) -> bool {
         self.shared
+    }
+    
+    /// Create a new memory segment
+    fn new(base: u64, size: usize, permissions: PagePermissions, shared: bool) -> Self {
+        Self {
+            base,
+            size,
+            permissions,
+            shared,
+        }
+    }
+    
+    /// Create a shared memory segment
+    fn new_shared(base: u64, size: usize, permissions: PagePermissions) -> Self {
+        Self::new(base, size, permissions, true)
+    }
+    
+    /// Create a private memory segment
+    fn new_private(base: u64, size: usize, permissions: PagePermissions) -> Self {
+        Self::new(base, size, permissions, false)
     }
 }
 
@@ -361,6 +463,34 @@ struct DecodedInstruction {
     instruction_type: InstructionType,
     /// Raw instruction word
     raw: u32,
+}
+
+impl DecodedInstruction {
+    /// Get the opcode from raw instruction
+    fn opcode(&self) -> u8 {
+        ((self.raw >> 24) & 0xFF) as u8
+    }
+    
+    /// Get the first register field
+    fn reg1(&self) -> u8 {
+        ((self.raw >> 16) & 0xFF) as u8
+    }
+    
+    /// Get the second register field
+    fn reg2(&self) -> u8 {
+        ((self.raw >> 8) & 0xFF) as u8
+    }
+    
+    /// Get the immediate value
+    fn immediate(&self) -> u16 {
+        (self.raw & 0xFFFF) as u16
+    }
+    
+    /// Check if this is a privileged instruction
+    fn is_privileged(&self) -> bool {
+        // Certain opcodes require elevated privileges
+        matches!(self.opcode(), 0xF0..=0xFF)
+    }
 }
 
 /// Types of instructions supported by the ZKVM

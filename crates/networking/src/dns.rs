@@ -109,6 +109,22 @@ impl CitadelDnsResolver {
         // we delegate actual DNS resolution to reqwest which handles it correctly.
         // This maintains user sovereignty by using system DNS configuration.
         
+        // Try to use the actual resolver if available
+        if let Some(ref resolver) = self.resolver {
+            match resolver.lookup_ip(hostname).await {
+                Ok(lookup) => {
+                    let addresses: Vec<IpAddr> = lookup.iter().collect();
+                    if !addresses.is_empty() {
+                        self.update_cache(hostname.to_string(), addresses.clone());
+                        return Ok(addresses);
+                    }
+                }
+                Err(_) => {
+                    // Fall through to placeholder on error
+                }
+            }
+        }
+        
         // Return a placeholder result - actual DNS is handled by reqwest in HTTP requests
         // This resolver is primarily used for caching resolved addresses
         log::warn!("⚠️ DNS resolver placeholder - actual resolution handled by reqwest");

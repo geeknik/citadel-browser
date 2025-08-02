@@ -98,12 +98,30 @@ impl ZkVmRenderer {
         }
     }
 
+    /// Set the current tab being processed
+    pub async fn set_current_tab(&self, tab_id: Option<uuid::Uuid>) -> TabResult<()> {
+        let mut state = self.state.write().await;
+        state.current_tab_id = tab_id;
+        if let Some(id) = tab_id {
+            log::debug!("🔒 ZKVM renderer now processing tab: {}", id);
+        } else {
+            log::debug!("🔒 ZKVM renderer cleared current tab");
+        }
+        Ok(())
+    }
+    
+    /// Get the current tab being processed
+    pub async fn get_current_tab(&self) -> Option<uuid::Uuid> {
+        let state = self.state.read().await;
+        state.current_tab_id
+    }
+
     /// Start the isolated renderer loop
     pub async fn run(&self) -> TabResult<()> {
         log::info!("🔒 ZKVM renderer starting in isolated environment");
         
         loop {
-            let mut channel = self.channel.write().await;
+            let channel = self.channel.write().await;
             
             // Receive messages from the host through secure channel
             match channel.receive().await {
