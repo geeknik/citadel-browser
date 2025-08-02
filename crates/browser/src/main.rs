@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use iced::{Application, Settings, window};
+use iced::{Application, Settings};
 
 mod app;
 mod ui;

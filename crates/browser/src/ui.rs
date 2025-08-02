@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use iced::{
-    widget::{button, container, text, text_input, scrollable, Space, Column, Row},
-    Element, Length, Color, Alignment, theme, Background,
+    widget::{button, container, text, text_input, scrollable, Space, Column, Row, horizontal_rule, vertical_rule},
+    Element, Length, Color, Alignment, theme, Background, Padding,
     widget::container::{Appearance, StyleSheet},
 };
 use citadel_tabs::{SendSafeTabManager as TabManager};
-use crate::app::Message;
+use crate::app::{Message, ViewportInfo, ScrollState, ZoomLevel};
 use crate::renderer::CitadelRenderer;
 use citadel_networking::{NetworkConfig, PrivacyLevel};
 
@@ -49,6 +49,10 @@ pub enum UIMessage {
     AddressBarFocused,
     /// Address bar unfocused
     AddressBarUnfocused,
+    /// Zoom level changed from UI
+    ZoomChanged(ZoomLevel),
+    /// Scroll position changed from UI
+    ScrollChanged { x: f32, y: f32 },
 }
 
 impl CitadelUI {
@@ -86,6 +90,14 @@ impl CitadelUI {
             UIMessage::AddressBarUnfocused => {
                 self.address_bar_focused = false;
             }
+            UIMessage::ZoomChanged(_zoom_level) => {
+                // Zoom changes are handled at the app level
+                // This is here for completeness
+            }
+            UIMessage::ScrollChanged { x: _, y: _ } => {
+                // Scroll changes are handled at the app level
+                // This is here for completeness
+            }
         }
         iced::Command::none()
     }
@@ -96,10 +108,12 @@ impl CitadelUI {
         tab_manager: &Arc<TabManager>,
         network_config: &NetworkConfig,
         renderer: &'a CitadelRenderer,
+        viewport_info: &ViewportInfo,
+        scroll_state: Option<&ScrollState>,
     ) -> Element<'a, Message> {
         let content = Column::new()
-            .push(self.create_toolbar(tab_manager, network_config))
-            .push(self.create_content_area(tab_manager, renderer))
+            .push(self.create_toolbar(tab_manager, network_config, viewport_info))
+            .push(self.create_content_area(tab_manager, renderer, viewport_info, scroll_state))
             .spacing(0);
         
         container(content)
@@ -113,6 +127,7 @@ impl CitadelUI {
         &self,
         _tab_manager: &Arc<TabManager>,
         network_config: &NetworkConfig,
+        viewport_info: &ViewportInfo,
     ) -> Element<Message> {
         let navigation_buttons = Row::new()
             .push(button("←").padding(8))
@@ -128,6 +143,8 @@ impl CitadelUI {
         
         let privacy_indicator = self.create_privacy_indicator(network_config);
         
+        let zoom_controls = self.create_zoom_controls(viewport_info);
+        
         let new_tab_button = button("+")
             .padding(8)
             .on_press(Message::NewTab { 
@@ -139,6 +156,8 @@ impl CitadelUI {
             .push(navigation_buttons)
             .push(Space::with_width(8))
             .push(address_bar)
+            .push(Space::with_width(8))
+            .push(zoom_controls)
             .push(Space::with_width(8))
             .push(privacy_indicator)
             .push(Space::with_width(8))
@@ -166,9 +185,15 @@ impl CitadelUI {
     }
     
     /// Create the main content area
-    fn create_content_area<'a>(&'a self, tab_manager: &Arc<TabManager>, renderer: &'a CitadelRenderer) -> Element<'a, Message> {
+    fn create_content_area<'a>(
+        &'a self, 
+        tab_manager: &Arc<TabManager>, 
+        renderer: &'a CitadelRenderer, 
+        viewport_info: &ViewportInfo,
+        scroll_state: Option<&ScrollState>,
+    ) -> Element<'a, Message> {
         let tabs_bar = self.create_tabs_bar(tab_manager);
-        let page_content = self.create_page_content(tab_manager, renderer);
+        let page_content = self.create_page_content(tab_manager, renderer, viewport_info, scroll_state);
         
         Column::new()
             .push(tabs_bar)
@@ -217,7 +242,13 @@ impl CitadelUI {
     }
     
     /// Create the page content area
-    fn create_page_content<'a>(&'a self, tab_manager: &Arc<TabManager>, renderer: &'a CitadelRenderer) -> Element<'a, Message> {
+    fn create_page_content<'a>(
+        &'a self, 
+        tab_manager: &Arc<TabManager>, 
+        renderer: &'a CitadelRenderer, 
+        viewport_info: &ViewportInfo,
+        scroll_state: Option<&ScrollState>,
+    ) -> Element<'a, Message> {
         let tab_states = tab_manager.get_tab_states();
         
         if let Some(active_tab) = tab_states.iter().find(|tab| tab.is_active) {
@@ -251,16 +282,16 @@ impl CitadelUI {
                 }
                 citadel_tabs::PageContent::Loaded { 
                     url, 
-                    title, 
-                    content: _, 
-                    element_count, 
+                    title: _,
+                    content: _,
+                    element_count,
                     size_bytes 
                 } => {
                     // Get the actual rendered content from the renderer
                     let rendered_content = renderer.render();
                     
-                    // Create a minimal header with essential info
-                    let header = Row::new()
+                    // Create a comprehensive header with scroll info and zoom level
+                    let mut header_elements = Row::new()
                         .push(text(format!("📊 {} elements", element_count))
                             .size(11)
                             .style(Color::from_rgb(0.6, 0.6, 0.6)))
@@ -269,19 +300,41 @@ impl CitadelUI {
                             .size(11)
                             .style(Color::from_rgb(0.6, 0.6, 0.6)))
                         .push(text(" • ").size(11).style(Color::from_rgb(0.5, 0.5, 0.5)))
-                        .push(text("🛡️ ZKVM Active")
+                        .push(text(format!("🔍 {}%", viewport_info.zoom_level.as_percentage()))
                             .size(11)
-                            .style(Color::from_rgb(0.0, 0.6, 0.8)))
+                            .style(Color::from_rgb(0.2, 0.6, 0.9)))
                         .spacing(0)
                         .align_items(Alignment::Center);
                     
-                    // Prioritize the rendered content - put it first with minimal header
+                    // Add scroll position if available
+                    if let Some(scroll) = scroll_state {
+                        header_elements = header_elements
+                            .push(text(" • ").size(11).style(Color::from_rgb(0.5, 0.5, 0.5)))
+                            .push(text(format!("📍 ({:.0}, {:.0})", scroll.x, scroll.y))
+                                .size(11)
+                                .style(Color::from_rgb(0.6, 0.6, 0.6)));
+                    }
+                    
+                    header_elements = header_elements
+                        .push(text(" • ").size(11).style(Color::from_rgb(0.5, 0.5, 0.5)))
+                        .push(text("🛡️ ZKVM Active")
+                            .size(11)
+                            .style(Color::from_rgb(0.0, 0.6, 0.8)));
+                    
+                    // Create scrollable content with viewport-aware rendering
+                    let scrollable_content = self.create_scrollable_content(
+                        rendered_content, 
+                        viewport_info, 
+                        scroll_state
+                    );
+                    
+                    // Prioritize the rendered content with comprehensive header
                     let full_content = Column::new()
-                        .push(container(header)
+                        .push(container(header_elements)
                             .width(Length::Fill)
                             .padding([5, 10, 5, 10])
                             .style(theme::Container::Custom(Box::new(InfoBarStyle))))
-                        .push(rendered_content)
+                        .push(scrollable_content)
                         .spacing(0);
                     
                     container(full_content)
@@ -376,6 +429,154 @@ impl CitadelUI {
             .center_x()
             .into()
         }
+    }
+    
+    /// Create zoom controls for the toolbar
+    fn create_zoom_controls(&self, viewport_info: &ViewportInfo) -> Element<Message> {
+        let zoom_out_button = button("🔍−")
+            .padding(4)
+            .on_press(Message::ZoomOut)
+            .style(theme::Button::Secondary);
+            
+        let zoom_level_text = text(format!("{}%", viewport_info.zoom_level.as_percentage()))
+            .size(12)
+            .style(Color::from_rgb(0.2, 0.6, 0.9));
+            
+        let zoom_in_button = button("🔍+")
+            .padding(4)
+            .on_press(Message::ZoomIn)
+            .style(theme::Button::Secondary);
+            
+        let zoom_reset_button = button("🎯")
+            .padding(4)
+            .on_press(Message::ZoomReset)
+            .style(theme::Button::Secondary);
+        
+        Row::new()
+            .push(zoom_out_button)
+            .push(container(zoom_level_text)
+                .padding([4, 8])
+                .center_x())
+            .push(zoom_in_button)
+            .push(Space::with_width(4))
+            .push(zoom_reset_button)
+            .spacing(2)
+            .align_items(Alignment::Center)
+            .into()
+    }
+    
+    /// Create scrollable content with proper viewport handling
+    fn create_scrollable_content<'a>(
+        &'a self,
+        content: Element<'a, Message>,
+        viewport_info: &ViewportInfo,
+        scroll_state: Option<&ScrollState>,
+    ) -> Element<'a, Message> {
+        // Create enhanced scrollable with zoom awareness
+        let scrollable_view = scrollable(content)
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .direction(scrollable::Direction::Both {
+                vertical: scrollable::Properties::new(),
+                horizontal: scrollable::Properties::new(),
+            });
+        
+        // Apply zoom transformation by adjusting scrollable properties
+        if viewport_info.zoom_level != ZoomLevel::Percent100 {
+            // Note: Iced doesn't directly support zoom transforms
+            // This would need custom rendering or wrapper containers
+            log::debug!("Zoom level {}: would apply zoom transform in full implementation", 
+                       viewport_info.zoom_level.as_percentage());
+        }
+        
+        // Create scroll indicator overlay if scroll state is available
+        if let Some(scroll) = scroll_state {
+            let scroll_indicators = self.create_scroll_indicators(scroll);
+            
+            // Layer the scrollable content with scroll indicators
+            container(
+                Column::new()
+                    .push(scrollable_view)
+                    .push(scroll_indicators)
+                    .spacing(0)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        } else {
+            scrollable_view.into()
+        }
+    }
+    
+    /// Create scroll position indicators
+    fn create_scroll_indicators(&self, scroll_state: &ScrollState) -> Element<Message> {
+        let scroll_info = if scroll_state.max_x > 0.0 || scroll_state.max_y > 0.0 {
+            let h_percent = if scroll_state.max_x > 0.0 {
+                (scroll_state.x / scroll_state.max_x * 100.0).round() as u16
+            } else {
+                0
+            };
+            
+            let v_percent = if scroll_state.max_y > 0.0 {
+                (scroll_state.y / scroll_state.max_y * 100.0).round() as u16
+            } else {
+                0
+            };
+            
+            if scroll_state.max_x > 0.0 && scroll_state.max_y > 0.0 {
+                format!("↕️ {}% ↔️ {}%", v_percent, h_percent)
+            } else if scroll_state.max_y > 0.0 {
+                format!("↕️ {}%", v_percent)
+            } else {
+                format!("↔️ {}%", h_percent)
+            }
+        } else {
+            "No scroll".to_string()
+        };
+        
+        container(
+            text(scroll_info)
+                .size(10)
+                .style(Color::from_rgb(0.5, 0.5, 0.5))
+        )
+        .padding([2, 8])
+        .style(theme::Container::Custom(Box::new(InfoBarStyle)))
+        .width(Length::Shrink)
+        .into()
+    }
+    
+    /// Create keyboard navigation hints
+    fn create_navigation_hints(&self) -> Element<Message> {
+        let hints_text = "⌨️ Ctrl+/- Zoom • ↑↓←→ Scroll • PgUp/PgDn • Home/End";
+        
+        container(
+            text(hints_text)
+                .size(10)
+                .style(Color::from_rgb(0.4, 0.4, 0.4))
+        )
+        .padding([2, 8])
+        .center_x()
+        .width(Length::Fill)
+        .into()
+    }
+    
+    /// Create responsive viewport info display
+    fn create_viewport_info(&self, viewport_info: &ViewportInfo) -> Element<Message> {
+        let viewport_text = format!(
+            "📐 {}x{} @ {}% (DPR: {:.1})",
+            viewport_info.width as u16,
+            viewport_info.height as u16,
+            viewport_info.zoom_level.as_percentage(),
+            viewport_info.device_pixel_ratio
+        );
+        
+        container(
+            text(viewport_text)
+                .size(10)
+                .style(Color::from_rgb(0.5, 0.5, 0.5))
+        )
+        .padding([2, 8])
+        .into()
     }
 }
 

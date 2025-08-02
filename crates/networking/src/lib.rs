@@ -10,6 +10,7 @@ pub mod resource_discovery;
 pub mod cache;
 pub mod advanced_loader;
 pub mod integrity;
+pub mod performance;
 
 /// Re-export common types for easier usage
 pub use dns::{DnsMode, CitadelDnsResolver};

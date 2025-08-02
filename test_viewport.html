@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citadel Browser Viewport & Scrolling Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 200vh; /* Force vertical scrolling */
+        }
+        
+        .header {
+            position: sticky;
+            top: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 1rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+        
+        .content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .section {
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .wide-content {
+            width: 150vw; /* Force horizontal scrolling */
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            margin: 2rem 0;
+            border-radius: 5px;
+        }
+        
+        .zoom-test {
+            font-size: 2rem;
+            text-align: center;
+            margin: 2rem 0;
+        }
+        
+        .viewport-units {
+            height: 50vh;
+            width: 80vw;
+            background: rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 2rem auto;
+            border-radius: 10px;
+        }
+        
+        .responsive-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .grid-item {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .overflow-test {
+            height: 200px;
+            width: 300px;
+            overflow: auto;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+        }
+        
+        .overflow-content {
+            height: 500px;
+            width: 500px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 768px) {
+            .content {
+                padding: 1rem;
+            }
+            
+            .zoom-test {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Citadel Browser Viewport & Scrolling Test</h1>
+        <p>Test keyboard shortcuts: Ctrl+/- for zoom, Arrow keys for scroll, PgUp/PgDn, Home/End</p>
+    </div>
+    
+    <div class="content">
+        <div class="section">
+            <h2>🔍 Zoom Testing</h2>
+            <div class="zoom-test">
+                Use Ctrl+Plus/Minus to zoom in/out<br>
+                Use Ctrl+0 to reset zoom to 100%
+            </div>
+            <p>This text should scale smoothly at different zoom levels. The layout should remain intact while zooming.</p>
+        </div>
+        
+        <div class="section">
+            <h2>📏 Viewport Units</h2>
+            <div class="viewport-units">
+                <strong>50vh × 80vw Container</strong>
+            </div>
+            <p>This container uses viewport units (vh, vw) and should resize when the browser window changes size.</p>
+        </div>
+        
+        <div class="section">
+            <h2>⬆️⬇️ Vertical Scrolling</h2>
+            <p>Use the arrow keys, Page Up/Down, Home/End to navigate through this long content.</p>
+            <p>This page is intentionally tall (200vh) to test vertical scrolling functionality.</p>
+            
+            <div class="wide-content">
+                <h3>➡️⬅️ Horizontal Scrolling Test</h3>
+                <p>This content is wider than the viewport (150vw) to test horizontal scrolling with left/right arrow keys.</p>
+                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. This text extends beyond the normal viewport width to demonstrate horizontal scrolling capabilities.</p>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🎯 Sticky Positioning</h2>
+            <p>The header at the top should stick to the viewport when scrolling down.</p>
+            <p>Sticky positioning is a key feature for modern web navigation.</p>
+        </div>
+        
+        <div class="section">
+            <h2>📱 Responsive Grid</h2>
+            <div class="responsive-grid">
+                <div class="grid-item">
+                    <h3>Grid Item 1</h3>
+                    <p>Responsive grid using CSS Grid with auto-fit columns.</p>
+                </div>
+                <div class="grid-item">
+                    <h3>Grid Item 2</h3>
+                    <p>This grid should adapt to different viewport sizes.</p>
+                </div>
+                <div class="grid-item">
+                    <h3>Grid Item 3</h3>
+                    <p>Try resizing the browser window to see responsiveness.</p>
+                </div>
+                <div class="grid-item">
+                    <h3>Grid Item 4</h3>
+                    <p>Each item maintains minimum width while being flexible.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📦 Overflow Testing</h2>
+            <p>Test different overflow behaviors:</p>
+            
+            <h3>Auto Overflow (scrollable when needed):</h3>
+            <div class="overflow-test">
+                <div class="overflow-content">
+                    Large content that requires scrolling within this container
+                </div>
+            </div>
+            
+            <p>The container above should show scrollbars since the content is larger than the container.</p>
+        </div>
+        
+        <div class="section">
+            <h2>🎨 Visual Effects</h2>
+            <p>This page uses various CSS features that should work with zoom and scroll:</p>
+            <ul>
+                <li>CSS Grid layouts</li>
+                <li>Viewport units (vh, vw, vmin, vmax)</li>
+                <li>Sticky positioning</li>
+                <li>CSS gradients and backdrop filters</li>
+                <li>Responsive design with media queries</li>
+                <li>Overflow containers with scrolling</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>⚡ Performance Testing</h2>
+            <p>This section tests rendering performance during scroll and zoom operations.</p>
+            <p>The browser should maintain smooth frame rates while scrolling through this content.</p>
+            <p>Large content blocks should be efficiently culled when outside the viewport.</p>
+        </div>
+        
+        <!-- Add more content to ensure scrolling -->
+        <div class="section">
+            <h2>📄 More Content</h2>
+            <p>Additional content to ensure the page is long enough for proper scrolling tests.</p>
+            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+        </div>
+        
+        <div class="section">
+            <h2>🏁 End of Page</h2>
+            <p>You've reached the end! Use Home key to jump back to the top, or End key to come back here.</p>
+            <p>The viewport and scrolling system should handle all navigation smoothly.</p>
+        </div>
+    </div>
+</body>
+</html>

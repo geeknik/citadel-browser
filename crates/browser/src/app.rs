@@ -7,12 +7,16 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 use iced::{Application, Command, Element, Subscription, Theme};
+use iced::event;
+use iced::keyboard::Key;
 use url::Url;
 
 use crate::ui::{CitadelUI, UIMessage};
 use crate::engine::BrowserEngine;
-use crate::renderer::CitadelRenderer;
+use crate::renderer::{CitadelRenderer, FormMessage, FormSubmission};
 use crate::zkvm_receiver;
+// WORKAROUND: Use explicit paths to break circular import
+// Import performance types directly to avoid circular dependency with lib.rs re-exports
 use citadel_tabs::{SendSafeTabManager as TabManager, TabType, PageContent};
 use citadel_networking::{NetworkConfig, PrivacyLevel};
 use citadel_security::SecurityContext;
@@ -43,6 +47,16 @@ pub struct CitadelBrowser {
     zkvm_output_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<zkvm_receiver::ZkVmOutput>>,
     /// Store DOM and stylesheet per tab for renderer state
     tab_render_data: HashMap<uuid::Uuid, (Arc<Dom>, Arc<CitadelStylesheet>)>,
+    /// Viewport information and state
+    viewport_info: ViewportInfo,
+    /// Performance monitoring system (TODO: Fix circular import)
+    // performance_monitor: Arc<PerformanceMonitor>,
+    /// Memory cleanup timer
+    last_memory_cleanup: std::time::Instant,
+    /// Scroll state per tab
+    tab_scroll_states: HashMap<uuid::Uuid, ScrollState>,
+    /// Zoom level per tab
+    tab_zoom_levels: HashMap<uuid::Uuid, ZoomLevel>,
 }
 
 /// Detailed loading states for better user feedback
@@ -62,6 +76,140 @@ pub enum LoadingState {
     ApplyingSecurity,
     /// Finalizing page render
     Finalizing,
+}
+
+/// Zoom level for browser content
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ZoomLevel {
+    Percent50,
+    Percent75,
+    Percent100,
+    Percent125,
+    Percent150,
+    Percent200,
+}
+
+impl ZoomLevel {
+    pub fn as_factor(&self) -> f32 {
+        match self {
+            ZoomLevel::Percent50 => 0.5,
+            ZoomLevel::Percent75 => 0.75,
+            ZoomLevel::Percent100 => 1.0,
+            ZoomLevel::Percent125 => 1.25,
+            ZoomLevel::Percent150 => 1.5,
+            ZoomLevel::Percent200 => 2.0,
+        }
+    }
+    
+    pub fn next(&self) -> Option<ZoomLevel> {
+        match self {
+            ZoomLevel::Percent50 => Some(ZoomLevel::Percent75),
+            ZoomLevel::Percent75 => Some(ZoomLevel::Percent100),
+            ZoomLevel::Percent100 => Some(ZoomLevel::Percent125),
+            ZoomLevel::Percent125 => Some(ZoomLevel::Percent150),
+            ZoomLevel::Percent150 => Some(ZoomLevel::Percent200),
+            ZoomLevel::Percent200 => None,
+        }
+    }
+    
+    pub fn previous(&self) -> Option<ZoomLevel> {
+        match self {
+            ZoomLevel::Percent50 => None,
+            ZoomLevel::Percent75 => Some(ZoomLevel::Percent50),
+            ZoomLevel::Percent100 => Some(ZoomLevel::Percent75),
+            ZoomLevel::Percent125 => Some(ZoomLevel::Percent100),
+            ZoomLevel::Percent150 => Some(ZoomLevel::Percent125),
+            ZoomLevel::Percent200 => Some(ZoomLevel::Percent150),
+        }
+    }
+    
+    pub fn as_percentage(&self) -> u16 {
+        match self {
+            ZoomLevel::Percent50 => 50,
+            ZoomLevel::Percent75 => 75,
+            ZoomLevel::Percent100 => 100,
+            ZoomLevel::Percent125 => 125,
+            ZoomLevel::Percent150 => 150,
+            ZoomLevel::Percent200 => 200,
+        }
+    }
+}
+
+/// Viewport information for scrolling and responsive design
+#[derive(Debug, Clone)]
+pub struct ViewportInfo {
+    pub width: f32,
+    pub height: f32,
+    pub device_pixel_ratio: f32,
+    pub zoom_level: ZoomLevel,
+}
+
+impl Default for ViewportInfo {
+    fn default() -> Self {
+        Self {
+            width: 800.0,
+            height: 600.0,
+            device_pixel_ratio: 1.0,
+            zoom_level: ZoomLevel::Percent100,
+        }
+    }
+}
+
+/// Scroll position and state
+#[derive(Debug, Clone, Default)]
+pub struct ScrollState {
+    pub x: f32,
+    pub y: f32,
+    pub max_x: f32,
+    pub max_y: f32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+}
+
+impl ScrollState {
+    pub fn can_scroll_up(&self) -> bool {
+        self.y > 0.0
+    }
+    
+    pub fn can_scroll_down(&self) -> bool {
+        self.y < self.max_y
+    }
+    
+    pub fn can_scroll_left(&self) -> bool {
+        self.x > 0.0
+    }
+    
+    pub fn can_scroll_right(&self) -> bool {
+        self.x < self.max_x
+    }
+    
+    pub fn scroll_by(&mut self, dx: f32, dy: f32) {
+        self.x = (self.x + dx).clamp(0.0, self.max_x);
+        self.y = (self.y + dy).clamp(0.0, self.max_y);
+    }
+    
+    pub fn scroll_to(&mut self, x: f32, y: f32) {
+        self.x = x.clamp(0.0, self.max_x);
+        self.y = y.clamp(0.0, self.max_y);
+    }
+    
+    pub fn page_up(&mut self) {
+        let page_height = self.viewport_height * 0.9; // 90% of viewport
+        self.scroll_by(0.0, -page_height);
+    }
+    
+    pub fn page_down(&mut self) {
+        let page_height = self.viewport_height * 0.9; // 90% of viewport
+        self.scroll_by(0.0, page_height);
+    }
+    
+    pub fn home(&mut self) {
+        self.scroll_to(0.0, 0.0);
+    }
+    
+    pub fn end(&mut self) {
+        self.scroll_to(0.0, self.max_y);
+    }
 }
 
 /// Messages that can be sent to the browser application
@@ -100,6 +248,26 @@ pub enum Message {
         tab_id: uuid::Uuid,
         initial_url: Option<String> 
     },
+    /// Form interaction messages
+    FormInteraction(FormMessage),
+    /// Form submission request
+    FormSubmit(FormSubmission),
+    /// Viewport and scrolling messages
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    ZoomToLevel(ZoomLevel),
+    ScrollUp,
+    ScrollDown,
+    ScrollLeft,
+    ScrollRight,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    ScrollTo { x: f32, y: f32 },
+    ViewportResized { width: f32, height: f32 },
+    MouseWheel { delta_x: f32, delta_y: f32 },
 }
 
 /// Detailed loading error information
@@ -187,6 +355,11 @@ impl Application for CitadelBrowser {
             zkvm_output_sender,
             zkvm_output_receiver: Some(zkvm_output_receiver),
             tab_render_data: HashMap::new(),
+            viewport_info: ViewportInfo::default(),
+            tab_scroll_states: HashMap::new(),
+            tab_zoom_levels: HashMap::new(),
+            // performance_monitor,
+            last_memory_cleanup: std::time::Instant::now(),
         };
         
         // Initialize browser engine asynchronously with detailed error handling
@@ -256,6 +429,9 @@ impl Application for CitadelBrowser {
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
+        // Periodic memory cleanup and performance monitoring
+        self.periodic_memory_cleanup();
+        
         match message {
             Message::UI(ui_message) => {
                 match &ui_message {
@@ -426,7 +602,11 @@ impl Application for CitadelBrowser {
                             log::error!("  Stylesheet present: {}", page_data.stylesheet.is_some());
                         }
                         
-                                                 // Update tab with loaded content
+                                                 // Initialize or update scroll state for this tab
+                        self.initialize_tab_scroll_state(tab_id);
+                        self.update_scroll_state_for_content(tab_id);
+                        
+                        // Update tab with loaded content
                          let tab_manager = self.tab_manager.clone();
                          let content = PageContent::Loaded {
                              url: page_data.url.clone(),
@@ -506,6 +686,8 @@ impl Application for CitadelBrowser {
                 self.error_states.remove(&tab_id);
                 self.loading_states.remove(&tab_id);
                 self.tab_render_data.remove(&tab_id);
+                self.tab_scroll_states.remove(&tab_id);
+                self.tab_zoom_levels.remove(&tab_id);
                 
                 let tab_manager = self.tab_manager.clone();
                 return Command::perform(
@@ -663,21 +845,245 @@ impl Application for CitadelBrowser {
                     Command::none()
                 }
             }
+            
+            Message::FormInteraction(form_message) => {
+                log::info!("📝 Form interaction: {:?}", form_message);
+                
+                // Handle form interaction in the renderer
+                self.renderer.handle_form_message(form_message.clone());
+                
+                // Check if this triggers a form submission
+                if let Some(submission) = self.renderer.get_form_state().pending_submission.clone() {
+                    return self.update(Message::FormSubmit(submission));
+                }
+                
+                Command::none()
+            }
+            
+            Message::FormSubmit(submission) => {
+                log::info!("📤 Form submission request: {} -> {}", submission.form_id, submission.action);
+                
+                // Validate form submission security
+                if !self.validate_form_security(&submission) {
+                    log::warn!("🛡️ Form submission blocked for security reasons");
+                    return Command::none();
+                }
+                
+                // Process form submission through the engine
+                if let Some(engine) = &self.engine {
+                    let engine_clone = engine.clone();
+                    return Command::perform(
+                        async move {
+                            engine_clone.submit_form(submission).await
+                        },
+                        |result| match result {
+                            Ok(response_url) => {
+                                log::info!("✅ Form submitted successfully, navigating to response");
+                                Message::Navigate(response_url)
+                            }
+                            Err(e) => {
+                                log::error!("❌ Form submission failed: {}", e);
+                                Message::InitializationError(format!("Form submission failed: {}", e))
+                            }
+                        }
+                    );
+                } else {
+                    log::error!("❌ Cannot submit form: Engine not initialized");
+                    return Command::none();
+                }
+            }
+            
+            // Viewport and scrolling message handlers
+            Message::ZoomIn => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let current_zoom = self.tab_zoom_levels.get(&active_tab).copied().unwrap_or(ZoomLevel::Percent100);
+                    if let Some(new_zoom) = current_zoom.next() {
+                        self.tab_zoom_levels.insert(active_tab, new_zoom);
+                        self.renderer.set_zoom_level(new_zoom.as_factor());
+                        log::info!("🔍 Zoomed in to {}%", new_zoom.as_percentage());
+                        
+                        // Update viewport and recompute layout if needed
+                        self.update_viewport_for_zoom(new_zoom);
+                    }
+                }
+                Command::none()
+            }
+            
+            Message::ZoomOut => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let current_zoom = self.tab_zoom_levels.get(&active_tab).copied().unwrap_or(ZoomLevel::Percent100);
+                    if let Some(new_zoom) = current_zoom.previous() {
+                        self.tab_zoom_levels.insert(active_tab, new_zoom);
+                        self.renderer.set_zoom_level(new_zoom.as_factor());
+                        log::info!("🔍 Zoomed out to {}%", new_zoom.as_percentage());
+                        
+                        // Update viewport and recompute layout if needed
+                        self.update_viewport_for_zoom(new_zoom);
+                    }
+                }
+                Command::none()
+            }
+            
+            Message::ZoomReset => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    self.tab_zoom_levels.insert(active_tab, ZoomLevel::Percent100);
+                    self.renderer.set_zoom_level(1.0);
+                    log::info!("🔍 Reset zoom to 100%");
+                    
+                    // Update viewport and recompute layout
+                    self.update_viewport_for_zoom(ZoomLevel::Percent100);
+                }
+                Command::none()
+            }
+            
+            Message::ZoomToLevel(zoom_level) => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    self.tab_zoom_levels.insert(active_tab, zoom_level);
+                    self.renderer.set_zoom_level(zoom_level.as_factor());
+                    log::info!("🔍 Set zoom to {}%", zoom_level.as_percentage());
+                    
+                    // Update viewport and recompute layout
+                    self.update_viewport_for_zoom(zoom_level);
+                }
+                Command::none()
+            }
+            
+            Message::ScrollUp => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.scroll_by(0.0, -50.0); // Scroll up by 50px
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("⬆️ Scrolled up to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::ScrollDown => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.scroll_by(0.0, 50.0); // Scroll down by 50px
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("⬇️ Scrolled down to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::ScrollLeft => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.scroll_by(-50.0, 0.0); // Scroll left by 50px
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("⬅️ Scrolled left to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::ScrollRight => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.scroll_by(50.0, 0.0); // Scroll right by 50px
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("➡️ Scrolled right to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::PageUp => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.page_up();
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("📄⬆️ Page up to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::PageDown => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.page_down();
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("📄⬇️ Page down to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::Home => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.home();
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("🏠 Scrolled to home (0, 0)");
+                }
+                Command::none()
+            }
+            
+            Message::End => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.end();
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("🔚 Scrolled to end ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::ScrollTo { x, y } => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    scroll_state.scroll_to(x, y);
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!("📍 Scrolled to ({}, {})", scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
+            
+            Message::ViewportResized { width, height } => {
+                log::info!("📐 Viewport resized to {}x{}", width, height);
+                self.viewport_info.width = width;
+                self.viewport_info.height = height;
+                
+                // Update renderer viewport
+                self.renderer.update_viewport_size(width, height);
+                
+                // Update scroll states for all tabs
+                let content_size = self.renderer.get_content_size();
+                for scroll_state in self.tab_scroll_states.values_mut() {
+                    scroll_state.viewport_width = width;
+                    scroll_state.viewport_height = height;
+                    
+                    // Recompute scroll bounds with new viewport
+                    scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
+                    scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
+                }
+                
+                Command::none()
+            }
+            
+            Message::MouseWheel { delta_x, delta_y } => {
+                if let Some(active_tab) = self.get_active_tab_id() {
+                    let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
+                    
+                    // Apply mouse wheel sensitivity
+                    let sensitivity = 3.0;
+                    scroll_state.scroll_by(delta_x * sensitivity, delta_y * sensitivity);
+                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    
+                    log::debug!("🖱️ Mouse wheel scroll: delta=({}, {}), pos=({}, {})", 
+                               delta_x, delta_y, scroll_state.x, scroll_state.y);
+                }
+                Command::none()
+            }
         }
     }
 
     fn view(&self) -> Element<Message> {
-        self.ui.view(&self.tab_manager, &self.network_config, &self.renderer)
+        self.ui.view(&self.tab_manager, &self.network_config, &self.renderer, &self.viewport_info, self.get_active_scroll_state())
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        // Subscribe to ZKVM output
-        if let Some(receiver) = &self.zkvm_output_receiver {
-            // This won't work directly because receiver is not Send
-            // We need a different approach
-        }
-        
-        // TODO: Add subscriptions for real-time updates
+        // Subscribe to keyboard events for scrolling and zoom
+        // For now, return a simple subscription - keyboard handling will be done through events
         Subscription::none()
     }
 
@@ -687,6 +1093,136 @@ impl Application for CitadelBrowser {
 }
 
 impl CitadelBrowser {
+    /// Validate form submission security
+    fn validate_form_security(&self, submission: &FormSubmission) -> bool {
+        log::info!("🛡️ Validating form submission security for: {}", submission.action);
+        
+        // Block submissions to non-HTTPS URLs (except localhost for development)
+        if !submission.action.starts_with("https://") &&
+           !submission.action.starts_with("http://localhost") &&
+           !submission.action.starts_with("http://127.0.0.1") &&
+           submission.action != "#" {
+            log::warn!("🛡️ Blocking insecure form submission to: {}", submission.action);
+            return false;
+        }
+        
+        // Validate HTTP method
+        if !matches!(submission.method.as_str(), "GET" | "POST") {
+            log::warn!("🛡️ Blocking form submission with unsupported method: {}", submission.method);
+            return false;
+        }
+        
+        // Check for potentially sensitive data in form fields
+        for (field_name, field_value) in &submission.data {
+            if field_name.to_lowercase().contains("password") && !submission.action.starts_with("https://") {
+                log::warn!("🛡️ Blocking password submission over insecure connection");
+                return false;
+            }
+            
+            // Prevent extremely large form data (potential DoS)
+            if field_value.len() > 1_000_000 { // 1MB limit per field
+                log::warn!("🛡️ Blocking form submission with oversized field: {} ({} bytes)", field_name, field_value.len());
+                return false;
+            }
+        }
+        
+        log::info!("✅ Form submission security validation passed");
+        true
+    }
+    
+    /// Get the active tab ID
+    fn get_active_tab_id(&self) -> Option<uuid::Uuid> {
+        self.tab_manager.get_tab_states()
+            .iter()
+            .find(|tab| tab.is_active)
+            .map(|tab| tab.id)
+    }
+    
+    /// Get the active tab's scroll state
+    fn get_active_scroll_state(&self) -> Option<&ScrollState> {
+        self.get_active_tab_id()
+            .and_then(|tab_id| self.tab_scroll_states.get(&tab_id))
+    }
+    
+    /// Update viewport for zoom changes
+    fn update_viewport_for_zoom(&mut self, zoom_level: ZoomLevel) {
+        self.viewport_info.zoom_level = zoom_level;
+        
+        // Calculate effective viewport size with zoom
+        let effective_width = self.viewport_info.width / zoom_level.as_factor();
+        let effective_height = self.viewport_info.height / zoom_level.as_factor();
+        
+        // Update renderer with new effective viewport
+        self.renderer.update_viewport_size(effective_width, effective_height);
+        
+        // Update scroll bounds for active tab
+        if let Some(active_tab) = self.get_active_tab_id() {
+            if let Some(scroll_state) = self.tab_scroll_states.get_mut(&active_tab) {
+                scroll_state.viewport_width = effective_width;
+                scroll_state.viewport_height = effective_height;
+                
+                // Get content bounds from renderer
+                let content_size = self.renderer.get_content_size();
+                scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
+                scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
+                
+                // Ensure scroll position is still valid after zoom
+                scroll_state.scroll_to(scroll_state.x, scroll_state.y);
+            }
+        }
+    }
+    
+    
+    /// Initialize scroll state for a new tab
+    fn initialize_tab_scroll_state(&mut self, tab_id: uuid::Uuid) {
+        let mut scroll_state = ScrollState::default();
+        scroll_state.viewport_width = self.viewport_info.width;
+        scroll_state.viewport_height = self.viewport_info.height;
+        
+        // Get content bounds from renderer
+        let content_size = self.renderer.get_content_size();
+        scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
+        scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
+        
+        self.tab_scroll_states.insert(tab_id, scroll_state);
+        self.tab_zoom_levels.insert(tab_id, ZoomLevel::Percent100);
+    }
+    
+    /// Update scroll state when content changes
+    fn update_scroll_state_for_content(&mut self, tab_id: uuid::Uuid) {
+        if let Some(scroll_state) = self.tab_scroll_states.get_mut(&tab_id) {
+            // Get content bounds from renderer
+            let content_size = self.renderer.get_content_size();
+            scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
+            scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
+            
+            // Ensure current scroll position is still valid
+            scroll_state.scroll_to(scroll_state.x, scroll_state.y);
+        }
+    }
+    
+    /// Handle keyboard shortcuts for scrolling and zoom
+    pub fn handle_keyboard_event(&mut self, key: &iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) -> Command<Message> {
+        match (key.as_ref(), modifiers.control()) {
+            // Zoom shortcuts
+            (Key::Character("=") | Key::Character("+"), true) => Command::perform(async {}, |_| Message::ZoomIn),
+            (Key::Character("-"), true) => Command::perform(async {}, |_| Message::ZoomOut),
+            (Key::Character("0"), true) => Command::perform(async {}, |_| Message::ZoomReset),
+            
+            // Scroll shortcuts
+            (Key::Named(iced::keyboard::key::Named::ArrowUp), false) => Command::perform(async {}, |_| Message::ScrollUp),
+            (Key::Named(iced::keyboard::key::Named::ArrowDown), false) => Command::perform(async {}, |_| Message::ScrollDown),
+            (Key::Named(iced::keyboard::key::Named::ArrowLeft), false) => Command::perform(async {}, |_| Message::ScrollLeft),
+            (Key::Named(iced::keyboard::key::Named::ArrowRight), false) => Command::perform(async {}, |_| Message::ScrollRight),
+            (Key::Named(iced::keyboard::key::Named::PageUp), false) => Command::perform(async {}, |_| Message::PageUp),
+            (Key::Named(iced::keyboard::key::Named::PageDown), false) => Command::perform(async {}, |_| Message::PageDown),
+            (Key::Named(iced::keyboard::key::Named::Home), false) => Command::perform(async {}, |_| Message::Home),
+            (Key::Named(iced::keyboard::key::Named::End), false) => Command::perform(async {}, |_| Message::End),
+            
+            _ => Command::none(),
+        }
+    }
+    
     /// Normalize and validate URLs with security considerations
     fn normalize_url(&self, url_str: &str) -> String {
         let trimmed = url_str.trim();
@@ -714,6 +1250,135 @@ impl CitadelBrowser {
 
         // Default to https for things that look like domains.
         format!("https://{}", trimmed)
+    }
+    
+    /// Perform periodic memory cleanup and performance monitoring
+    fn periodic_memory_cleanup(&mut self) {
+        let now = std::time::Instant::now();
+        
+        // Perform cleanup every 30 seconds
+        if now.duration_since(self.last_memory_cleanup) >= std::time::Duration::from_secs(30) {
+            self.last_memory_cleanup = now;
+            
+            // TODO: Fix circular import and re-enable performance monitoring
+            // Check memory pressure and trigger cleanup if needed
+            // let memory_pressure = self.performance_monitor.get_memory_pressure();
+            
+            // For now, just do basic cleanup
+            self.cleanup_expired_data();
+            
+            // Also cleanup renderer caches
+            self.renderer.force_cleanup("medium");
+            
+            // TODO: Re-enable memory metrics
+            // self.update_memory_metrics();
+        }
+    }
+    
+    /// Clean up old tab render data
+    fn cleanup_old_tab_data(&mut self) {
+        let active_tabs: std::collections::HashSet<uuid::Uuid> = 
+            self.tab_manager.get_tab_states().iter().map(|tab| tab.id).collect();
+        
+        // Remove render data for closed tabs
+        self.tab_render_data.retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.tab_scroll_states.retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.tab_zoom_levels.retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.error_states.retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.loading_states.retain(|tab_id, _| active_tabs.contains(tab_id));
+        
+        log::debug!("Cleaned up render data for closed tabs");
+    }
+    
+    /// Emergency memory cleanup for critical memory pressure
+    fn emergency_memory_cleanup(&mut self) {
+        log::warn!("Performing emergency memory cleanup");
+        
+        // Clear all caches and non-essential data
+        self.tab_render_data.clear();
+        self.error_states.clear();
+        
+        // Keep only active tab scroll state and zoom level
+        if let Some(active_tab) = self.get_active_tab_id() {
+            let active_scroll = self.tab_scroll_states.remove(&active_tab);
+            let active_zoom = self.tab_zoom_levels.remove(&active_tab);
+            
+            self.tab_scroll_states.clear();
+            self.tab_zoom_levels.clear();
+            
+            if let Some(scroll) = active_scroll {
+                self.tab_scroll_states.insert(active_tab, scroll);
+            }
+            if let Some(zoom) = active_zoom {
+                self.tab_zoom_levels.insert(active_tab, zoom);
+            }
+        } else {
+            self.tab_scroll_states.clear();
+            self.tab_zoom_levels.clear();
+        }
+        
+        log::warn!("Emergency memory cleanup completed");
+    }
+    
+    /// Clean up expired data during normal operation
+    fn cleanup_expired_data(&mut self) {
+        // This is called during normal operation to clean up expired data
+        // Implementation would check timestamps and remove old data
+        
+        // For now, just ensure we don't have too many error states
+        if self.error_states.len() > 50 {
+            let active_tabs: std::collections::HashSet<uuid::Uuid> = 
+                self.tab_manager.get_tab_states().iter().map(|tab| tab.id).collect();
+            
+            self.error_states.retain(|tab_id, _| active_tabs.contains(tab_id));
+        }
+        
+        // Clean up old loading states - remove Idle states that are old
+        // (We don't need to track timestamps for this simple case)
+        // Just keep a reasonable number of idle states
+        let idle_count = self.loading_states.values().filter(|state| matches!(state, LoadingState::Idle)).count();
+        if idle_count > 10 {
+            // Remove some idle states, keeping active ones
+            let mut removed_count = 0;
+            self.loading_states.retain(|_, loading_state| {
+                if matches!(loading_state, LoadingState::Idle) && removed_count < idle_count - 5 {
+                    removed_count += 1;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+    
+    /// Update memory usage metrics
+    fn update_memory_metrics(&mut self) {
+        // Estimate memory usage of various components
+        let tab_data_memory = self.tab_render_data.len() * 1024 * 1024; // Estimate 1MB per tab
+        let scroll_state_memory = self.tab_scroll_states.len() * std::mem::size_of::<ScrollState>();
+        let error_state_memory = self.error_states.len() * 1024; // Estimate 1KB per error
+        let loading_state_memory = self.loading_states.len() * std::mem::size_of::<LoadingState>();
+        
+        let total_app_memory = tab_data_memory + scroll_state_memory + error_state_memory + loading_state_memory;
+        
+        // TODO: Re-enable performance monitoring
+        // self.performance_monitor.update_memory_usage("app", total_app_memory);
+    }
+    
+    /// Get performance statistics for debugging (TODO: Fix circular import)
+    pub fn get_performance_stats(&self) -> String {
+        // TODO: Re-enable performance monitoring once circular import is fixed
+        format!(
+            "Performance Stats (Basic):\n\
+            Tab Data: {} entries\n\
+            Scroll States: {} entries\n\
+            Error States: {} entries\n\
+            Loading States: {} entries\n",
+            self.tab_render_data.len(),
+            self.tab_scroll_states.len(),
+            self.error_states.len(),
+            self.loading_states.len()
+        )
     }
 }
 

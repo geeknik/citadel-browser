@@ -53,6 +53,13 @@ impl Error for ParserError {
     }
 }
 
+// Conversion from rquickjs::Error to ParserError
+impl From<rquickjs::Error> for ParserError {
+    fn from(err: rquickjs::Error) -> Self {
+        ParserError::JsError(format!("QuickJS error: {}", err))
+    }
+}
+
 /// Result type for parser operations
 pub type ParserResult<T> = Result<T, ParserError>;
 

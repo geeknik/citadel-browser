@@ -71,7 +71,75 @@ impl ColorF {
     }
 }
 
-/// Computed style values using Servo components
+/// CSS Transform functions for advanced visual effects
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransformFunction {
+    Translate(LengthValue, LengthValue),
+    TranslateX(LengthValue),
+    TranslateY(LengthValue),
+    Rotate(f32), // degrees
+    RotateX(f32),
+    RotateY(f32),
+    RotateZ(f32),
+    Scale(f32, f32),
+    ScaleX(f32),
+    ScaleY(f32),
+    Skew(f32, f32), // degrees
+    SkewX(f32),
+    SkewY(f32),
+    Matrix(f32, f32, f32, f32, f32, f32),
+}
+
+/// CSS Transition properties for smooth animations
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionProperty {
+    pub property: String,
+    pub duration: f32, // seconds
+    pub timing_function: String,
+    pub delay: f32, // seconds
+}
+
+/// CSS Media Query types for responsive design
+#[derive(Debug, Clone, PartialEq)]
+pub enum MediaQueryType {
+    All,
+    Screen,
+    Print,
+    Speech,
+}
+
+/// CSS Media Query features
+#[derive(Debug, Clone, PartialEq)]
+pub enum MediaFeature {
+    Width(LengthValue),
+    MinWidth(LengthValue),
+    MaxWidth(LengthValue),
+    Height(LengthValue),
+    MinHeight(LengthValue),
+    MaxHeight(LengthValue),
+    Orientation(String), // portrait, landscape
+    Resolution(f32), // dpi
+    AspectRatio(f32), // width/height ratio
+}
+
+/// CSS Media Query for responsive design
+#[derive(Debug, Clone, PartialEq)]
+pub struct MediaQuery {
+    pub media_type: MediaQueryType,
+    pub features: Vec<MediaFeature>,
+    pub not: bool,
+    pub only: bool,
+}
+
+/// CSS Custom Properties (CSS Variables) support
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomProperty {
+    pub name: String, // --variable-name
+    pub value: String,
+    pub fallback: Option<String>,
+}
+
+/// Computed style values using Servo components with advanced CSS features
 #[derive(Debug, Clone)]
 pub struct ComputedStyle {
     // Visual properties
@@ -81,10 +149,15 @@ pub struct ComputedStyle {
     pub font_weight: Option<String>,
     pub border_width: Option<LengthValue>,
     pub border_color: Option<ColorValue>,
+    pub border_radius: Option<LengthValue>,
+    pub opacity: Option<f32>,
     
     // Layout properties
     pub display: DisplayType,
     pub position: PositionType,
+    pub z_index: Option<i32>,
+    pub overflow: Option<String>, // visible, hidden, scroll, auto
+    pub visibility: Option<String>, // visible, hidden, collapse
     
     // Size properties
     pub width: Option<LengthValue>,
@@ -110,23 +183,61 @@ pub struct ComputedStyle {
     pub bottom: Option<LengthValue>,
     pub left: Option<LengthValue>,
     
-    // Flexbox properties
+    // Advanced Flexbox properties
     pub flex_direction: Option<String>,
     pub flex_wrap: Option<String>,
     pub justify_content: Option<String>,
     pub align_items: Option<String>,
     pub align_content: Option<String>,
     pub align_self: Option<String>,
+    pub justify_self: Option<String>,
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<LengthValue>,
+    pub flex: Option<String>, // shorthand
+    pub order: Option<i32>,
     
-    // Grid properties
+    // Advanced Grid properties
     pub grid_template_columns: Option<String>,
     pub grid_template_rows: Option<String>,
+    pub grid_template_areas: Option<String>,
+    pub grid_auto_flow: Option<String>, // row, column, dense
+    pub grid_auto_rows: Option<String>,
+    pub grid_auto_columns: Option<String>,
     pub grid_column: Option<String>,
     pub grid_row: Option<String>,
+    pub grid_area: Option<String>, // shorthand
     pub grid_gap: Option<LengthValue>,
+    pub grid_row_gap: Option<LengthValue>,
+    pub grid_column_gap: Option<LengthValue>,
+    pub justify_items: Option<String>,
+    
+    // Transform and Animation properties
+    pub transform: Vec<TransformFunction>,
+    pub transform_origin: Option<(LengthValue, LengthValue)>,
+    pub transition: Vec<TransitionProperty>,
+    pub animation: Option<String>,
+    
+    // Background enhancements
+    pub background_image: Option<String>,
+    pub background_size: Option<String>,
+    pub background_position: Option<String>,
+    pub background_repeat: Option<String>,
+    pub background_attachment: Option<String>,
+    
+    // Advanced text properties
+    pub text_decoration: Option<String>,
+    pub text_transform: Option<String>,
+    pub text_align: Option<String>,
+    pub line_height: Option<LengthValue>,
+    pub letter_spacing: Option<LengthValue>,
+    pub word_spacing: Option<LengthValue>,
+    
+    // Responsive design properties
+    pub media_queries: Vec<MediaQuery>,
+    
+    // CSS Custom Properties
+    pub custom_properties: Vec<CustomProperty>,
     
     // Legacy Taffy style for backward compatibility
     pub layout_style: Style,
@@ -171,10 +282,15 @@ impl Default for ComputedStyle {
             font_weight: None,
             border_width: None,
             border_color: None,
+            border_radius: None,
+            opacity: None,
             
             // Layout properties
             display: DisplayType::Block,
             position: PositionType::Static,
+            z_index: None,
+            overflow: None,
+            visibility: None,
             
             // Size properties
             width: None,
@@ -200,23 +316,61 @@ impl Default for ComputedStyle {
             bottom: None,
             left: None,
             
-            // Flexbox properties
+            // Advanced Flexbox properties
             flex_direction: None,
             flex_wrap: None,
             justify_content: None,
             align_items: None,
             align_content: None,
             align_self: None,
+            justify_self: None,
             flex_grow: None,
             flex_shrink: None,
             flex_basis: None,
+            flex: None,
+            order: None,
             
-            // Grid properties
+            // Advanced Grid properties
             grid_template_columns: None,
             grid_template_rows: None,
+            grid_template_areas: None,
+            grid_auto_flow: None,
+            grid_auto_rows: None,
+            grid_auto_columns: None,
             grid_column: None,
             grid_row: None,
+            grid_area: None,
             grid_gap: None,
+            grid_row_gap: None,
+            grid_column_gap: None,
+            justify_items: None,
+            
+            // Transform and Animation properties
+            transform: Vec::new(),
+            transform_origin: None,
+            transition: Vec::new(),
+            animation: None,
+            
+            // Background enhancements
+            background_image: None,
+            background_size: None,
+            background_position: None,
+            background_repeat: None,
+            background_attachment: None,
+            
+            // Advanced text properties
+            text_decoration: None,
+            text_transform: None,
+            text_align: None,
+            line_height: None,
+            letter_spacing: None,
+            word_spacing: None,
+            
+            // Responsive design properties
+            media_queries: Vec::new(),
+            
+            // CSS Custom Properties
+            custom_properties: Vec::new(),
             
             // Legacy Taffy style
             layout_style: Style::default(),
@@ -657,7 +811,7 @@ impl CitadelStylesheet {
         false
     }
     
-    /// Apply a CSS declaration to computed styles
+    /// Apply a CSS declaration to computed styles with advanced property support
     fn apply_declaration(&self, computed: &mut ComputedStyle, declaration: &Declaration) {
         match declaration.property.as_str() {
             // Visual properties
@@ -666,6 +820,21 @@ impl CitadelStylesheet {
             }
             "background-color" => {
                 computed.background_color = self.parse_color_value(&declaration.value);
+            }
+            "background-image" => {
+                computed.background_image = Some(declaration.value.clone());
+            }
+            "background-size" => {
+                computed.background_size = Some(declaration.value.clone());
+            }
+            "background-position" => {
+                computed.background_position = Some(declaration.value.clone());
+            }
+            "background-repeat" => {
+                computed.background_repeat = Some(declaration.value.clone());
+            }
+            "background-attachment" => {
+                computed.background_attachment = Some(declaration.value.clone());
             }
             "font-size" => {
                 computed.font_size = self.parse_length_value(&declaration.value);
@@ -678,6 +847,32 @@ impl CitadelStylesheet {
             }
             "border-color" => {
                 computed.border_color = self.parse_color_value(&declaration.value);
+            }
+            "border-radius" => {
+                computed.border_radius = self.parse_length_value(&declaration.value);
+            }
+            "opacity" => {
+                computed.opacity = declaration.value.parse::<f32>().ok();
+            }
+            
+            // Advanced text properties
+            "text-decoration" => {
+                computed.text_decoration = Some(declaration.value.clone());
+            }
+            "text-transform" => {
+                computed.text_transform = Some(declaration.value.clone());
+            }
+            "text-align" => {
+                computed.text_align = Some(declaration.value.clone());
+            }
+            "line-height" => {
+                computed.line_height = self.parse_length_value(&declaration.value);
+            }
+            "letter-spacing" => {
+                computed.letter_spacing = self.parse_length_value(&declaration.value);
+            }
+            "word-spacing" => {
+                computed.word_spacing = self.parse_length_value(&declaration.value);
             }
             
             // Display property
@@ -695,9 +890,18 @@ impl CitadelStylesheet {
                 };
             }
             
-            // Position property
+            // Layout properties
             "position" => {
                 computed.position = self.parse_position(&declaration.value);
+            }
+            "z-index" => {
+                computed.z_index = declaration.value.parse::<i32>().ok();
+            }
+            "overflow" => {
+                computed.overflow = Some(declaration.value.clone());
+            }
+            "visibility" => {
+                computed.visibility = Some(declaration.value.clone());
             }
             
             // Size properties
@@ -809,14 +1013,31 @@ impl CitadelStylesheet {
             "align-self" => {
                 computed.align_self = Some(declaration.value.clone());
             }
+            "justify-self" => {
+                computed.justify_self = Some(declaration.value.clone());
+            }
             "flex-grow" => {
                 computed.flex_grow = declaration.value.parse::<f32>().ok();
+                if let Some(grow) = computed.flex_grow {
+                    computed.layout_style.flex_grow = grow;
+                }
             }
             "flex-shrink" => {
                 computed.flex_shrink = declaration.value.parse::<f32>().ok();
+                if let Some(shrink) = computed.flex_shrink {
+                    computed.layout_style.flex_shrink = shrink;
+                }
             }
             "flex-basis" => {
                 computed.flex_basis = self.parse_length_value(&declaration.value);
+            }
+            "flex" => {
+                // Parse flex shorthand: flex-grow flex-shrink flex-basis
+                computed.flex = Some(declaration.value.clone());
+                self.parse_flex_shorthand(computed, &declaration.value);
+            }
+            "order" => {
+                computed.order = declaration.value.parse::<i32>().ok();
             }
             
             // Grid properties
@@ -832,13 +1053,71 @@ impl CitadelStylesheet {
             "grid-row" => {
                 computed.grid_row = Some(declaration.value.clone());
             }
+            "grid-template-areas" => {
+                computed.grid_template_areas = Some(declaration.value.clone());
+            }
+            "grid-auto-flow" => {
+                computed.grid_auto_flow = Some(declaration.value.clone());
+            }
+            "grid-auto-rows" => {
+                computed.grid_auto_rows = Some(declaration.value.clone());
+            }
+            "grid-auto-columns" => {
+                computed.grid_auto_columns = Some(declaration.value.clone());
+            }
+            "grid-area" => {
+                computed.grid_area = Some(declaration.value.clone());
+            }
             "grid-gap" | "gap" => {
                 computed.grid_gap = self.parse_length_value(&declaration.value);
+                // Also set individual gap properties for Taffy
+                computed.grid_row_gap = computed.grid_gap.clone();
+                computed.grid_column_gap = computed.grid_gap.clone();
+            }
+            "grid-row-gap" | "row-gap" => {
+                computed.grid_row_gap = self.parse_length_value(&declaration.value);
+            }
+            "grid-column-gap" | "column-gap" => {
+                computed.grid_column_gap = self.parse_length_value(&declaration.value);
+            }
+            "justify-items" => {
+                computed.justify_items = Some(declaration.value.clone());
+            }
+            
+            // Transform and Animation properties
+            "transform" => {
+                computed.transform = self.parse_transform_functions(&declaration.value);
+            }
+            "transform-origin" => {
+                computed.transform_origin = self.parse_transform_origin(&declaration.value);
+            }
+            "transition" => {
+                computed.transition = self.parse_transition_properties(&declaration.value);
+            }
+            "animation" => {
+                computed.animation = Some(declaration.value.clone());
+            }
+            
+            // CSS Custom Properties (CSS Variables)
+            prop if prop.starts_with("--") => {
+                let custom_prop = CustomProperty {
+                    name: prop.to_string(),
+                    value: declaration.value.clone(),
+                    fallback: None,
+                };
+                computed.custom_properties.push(custom_prop);
             }
             
             _ => {
-                // Log unsupported properties for debugging
-                tracing::debug!("Unsupported CSS property: {}", declaration.property);
+                // Check for vendor prefixes and log unsupported properties
+                if declaration.property.starts_with("-webkit-") ||
+                   declaration.property.starts_with("-moz-") ||
+                   declaration.property.starts_with("-ms-") ||
+                   declaration.property.starts_with("-o-") {
+                    tracing::debug!("Vendor-prefixed CSS property ignored: {}", declaration.property);
+                } else {
+                    tracing::debug!("Unsupported CSS property: {} = {}", declaration.property, declaration.value);
+                }
             }
         }
     }
@@ -1016,6 +1295,244 @@ impl CitadelStylesheet {
                 computed.padding_bottom = bottom;
                 computed.padding_left = left;
             }
+        }
+    }
+    
+    /// Parse CSS flex shorthand property
+    fn parse_flex_shorthand(&self, computed: &mut ComputedStyle, value: &str) {
+        let parts: Vec<&str> = value.trim().split_whitespace().collect();
+        
+        match parts.len() {
+            1 => {
+                // Single value: could be flex-grow, flex-basis, or keyword
+                if let Ok(grow) = parts[0].parse::<f32>() {
+                    computed.flex_grow = Some(grow);
+                    computed.flex_shrink = Some(1.0); // default
+                    computed.flex_basis = Some(LengthValue::Zero);
+                } else if parts[0] == "auto" {
+                    computed.flex_grow = Some(1.0);
+                    computed.flex_shrink = Some(1.0);
+                    computed.flex_basis = Some(LengthValue::Auto);
+                } else if parts[0] == "none" {
+                    computed.flex_grow = Some(0.0);
+                    computed.flex_shrink = Some(0.0);
+                    computed.flex_basis = Some(LengthValue::Auto);
+                } else {
+                    // Assume it's flex-basis
+                    computed.flex_basis = self.parse_length_value(parts[0]);
+                }
+            }
+            2 => {
+                // Two values: flex-grow flex-shrink OR flex-grow flex-basis
+                if let (Ok(grow), Ok(shrink)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                    computed.flex_grow = Some(grow);
+                    computed.flex_shrink = Some(shrink);
+                    computed.flex_basis = Some(LengthValue::Zero);
+                } else if let Ok(grow) = parts[0].parse::<f32>() {
+                    computed.flex_grow = Some(grow);
+                    computed.flex_basis = self.parse_length_value(parts[1]);
+                }
+            }
+            3 => {
+                // Three values: flex-grow flex-shrink flex-basis
+                if let (Ok(grow), Ok(shrink)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                    computed.flex_grow = Some(grow);
+                    computed.flex_shrink = Some(shrink);
+                    computed.flex_basis = self.parse_length_value(parts[2]);
+                }
+            }
+            _ => {}
+        }
+        
+        // Update Taffy layout style
+        if let Some(grow) = computed.flex_grow {
+            computed.layout_style.flex_grow = grow;
+        }
+        if let Some(shrink) = computed.flex_shrink {
+            computed.layout_style.flex_shrink = shrink;
+        }
+    }
+    
+    /// Parse CSS transform functions
+    fn parse_transform_functions(&self, value: &str) -> Vec<TransformFunction> {
+        let mut functions = Vec::new();
+        
+        // Simple parsing for transform functions
+        let value = value.trim();
+        if value == "none" {
+            return functions;
+        }
+        
+        // Split by function calls - simplified parser
+        let mut current_pos = 0;
+        while let Some(start) = value[current_pos..].find(|c: char| c.is_alphabetic()) {
+            let actual_start = current_pos + start;
+            if let Some(paren_start) = value[actual_start..].find('(') {
+                let paren_pos = actual_start + paren_start;
+                if let Some(paren_end) = value[paren_pos..].find(')') {
+                    let end_pos = paren_pos + paren_end;
+                    let function_name = &value[actual_start..paren_pos];
+                    let function_args = &value[paren_pos + 1..end_pos];
+                    
+                    if let Some(transform_fn) = self.parse_single_transform_function(function_name, function_args) {
+                        functions.push(transform_fn);
+                    }
+                    
+                    current_pos = end_pos + 1;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        functions
+    }
+    
+    /// Parse a single transform function
+    fn parse_single_transform_function(&self, name: &str, args: &str) -> Option<TransformFunction> {
+        let args: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+        
+        match name {
+            "translate" => {
+                if args.len() >= 2 {
+                    if let (Some(x), Some(y)) = (self.parse_length_value(args[0]), self.parse_length_value(args[1])) {
+                        Some(TransformFunction::Translate(x, y))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            "translateX" => {
+                if !args.is_empty() {
+                    self.parse_length_value(args[0]).map(TransformFunction::TranslateX)
+                } else {
+                    None
+                }
+            }
+            "translateY" => {
+                if !args.is_empty() {
+                    self.parse_length_value(args[0]).map(TransformFunction::TranslateY)
+                } else {
+                    None
+                }
+            }
+            "rotate" => {
+                if !args.is_empty() {
+                    let angle_str = args[0].trim_end_matches("deg").trim_end_matches("rad");
+                    if let Ok(angle) = angle_str.parse::<f32>() {
+                        Some(TransformFunction::Rotate(angle))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            "scale" => {
+                if args.len() >= 2 {
+                    if let (Ok(x), Ok(y)) = (args[0].parse::<f32>(), args[1].parse::<f32>()) {
+                        Some(TransformFunction::Scale(x, y))
+                    } else {
+                        None
+                    }
+                } else if !args.is_empty() {
+                    if let Ok(scale) = args[0].parse::<f32>() {
+                        Some(TransformFunction::Scale(scale, scale))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => {
+                tracing::debug!("Unsupported transform function: {}", name);
+                None
+            }
+        }
+    }
+    
+    /// Parse transform-origin property
+    fn parse_transform_origin(&self, value: &str) -> Option<(LengthValue, LengthValue)> {
+        let parts: Vec<&str> = value.trim().split_whitespace().collect();
+        
+        match parts.len() {
+            1 => {
+                // Single value applies to both X and Y
+                if let Some(length) = self.parse_length_value(parts[0]) {
+                    Some((length.clone(), length))
+                } else {
+                    None
+                }
+            }
+            2 => {
+                // X and Y values
+                if let (Some(x), Some(y)) = (self.parse_length_value(parts[0]), self.parse_length_value(parts[1])) {
+                    Some((x, y))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+    
+    /// Parse transition properties
+    fn parse_transition_properties(&self, value: &str) -> Vec<TransitionProperty> {
+        let mut transitions = Vec::new();
+        
+        // Split by commas for multiple transitions
+        for transition_str in value.split(',') {
+            let parts: Vec<&str> = transition_str.trim().split_whitespace().collect();
+            
+            if !parts.is_empty() {
+                let property = parts[0].to_string();
+                let duration = if parts.len() > 1 {
+                    self.parse_time_value(parts[1]).unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                let timing_function = if parts.len() > 2 {
+                    parts[2].to_string()
+                } else {
+                    "ease".to_string()
+                };
+                let delay = if parts.len() > 3 {
+                    self.parse_time_value(parts[3]).unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                
+                transitions.push(TransitionProperty {
+                    property,
+                    duration,
+                    timing_function,
+                    delay,
+                });
+            }
+        }
+        
+        transitions
+    }
+    
+    /// Parse time values (seconds or milliseconds)
+    fn parse_time_value(&self, value: &str) -> Option<f32> {
+        if value.ends_with("s") {
+            if value.ends_with("ms") {
+                // Milliseconds
+                let ms_str = &value[..value.len() - 2];
+                ms_str.parse::<f32>().ok().map(|ms| ms / 1000.0)
+            } else {
+                // Seconds
+                let num_str = &value[..value.len() - 1];
+                num_str.parse::<f32>().ok()
+            }
+        } else {
+            value.parse::<f32>().ok()
         }
     }
 }

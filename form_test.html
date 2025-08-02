@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citadel Browser Form Testing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .form-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        h2 {
+            color: #666;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        input[type="number"],
+        input[type="url"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        input[type="checkbox"],
+        input[type="radio"] {
+            margin-right: 8px;
+        }
+        .radio-group,
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .radio-item,
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        input[type="submit"],
+        input[type="reset"],
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        input[type="submit"],
+        button[type="submit"] {
+            background-color: #007bff;
+            color: white;
+        }
+        input[type="submit"]:hover,
+        button[type="submit"]:hover {
+            background-color: #0056b3;
+        }
+        input[type="reset"],
+        button[type="reset"] {
+            background-color: #6c757d;
+            color: white;
+        }
+        input[type="reset"]:hover,
+        button[type="reset"]:hover {
+            background-color: #545b62;
+        }
+        button[type="button"] {
+            background-color: #28a745;
+            color: white;
+        }
+        button[type="button"]:hover {
+            background-color: #1e7e34;
+        }
+        .security-notice {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #1976d2;
+        }
+        .security-notice h3 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Citadel Browser Form Testing</h1>
+    
+    <div class="security-notice">
+        <h3>🔒 Security Notice</h3>
+        <p><strong>This page demonstrates Citadel Browser's form handling capabilities.</strong></p>
+        <ul>
+            <li>✅ All form submissions are validated for security</li>
+            <li>🛡️ Only HTTPS submissions are allowed (except localhost)</li>
+            <li>🚫 Tracking and fingerprinting scripts are blocked</li>
+            <li>🔐 Password fields require secure connections</li>
+            <li>📊 Form data is processed through ZKVM isolation</li>
+        </ul>
+    </div>
+
+    <!-- Contact Form -->
+    <div class="form-container">
+        <h2>📧 Contact Form</h2>
+        <form id="contactForm" action="#" method="post">
+            <div class="form-group">
+                <label for="name">Full Name:</label>
+                <input type="text" id="name" name="name" placeholder="Enter your full name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email Address:</label>
+                <input type="email" id="email" name="email" placeholder="Enter your email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="website">Website (optional):</label>
+                <input type="url" id="website" name="website" placeholder="https://example.com">
+            </div>
+            
+            <div class="form-group">
+                <label for="message">Message:</label>
+                <textarea id="message" name="message" placeholder="Enter your message here..." rows="4" required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Contact Preference:</label>
+                <div class="radio-group">
+                    <div class="radio-item">
+                        <input type="radio" id="contact_email" name="contact_method" value="email" checked>
+                        <label for="contact_email">Email</label>
+                    </div>
+                    <div class="radio-item">
+                        <input type="radio" id="contact_phone" name="contact_method" value="phone">
+                        <label for="contact_phone">Phone</label>
+                    </div>
+                    <div class="radio-item">
+                        <input type="radio" id="contact_both" name="contact_method" value="both">
+                        <label for="contact_both">Both</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="newsletter" name="newsletter" value="yes">
+                        <label for="newsletter">Subscribe to newsletter</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="privacy" name="privacy" value="accepted" required>
+                        <label for="privacy">I accept the privacy policy</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <input type="submit" value="Send Message">
+                <input type="reset" value="Clear Form">
+            </div>
+        </form>
+    </div>
+
+    <!-- Search Form -->
+    <div class="form-container">
+        <h2>🔍 Search Form</h2>
+        <form id="searchForm" action="https://duckduckgo.com/" method="get">
+            <div class="form-group">
+                <label for="query">Search Query:</label>
+                <input type="text" id="query" name="q" placeholder="Enter search terms..." required>
+            </div>
+            
+            <div class="form-group">
+                <label for="category">Category:</label>
+                <select id="category" name="category">
+                    <option value="">All Categories</option>
+                    <option value="web">Web</option>
+                    <option value="images">Images</option>
+                    <option value="videos">Videos</option>
+                    <option value="news">News</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="safe_search" name="safe_search" value="on" checked>
+                    <label for="safe_search">Safe Search</label>
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <input type="submit" value="Search">
+            </div>
+        </form>
+    </div>
+
+    <!-- User Registration Form -->
+    <div class="form-container">
+        <h2>👤 User Registration</h2>
+        <form id="registrationForm" action="#" method="post">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" placeholder="Choose a username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" placeholder="Enter secure password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="confirm_password">Confirm Password:</label>
+                <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm your password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="age">Age:</label>
+                <input type="number" id="age" name="age" min="13" max="120" placeholder="Enter your age" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Account Type:</label>
+                <div class="radio-group">
+                    <div class="radio-item">
+                        <input type="radio" id="account_personal" name="account_type" value="personal" checked>
+                        <label for="account_personal">Personal</label>
+                    </div>
+                    <div class="radio-item">
+                        <input type="radio" id="account_business" name="account_type" value="business">
+                        <label for="account_business">Business</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="terms" name="terms" value="accepted" required>
+                        <label for="terms">I agree to the Terms of Service</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="marketing" name="marketing" value="yes">
+                        <label for="marketing">Send me marketing emails</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit">Create Account</button>
+                <button type="reset">Clear All</button>
+                <button type="button" onclick="console.log('Button clicked!')">Test Button</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- JavaScript Demo -->
+    <div class="form-container">
+        <h2>⚙️ JavaScript Form Interaction</h2>
+        <p>This section demonstrates JavaScript interaction with forms (when JavaScript is enabled):</p>
+        
+        <form id="jsForm" action="#" method="post">
+            <div class="form-group">
+                <label for="js_input">Dynamic Input:</label>
+                <input type="text" id="js_input" name="js_input" placeholder="Type something...">
+            </div>
+            
+            <div class="button-group">
+                <button type="button" onclick="updateInput()">Update Input</button>
+                <button type="button" onclick="showFormData()">Show Form Data</button>
+            </div>
+        </form>
+        
+        <div id="output" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
+            <strong>JavaScript Output:</strong>
+            <pre id="outputContent"></pre>
+        </div>
+    </div>
+
+    <script>
+        console.log('🚀 Citadel Browser Form Test Page Loaded');
+        
+        // Test basic DOM access
+        if (typeof document !== 'undefined') {
+            console.log('✅ Document object available');
+            console.log('📄 Document title:', document.title);
+            
+            // Test getElementById
+            const testInput = document.getElementById('js_input');
+            if (testInput) {
+                console.log('✅ getElementById working');
+                console.log('🏷️ Element tag:', testInput.tagName);
+            }
+        }
+        
+        function updateInput() {
+            const input = document.getElementById('js_input');
+            if (input) {
+                input.value = 'Updated at ' + new Date().toLocaleTimeString();
+                console.log('📝 Input updated:', input.value);
+            }
+        }
+        
+        function showFormData() {
+            const form = document.getElementById('jsForm');
+            const output = document.getElementById('output');
+            const outputContent = document.getElementById('outputContent');
+            
+            if (form && output && outputContent) {
+                const formData = new FormData(form);
+                let dataStr = 'Form Data:\n';
+                for (let [key, value] of formData.entries()) {
+                    dataStr += key + ': ' + value + '\n';
+                }
+                
+                outputContent.textContent = dataStr;
+                output.style.display = 'block';
+                console.log('📊 Form data displayed');
+            }
+        }
+        
+        // Add form submission handlers
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🎯 DOM Content Loaded');
+            
+            // Add event listeners to all forms
+            const forms = document.getElementsByTagName('form');
+            console.log('📝 Found', forms.length, 'forms');
+            
+            for (let i = 0; i < forms.length; i++) {
+                const form = forms[i];
+                form.addEventListener('submit', function(e) {
+                    console.log('📤 Form submission attempted:', form.id || 'unnamed form');
+                    console.log('🎯 Action:', form.action);
+                    console.log('📡 Method:', form.method);
+                    
+                    // Let Citadel Browser handle the actual submission
+                    // The browser will apply security validation
+                });
+            }
+        });
+    </script>
+</body>
+</html>

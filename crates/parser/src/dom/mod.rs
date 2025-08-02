@@ -14,7 +14,9 @@ pub use metrics::DomMetrics;
 pub use node::{Attribute, Element, Node, NodeBuilder, NodeHandle, NodeData};
 
 use std::sync::Arc;
-use citadel_security::context::SecurityContext;
+use crate::security::SecurityContext;
+use tracing::{info, debug, warn};
+use html5ever::namespace_url;
 
 /// Represents the top-level DOM structure for a parsed document.
 #[derive(Debug)]
@@ -24,7 +26,7 @@ pub struct Dom {
     /// Metrics collected during the parsing and DOM construction process.
     pub metrics: Arc<DomMetrics>,
     /// The security context applied during DOM construction.
-    pub security_context: Arc<SecurityContext>,
+    pub security_context: Arc<crate::security::SecurityContext>,
     // Potentially add QuirksMode or other document-level properties here
 }
 
@@ -33,7 +35,7 @@ impl Dom {
     pub fn new() -> Self {
         // Create metrics and a root document node
         let metrics = Arc::new(DomMetrics::new());
-        let security_context = Arc::new(SecurityContext::new(10));
+        let security_context = Arc::new(crate::security::SecurityContext::new(10));
         let root_node_data = NodeData::Document;
         let root_node = Node::new(root_node_data);
         let root_handle = Arc::new(std::sync::RwLock::new(root_node));
@@ -305,6 +307,185 @@ impl Dom {
     /// Get the metrics for this DOM
     pub fn get_metrics(&self) -> &DomMetrics {
         &self.metrics
+    }
+    
+    /// Find element by ID (JavaScript getElementById support)
+    pub fn get_element_by_id(&self, id: &str) -> Option<NodeHandle> {
+        self.find_element_by_id_recursive(&self.document_node_handle, id)
+    }
+    
+    /// Recursively search for element by ID
+    fn find_element_by_id_recursive(&self, node_handle: &NodeHandle, target_id: &str) -> Option<NodeHandle> {
+        if let Ok(node) = node_handle.read() {
+            // Check if this element has the target ID
+            if let Some(element_id) = node.element_id() {
+                if element_id == target_id {
+                    return Some(node_handle.clone());
+                }
+            }
+            
+            // Search children
+            for child in &node.children {
+                if let Some(found) = self.find_element_by_id_recursive(child, target_id) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+    
+    /// Find elements by tag name (basic querySelector support)
+    pub fn get_elements_by_tag_name(&self, tag_name: &str) -> Vec<NodeHandle> {
+        let mut results = Vec::new();
+        self.find_elements_by_tag_recursive(&self.document_node_handle, tag_name, &mut results);
+        results
+    }
+    
+    /// Recursively search for elements by tag name
+    fn find_elements_by_tag_recursive(&self, node_handle: &NodeHandle, target_tag: &str, results: &mut Vec<NodeHandle>) {
+        if let Ok(node) = node_handle.read() {
+            // Check if this element matches the tag name
+            if let Some(tag_name) = node.tag_name() {
+                if tag_name.eq_ignore_ascii_case(target_tag) {
+                    results.push(node_handle.clone());
+                }
+            }
+            
+            // Search children
+            for child in &node.children {
+                self.find_elements_by_tag_recursive(child, target_tag, results);
+            }
+        }
+    }
+    
+    /// Find elements by class name
+    pub fn get_elements_by_class_name(&self, class_name: &str) -> Vec<NodeHandle> {
+        let mut results = Vec::new();
+        self.find_elements_by_class_recursive(&self.document_node_handle, class_name, &mut results);
+        results
+    }
+    
+    /// Recursively search for elements by class name
+    fn find_elements_by_class_recursive(&self, node_handle: &NodeHandle, target_class: &str, results: &mut Vec<NodeHandle>) {
+        if let Ok(node) = node_handle.read() {
+            // Check if this element has the target class
+            let classes = node.class_list();
+            if classes.contains(&target_class.to_string()) {
+                results.push(node_handle.clone());
+            }
+            
+            // Search children
+            for child in &node.children {
+                self.find_elements_by_class_recursive(child, target_class, results);
+            }
+        }
+    }
+    
+    /// Basic querySelector implementation (ID and tag name only for now)
+    pub fn query_selector(&self, selector: &str) -> Option<NodeHandle> {
+        if selector.starts_with('#') {
+            // ID selector
+            let id = &selector[1..];
+            self.get_element_by_id(id)
+        } else if selector.starts_with('.') {
+            // Class selector - return first match
+            let class_name = &selector[1..];
+            self.get_elements_by_class_name(class_name).into_iter().next()
+        } else {
+            // Tag selector - return first match
+            self.get_elements_by_tag_name(selector).into_iter().next()
+        }
+    }
+    
+    /// Basic querySelectorAll implementation
+    pub fn query_selector_all(&self, selector: &str) -> Vec<NodeHandle> {
+        if selector.starts_with('#') {
+            // ID selector - return at most one element
+            let id = &selector[1..];
+            self.get_element_by_id(id).into_iter().collect()
+        } else if selector.starts_with('.') {
+            // Class selector
+            let class_name = &selector[1..];
+            self.get_elements_by_class_name(class_name)
+        } else {
+            // Tag selector
+            self.get_elements_by_tag_name(selector)
+        }
+    }
+    
+    /// Create a new element and add it to the DOM
+    pub fn create_element(&mut self, tag_name: &str) -> NodeHandle {
+        use crate::dom::node::{NodeBuilder, NodeData, Element};
+        use html5ever::{QualName, ns};
+        use string_cache::Atom;
+        
+        let name = QualName::new(None, ns!(html), Atom::from(tag_name));
+        let attrs = Vec::new();
+        
+        let builder = NodeBuilder::new(self.metrics.clone(), self.security_context.clone());
+        match builder.create_element_node(name, attrs) {
+            Ok(node) => node,
+            Err(_) => {
+                // Fallback: create a simple element
+                let element = Element::new(
+                    QualName::new(None, ns!(html), Atom::from(tag_name)),
+                    Vec::new()
+                );
+                let node_data = NodeData::Element(element);
+                crate::dom::node::Node::create_new(node_data)
+            }
+        }
+    }
+    
+    /// Create a text node
+    pub fn create_text_node(&self, text: &str) -> NodeHandle {
+        use crate::dom::node::{NodeData, Node};
+        Node::create_new(NodeData::Text(text.to_string()))
+    }
+    
+    /// Get the document's body element
+    pub fn get_body(&self) -> Option<NodeHandle> {
+        self.get_elements_by_tag_name("body").into_iter().next()
+    }
+    
+    /// Get the document's head element
+    pub fn get_head(&self) -> Option<NodeHandle> {
+        self.get_elements_by_tag_name("head").into_iter().next()
+    }
+    
+    /// Add element to the document (append to body if it exists, otherwise to root)
+    pub fn add_element(&mut self, element: NodeHandle) {
+        if let Some(body) = self.get_body() {
+            if let Ok(mut body_node) = body.write() {
+                body_node.children.push(element);
+                return;
+            }
+        }
+        
+        // Fallback: add to root
+        self.append_child(&self.document_node_handle.clone(), element);
+    }
+    
+    /// Count total elements in DOM
+    pub fn count_elements(&self) -> usize {
+        self.count_elements_recursive(&self.document_node_handle)
+    }
+    
+    /// Recursively count elements
+    fn count_elements_recursive(&self, node_handle: &NodeHandle) -> usize {
+        let mut count = 0;
+        
+        if let Ok(node) = node_handle.read() {
+            if node.is_element() {
+                count += 1;
+            }
+            
+            for child in &node.children {
+                count += self.count_elements_recursive(child);
+            }
+        }
+        
+        count
     }
 }
 

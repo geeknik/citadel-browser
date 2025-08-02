@@ -736,7 +736,14 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "citadel-networking",
+ "citadel-parser",
+ "citadel-security",
+ "citadel-tabs",
  "libfuzzer-sys",
+ "rand 0.8.5",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -798,7 +805,10 @@ name = "citadel-security"
 version = "0.0.1-alpha"
 dependencies = [
  "log",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
+ "url",
 ]
 
 [[package]]

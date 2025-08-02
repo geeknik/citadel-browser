@@ -41,6 +41,9 @@ serde_json          = "1.0.114"
 url                 = "2.5.4"
 idna                = "1.0.3"  # Security fix for CVE affecting < 1.0.0
 regex               = "1.10.2"
+uuid                = { version = "1.7.0", features = ["v4", "serde"] }
+sha2                = "0.10.8"
+base64              = "0.21.7"
 
 # macOS specific dependencies
 core-foundation     = "0.9.4"

@@ -8,6 +8,13 @@ publish = false
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
 citadel-networking = { path = "../crates/networking" }
+citadel-parser = { path = "../crates/parser" }
+citadel-security = { path = "../crates/security" }
+citadel-tabs = { path = "../crates/tabs" }
+tokio = { version = "1.36.0", features = ["rt", "macros"] }
+url = "2.5.4"
+rand = "0.8.5"
+serde_json = "1.0.114"
 
 [build-dependencies]
 arbitrary = { version = "1", features = ["derive"] }

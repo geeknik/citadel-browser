@@ -1,7 +1,7 @@
 //! Defines the core Node structure and associated builders for the DOM.
 
 use std::sync::{Arc, RwLock};
-use html5ever::QualName;
+use html5ever::{QualName, local_name, ns, namespace_url};
 use crate::dom::metrics::DomMetrics;
 use crate::dom::error::DomError;
 // Use our local SecurityContext implementation
@@ -185,6 +185,197 @@ impl Node {
                 None
             }
             _ => None,
+        }
+    }
+    
+    /// Set element attribute (mutable version)
+    pub fn set_attribute(&mut self, name: &str, value: &str) -> Result<(), &'static str> {
+        match &mut self.data {
+            NodeData::Element(elem) => {
+                // Check if attribute already exists
+                for attr in &mut elem.attributes {
+                    if &*attr.name.local == name {
+                        attr.value = value.to_string();
+                        return Ok(());
+                    }
+                }
+                
+                // Add new attribute
+                use string_cache::Atom;
+                let new_attr = Attribute {
+                    name: QualName::new(None, ns!(), Atom::from(name)),
+                    value: value.to_string(),
+                };
+                elem.attributes.push(new_attr);
+                Ok(())
+            },
+            _ => Err("Cannot set attribute on non-element node")
+        }
+    }
+    
+    /// Remove element attribute
+    pub fn remove_attribute(&mut self, name: &str) -> Result<(), &'static str> {
+        match &mut self.data {
+            NodeData::Element(elem) => {
+                elem.attributes.retain(|attr| &*attr.name.local != name);
+                Ok(())
+            },
+            _ => Err("Cannot remove attribute on non-element node")
+        }
+    }
+    
+    /// Get inner HTML content (simplified)
+    pub fn inner_html(&self) -> String {
+        match &self.data {
+            NodeData::Element(_) => {
+                let mut html = String::new();
+                for child in &self.children {
+                    if let Ok(child_guard) = child.read() {
+                        match &child_guard.data {
+                            NodeData::Text(text) => html.push_str(text),
+                            NodeData::Element(elem) => {
+                                html.push_str(&format!("<{}>", elem.local_name()));
+                                html.push_str(&child_guard.inner_html());
+                                html.push_str(&format!("</{}>", elem.local_name()));
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+                html
+            },
+            _ => String::new()
+        }
+    }
+    
+    /// Set inner HTML content (simplified - security-conscious)
+    pub fn set_inner_html(&mut self, html: &str) -> Result<(), &'static str> {
+        match &self.data {
+            NodeData::Element(_) => {
+                // Clear existing children
+                self.children.clear();
+                
+                // For security, we'll just add the HTML as text content
+                // In a full implementation, this would parse the HTML
+                if !html.is_empty() {
+                    let text_node = Node::create_new(NodeData::Text(html.to_string()));
+                    self.children.push(text_node);
+                }
+                Ok(())
+            },
+            _ => Err("Cannot set innerHTML on non-element node")
+        }
+    }
+    
+    /// Set text content, replacing all children
+    pub fn set_text_content(&mut self, text: &str) {
+        // Clear existing children
+        self.children.clear();
+        
+        // Add new text node if text is not empty
+        if !text.is_empty() {
+            let text_node = Node::create_new(NodeData::Text(text.to_string()));
+            self.children.push(text_node);
+        }
+    }
+    
+    /// Get all CSS classes from class attribute
+    pub fn class_list(&self) -> Vec<String> {
+        match &self.data {
+            NodeData::Element(elem) => {
+                for attr in &elem.attributes {
+                    if &*attr.name.local == "class" {
+                        return attr.value
+                            .split_whitespace()
+                            .map(|s| s.to_string())
+                            .collect();
+                    }
+                }
+                Vec::new()
+            },
+            _ => Vec::new()
+        }
+    }
+    
+    /// Add CSS class
+    pub fn add_class(&mut self, class_name: &str) -> Result<(), &'static str> {
+        match &mut self.data {
+            NodeData::Element(elem) => {
+                // Find existing class attribute
+                for attr in &mut elem.attributes {
+                    if &*attr.name.local == "class" {
+                        let mut classes: Vec<&str> = attr.value.split_whitespace().collect();
+                        if !classes.contains(&class_name) {
+                            classes.push(class_name);
+                            attr.value = classes.join(" ");
+                        }
+                        return Ok(());
+                    }
+                }
+                
+                // Create new class attribute
+                use string_cache::Atom;
+                let class_attr = Attribute {
+                    name: QualName::new(None, ns!(), Atom::from("class")),
+                    value: class_name.to_string(),
+                };
+                elem.attributes.push(class_attr);
+                Ok(())
+            },
+            _ => Err("Cannot add class to non-element node")
+        }
+    }
+    
+    /// Remove CSS class
+    pub fn remove_class(&mut self, class_name: &str) -> Result<(), &'static str> {
+        match &mut self.data {
+            NodeData::Element(elem) => {
+                for attr in &mut elem.attributes {
+                    if &*attr.name.local == "class" {
+                        let classes: Vec<&str> = attr.value
+                            .split_whitespace()
+                            .filter(|&c| c != class_name)
+                            .collect();
+                        attr.value = classes.join(" ");
+                        return Ok(());
+                    }
+                }
+                Ok(())
+            },
+            _ => Err("Cannot remove class from non-element node")
+        }
+    }
+    
+    /// Toggle CSS class
+    pub fn toggle_class(&mut self, class_name: &str) -> Result<bool, &'static str> {
+        let has_class = self.class_list().contains(&class_name.to_string());
+        if has_class {
+            self.remove_class(class_name)?;
+            Ok(false)
+        } else {
+            self.add_class(class_name)?;
+            Ok(true)
+        }
+    }
+    
+    /// Get element dimensions (mock values for now)
+    pub fn get_bounding_rect(&self) -> (f32, f32, f32, f32) {
+        // Returns (x, y, width, height)
+        // In a real implementation, this would come from the layout engine
+        (0.0, 0.0, 100.0, 20.0)
+    }
+    
+    /// Get computed styles (mock implementation)
+    pub fn get_computed_style(&self, property: &str) -> Option<String> {
+        // In a real implementation, this would query the CSS engine
+        match property {
+            "display" => Some("block".to_string()),
+            "visibility" => Some("visible".to_string()),
+            "color" => Some("rgb(0, 0, 0)".to_string()),
+            "backgroundColor" => Some("rgba(0, 0, 0, 0)".to_string()),
+            "width" => Some("auto".to_string()),
+            "height" => Some("auto".to_string()),
+            _ => None
         }
     }
 
