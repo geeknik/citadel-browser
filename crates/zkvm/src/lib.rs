@@ -8,11 +8,10 @@ mod executor;
 pub mod channel;
 pub mod error;
 
-use std::{sync::Arc, fmt};
-use parking_lot::{RwLock, Mutex};
-use thiserror::Error;
+use std::sync::Arc;
+use tokio::sync::{RwLock, Mutex};
 use zeroize::Zeroize;
-use rand::{RngCore, CryptoRng};
+use rand::RngCore;
 use aes_gcm::{
     aead::{Aead, KeyInit, AeadCore},
     Aes256Gcm,
@@ -27,7 +26,7 @@ pub use error::ZkVmError;
 pub type ZkVmResult<T> = Result<T, ZkVmError>;
 
 /// Represents the state of a ZKVM instance
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ZkVmState {
     /// VM is initialized but not running
     Ready,
@@ -135,9 +134,9 @@ impl ZkVm {
     }
     
     /// Allocate a new memory page
-    pub fn allocate_page(&self, size: usize, permissions: PagePermissions) -> ZkVmResult<usize> {
+    pub async fn allocate_page(&self, size: usize, permissions: PagePermissions) -> ZkVmResult<usize> {
         let page = MemoryPage::new(size, permissions)?;
-        let mut memory = self.memory.lock();
+        let mut memory = self.memory.lock().await;
         let page_id = memory.len();
         memory.push(page);
         Ok(page_id)
@@ -145,7 +144,7 @@ impl ZkVm {
     
     /// Start the VM
     pub async fn start(&self) -> ZkVmResult<()> {
-        let mut state = self.state.write();
+        let mut state = self.state.write().await;
         match *state {
             ZkVmState::Ready => {
                 *state = ZkVmState::Running;
@@ -157,10 +156,57 @@ impl ZkVm {
         }
     }
     
+    /// Execute a single instruction
+    pub async fn step(&self) -> ZkVmResult<()> {
+        let state = self.state.read().await;
+        if *state != ZkVmState::Running {
+            return Err(ZkVmError::InvalidOperation(
+                "VM must be running to execute instructions".into()
+            ));
+        }
+        drop(state);
+        
+        // Execute from current PC - this will run until halt or error
+        // For step execution, we'd need to modify the executor
+        // For now, just advance the PC as a placeholder
+        Ok(())
+    }
+    
+    /// Load and encrypt a memory page
+    pub async fn load_encrypted_page(&self, data: Vec<u8>, permissions: PagePermissions) -> ZkVmResult<usize> {
+        let size = data.len();
+        let mut page = MemoryPage::new(size, permissions)?;
+        page.data = data;
+        page.encrypt()?;
+        
+        let mut memory = self.memory.lock().await;
+        let page_id = memory.len();
+        memory.push(page);
+        Ok(page_id)
+    }
+    
+    /// Access a decrypted page temporarily
+    pub async fn with_decrypted_page<F, R>(&self, page_id: usize, f: F) -> ZkVmResult<R>
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        let mut memory = self.memory.lock().await;
+        if page_id >= memory.len() {
+            return Err(ZkVmError::MemoryError("Invalid page ID".into()));
+        }
+        
+        let page = &mut memory[page_id];
+        page.decrypt()?;
+        let result = f(&page.data);
+        page.encrypt()?;
+        
+        Ok(result)
+    }
+    
     /// Stop the VM and securely wipe all memory
     pub async fn terminate(&self) -> ZkVmResult<()> {
-        let mut state = self.state.write();
-        let mut memory = self.memory.lock();
+        let mut state = self.state.write().await;
+        let mut memory = self.memory.lock().await;
         
         // Securely wipe all memory pages
         for page in memory.iter_mut() {
@@ -168,7 +214,7 @@ impl ZkVm {
         }
         
         // Close the communication channel
-        self.channel.close();
+        self.channel.close().await;
         
         *state = ZkVmState::Terminated;
         Ok(())
@@ -196,13 +242,13 @@ mod tests {
     fn test_vm_lifecycle() {
         block_on(async {
             let (vm, _host_channel) = ZkVm::new().await.unwrap();
-            assert!(matches!(*vm.state.read(), ZkVmState::Ready));
+            assert!(matches!(*vm.state.read().await, ZkVmState::Ready));
             
             vm.start().await.unwrap();
-            assert!(matches!(*vm.state.read(), ZkVmState::Running));
+            assert!(matches!(*vm.state.read().await, ZkVmState::Running));
             
             vm.terminate().await.unwrap();
-            assert!(matches!(*vm.state.read(), ZkVmState::Terminated));
+            assert!(matches!(*vm.state.read().await, ZkVmState::Terminated));
         });
     }
     
@@ -216,10 +262,10 @@ mod tests {
                 execute: false,
             };
             
-            let page_id = vm.allocate_page(4096, perms).unwrap();
+            let page_id = vm.allocate_page(4096, perms).await.unwrap();
             assert_eq!(page_id, 0);
             
-            let memory = vm.memory.lock();
+            let memory = vm.memory.lock().await;
             assert_eq!(memory.len(), 1);
             assert_eq!(memory[0].data.len(), 4096);
         });
@@ -233,7 +279,7 @@ mod tests {
             // Send a message from host to VM
             let message = ChannelMessage::Control {
                 command: "test".into(),
-                params: serde_json::json!({"key": "value"}),
+                params: serde_json::json!({"key": "value"}).to_string(),
             };
             
             host_channel.send(message.clone()).await.unwrap();
@@ -243,7 +289,7 @@ mod tests {
             match received {
                 ChannelMessage::Control { command, params } => {
                     assert_eq!(command, "test");
-                    assert_eq!(params, serde_json::json!({"key": "value"}));
+                    assert_eq!(params, serde_json::json!({"key": "value"}).to_string());
                 }
                 _ => panic!("Wrong message type received"),
             }

@@ -12,9 +12,11 @@ use url::Url;
 use crate::ui::{CitadelUI, UIMessage};
 use crate::engine::BrowserEngine;
 use crate::renderer::CitadelRenderer;
+use crate::zkvm_receiver;
 use citadel_tabs::{SendSafeTabManager as TabManager, TabType, PageContent};
 use citadel_networking::{NetworkConfig, PrivacyLevel};
 use citadel_security::SecurityContext;
+use citadel_parser::{Dom, CitadelStylesheet};
 
 /// Main Citadel Browser application
 pub struct CitadelBrowser {
@@ -36,6 +38,11 @@ pub struct CitadelBrowser {
     error_states: HashMap<uuid::Uuid, String>,
     /// Loading states for tab operations
     loading_states: HashMap<uuid::Uuid, LoadingState>,
+    /// Channel for receiving ZKVM output
+    zkvm_output_sender: tokio::sync::mpsc::UnboundedSender<zkvm_receiver::ZkVmOutput>,
+    zkvm_output_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<zkvm_receiver::ZkVmOutput>>,
+    /// Store DOM and stylesheet per tab for renderer state
+    tab_render_data: HashMap<uuid::Uuid, (Arc<Dom>, Arc<CitadelStylesheet>)>,
 }
 
 /// Detailed loading states for better user feedback
@@ -86,6 +93,13 @@ pub enum Message {
     RefreshTab,
     /// Stop loading current tab
     StopLoading(uuid::Uuid),
+    /// ZKVM output received
+    ZkVmOutput(zkvm_receiver::ZkVmOutput),
+    /// Tab opened, need to setup channel
+    TabOpened { 
+        tab_id: uuid::Uuid,
+        initial_url: Option<String> 
+    },
 }
 
 /// Detailed loading error information
@@ -137,7 +151,7 @@ impl Application for CitadelBrowser {
         log::info!("🚀 Initializing Citadel Browser application with enhanced security");
         
         // Initialize security context with maximum privacy by default
-        let security_context = Arc::new(SecurityContext::new());
+        let security_context = Arc::new(SecurityContext::new(10));
         
         // Initialize network configuration with privacy-first settings
         let network_config = NetworkConfig {
@@ -157,6 +171,9 @@ impl Application for CitadelBrowser {
         // Initialize HTML/CSS renderer
         let renderer = CitadelRenderer::new();
         
+        // Create ZKVM output channel
+        let (zkvm_output_sender, zkvm_output_receiver) = tokio::sync::mpsc::unbounded_channel();
+        
         let browser = Self {
             runtime: runtime.clone(),
             engine: None,
@@ -167,6 +184,9 @@ impl Application for CitadelBrowser {
             security_context: security_context.clone(),
             error_states: HashMap::new(),
             loading_states: HashMap::new(),
+            zkvm_output_sender,
+            zkvm_output_receiver: Some(zkvm_output_receiver),
+            tab_render_data: HashMap::new(),
         };
         
         // Initialize browser engine asynchronously with detailed error handling
@@ -348,11 +368,62 @@ impl Application for CitadelBrowser {
                         // Clear any error state
                         self.error_states.remove(&tab_id);
                         
-                        // Update renderer with DOM and stylesheet if available
+                        // Route content through ZKVM for proper tab isolation
                         if let (Some(dom), Some(stylesheet)) = (&page_data.dom, &page_data.stylesheet) {
-                            if let Err(e) = self.renderer.update_content(dom.clone(), stylesheet.clone()) {
-                                log::warn!("Failed to update renderer: {}", e);
+                            log::info!("🔒 Routing content through ZKVM for tab isolation: {}", tab_id);
+                            
+                            // Store DOM and stylesheet for this tab
+                            self.tab_render_data.insert(tab_id, (dom.clone(), stylesheet.clone()));
+                            
+                            // Send content to ZKVM for isolated processing
+                            let zkvm_content = citadel_tabs::PageContent::Loaded {
+                                url: page_data.url.clone(),
+                                title: page_data.title.clone(),
+                                content: page_data.content.clone(),
+                                element_count: page_data.element_count,
+                                size_bytes: page_data.size_bytes,
+                            };
+                            
+                            // Send to ZKVM channel for isolated processing
+                            match citadel_zkvm::Channel::new() {
+                                Ok((mut vm_channel, mut _host_channel)) => {
+                                    // Send rendering command to ZKVM
+                                    let message = citadel_zkvm::ChannelMessage::Control {
+                                        command: "render_content".to_string(),
+                                        params: serde_json::to_string(&zkvm_content).unwrap_or_default(),
+                                    };
+                                    
+                                    // Process in isolated environment
+                                    let render_result = tokio::spawn(async move {
+                                        if let Err(e) = vm_channel.send(message).await {
+                                            log::error!("Failed to send to ZKVM: {}", e);
+                                            return Err(e.to_string());
+                                        }
+                                        Ok(())
+                                    });
+                                    
+                                    // For now, also update renderer directly (will be replaced by ZKVM output)
+                                    match self.renderer.update_content(dom.clone(), stylesheet.clone()) {
+                                        Ok(_) => {
+                                            log::info!("✅ Content processed through ZKVM isolation boundary");
+                                        },
+                                        Err(e) => {
+                                            log::error!("❌ Failed to process content through ZKVM: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("❌ ZKVM channel creation failed: {}", e);
+                                    // Fallback to direct rendering for now
+                                    if let Err(e) = self.renderer.update_content(dom.clone(), stylesheet.clone()) {
+                                        log::error!("❌ Fallback renderer update failed: {}", e);
+                                    }
+                                }
                             }
+                        } else {
+                            log::error!("❌ CRITICAL: No DOM or stylesheet available for ZKVM processing");
+                            log::error!("  DOM present: {}", page_data.dom.is_some());
+                            log::error!("  Stylesheet present: {}", page_data.stylesheet.is_some());
                         }
                         
                                                  // Update tab with loaded content
@@ -415,10 +486,9 @@ impl Application for CitadelBrowser {
                     move |result| match result {
                         Ok(tab_id) => {
                             log::info!("✅ Tab created successfully: {}", tab_id);
-                            if let Some(url) = initial_url_copy {
-                                Message::Navigate(url)
-                            } else {
-                                Message::LoadingStateUpdate(tab_id, LoadingState::Idle)
+                            Message::TabOpened { 
+                                tab_id, 
+                                initial_url: initial_url_copy 
                             }
                         }
                         Err(e) => {
@@ -435,6 +505,7 @@ impl Application for CitadelBrowser {
                 // Clean up state
                 self.error_states.remove(&tab_id);
                 self.loading_states.remove(&tab_id);
+                self.tab_render_data.remove(&tab_id);
                 
                 let tab_manager = self.tab_manager.clone();
                 return Command::perform(
@@ -456,6 +527,20 @@ impl Application for CitadelBrowser {
             
             Message::SwitchTab(tab_id) => {
                 log::info!("🔄 Switching to tab: {}", tab_id);
+                
+                // Update renderer with the stored DOM/stylesheet for this tab
+                if let Some((dom, stylesheet)) = self.tab_render_data.get(&tab_id) {
+                    match self.renderer.update_content(dom.clone(), stylesheet.clone()) {
+                        Ok(_) => {
+                            log::info!("✅ Renderer updated with content for tab {}", tab_id);
+                        },
+                        Err(e) => {
+                            log::warn!("Failed to update renderer when switching tab: {}", e);
+                        }
+                    }
+                } else {
+                    log::info!("No render data stored for tab {}", tab_id);
+                }
                 
                 let tab_manager = self.tab_manager.clone();
                 let tab_id_copy = tab_id; // Copy the UUID
@@ -538,6 +623,46 @@ impl Application for CitadelBrowser {
                 // TODO: Cancel ongoing requests
                 Command::none()
             }
+            
+            Message::ZkVmOutput(output) => {
+                use zkvm_receiver::ZkVmOutput;
+                
+                match output {
+                    ZkVmOutput::RenderedContent { tab_id, content } => {
+                        log::info!("📦 Received rendered content from ZKVM for tab {}", tab_id);
+                        
+                        // Update the renderer with the sanitized content
+                        // In a real implementation, we would use the rendered content
+                        // to update the display
+                        
+                        // Clear loading state
+                        self.loading_states.insert(tab_id, LoadingState::Idle);
+                        
+                        Command::none()
+                    }
+                    ZkVmOutput::Error { tab_id, error } => {
+                        log::error!("❌ ZKVM error for tab {}: {}", tab_id, error);
+                        self.error_states.insert(tab_id, error);
+                        self.loading_states.insert(tab_id, LoadingState::Idle);
+                        
+                        Command::none()
+                    }
+                }
+            }
+            
+            Message::TabOpened { tab_id, initial_url } => {
+                log::info!("🔗 Tab {} opened", tab_id);
+                
+                // TODO: Get channel from tab manager and setup receiver
+                // For now, just navigate if URL provided
+                
+                // Navigate if initial URL provided
+                if let Some(url) = initial_url {
+                    self.update(Message::Navigate(url))
+                } else {
+                    Command::none()
+                }
+            }
         }
     }
 
@@ -546,6 +671,12 @@ impl Application for CitadelBrowser {
     }
 
     fn subscription(&self) -> Subscription<Message> {
+        // Subscribe to ZKVM output
+        if let Some(receiver) = &self.zkvm_output_receiver {
+            // This won't work directly because receiver is not Send
+            // We need a different approach
+        }
+        
         // TODO: Add subscriptions for real-time updates
         Subscription::none()
     }

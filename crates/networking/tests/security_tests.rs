@@ -306,7 +306,7 @@ fn test_url_validation_edge_cases() {
 
 #[tokio::test]
 async fn test_concurrent_dns_resolution() {
-    let resolver = CitadelDnsResolver::new().await.unwrap();
+    let _resolver = CitadelDnsResolver::new().await.unwrap();
     
     let domains = vec![
         "example.com",

@@ -23,6 +23,8 @@ struct ExecutorState {
     bp: u64,
     /// Status flags
     flags: u32,
+    /// General purpose registers (R0-R15)
+    registers: [u32; 16],
 }
 
 /// Configuration flags for execution
@@ -56,6 +58,13 @@ struct MemorySegment {
     shared: bool,
 }
 
+impl MemorySegment {
+    /// Check if this segment is shared between processes
+    fn is_shared(&self) -> bool {
+        self.shared
+    }
+}
+
 impl Executor {
     /// Create a new executor instance
     pub fn new(memory_limit: usize) -> ZkVmResult<Self> {
@@ -69,6 +78,7 @@ impl Executor {
                 sp: 0,
                 bp: 0,
                 flags: 0,
+                registers: [0; 16],
             },
             flags: ExecutionFlags {
                 enable_jit: true,
@@ -202,9 +212,10 @@ impl Executor {
             }
             InstructionType::Load { reg, addr } => {
                 // Load from memory address into register
-                // For now, just set register to address value
                 if reg < 16 {
-                    // In a real implementation, this would read from memory
+                    // Read from memory at the specified address
+                    let value = self.read_memory(addr)?;
+                    self.state.registers[reg as usize] = value;
                     self.state.pc += 4;
                 } else {
                     return Err(ZkVmError::ExecutionError(
@@ -215,7 +226,9 @@ impl Executor {
             InstructionType::Store { reg, addr } => {
                 // Store register value to memory address
                 if reg < 16 {
-                    // In a real implementation, this would write to memory
+                    // Write register value to memory at the specified address
+                    let value = self.state.registers[reg as usize];
+                    self.write_memory(addr, value)?;
                     self.state.pc += 4;
                 } else {
                     return Err(ZkVmError::ExecutionError(
@@ -248,9 +261,12 @@ impl Executor {
             }
             InstructionType::JumpIf { condition, addr } => {
                 if condition < 16 {
-                    // In a real implementation, this would check register value
-                    // For now, just advance PC
-                    self.state.pc += 4;
+                    // Jump to addr if condition register is non-zero
+                    if self.state.registers[condition as usize] != 0 {
+                        self.state.pc = addr as u64;
+                    } else {
+                        self.state.pc += 4;
+                    }
                 } else {
                     return Err(ZkVmError::ExecutionError(
                         format!("Invalid register: R{}", condition)
@@ -263,6 +279,56 @@ impl Executor {
         }
         
         Ok(())
+    }
+    
+    /// Read a 32-bit value from memory
+    fn read_memory(&self, addr: u32) -> ZkVmResult<u32> {
+        let address_space = self.address_space.read();
+        
+        // Find the segment containing this address
+        for segment in &address_space.segments {
+            if addr as u64 >= segment.base && (addr as u64) < segment.base + segment.size as u64 {
+                // Check read permission
+                if !segment.permissions.read {
+                    return Err(ZkVmError::MemoryError(
+                        format!("No read permission at address 0x{:x}", addr)
+                    ));
+                }
+                
+                // In a real implementation, this would read from actual memory
+                // For now, return a placeholder value
+                return Ok(0);
+            }
+        }
+        
+        Err(ZkVmError::MemoryError(
+            format!("Address 0x{:x} not mapped", addr)
+        ))
+    }
+    
+    /// Write a 32-bit value to memory
+    fn write_memory(&mut self, addr: u32, _value: u32) -> ZkVmResult<()> {
+        let address_space = self.address_space.read();
+        
+        // Find the segment containing this address
+        for segment in &address_space.segments {
+            if addr as u64 >= segment.base && (addr as u64) < segment.base + segment.size as u64 {
+                // Check write permission
+                if !segment.permissions.write {
+                    return Err(ZkVmError::MemoryError(
+                        format!("No write permission at address 0x{:x}", addr)
+                    ));
+                }
+                
+                // In a real implementation, this would write to actual memory
+                // For now, just return success
+                return Ok(());
+            }
+        }
+        
+        Err(ZkVmError::MemoryError(
+            format!("Address 0x{:x} not mapped", addr)
+        ))
     }
     
     /// Check execution limits

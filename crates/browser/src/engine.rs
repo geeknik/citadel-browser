@@ -141,14 +141,8 @@ impl BrowserEngine {
             retry_possible: false,
         })?;
         
-        let _ip_addresses = self.dns_resolver.resolve(host).await
-            .map_err(|e| LoadingError {
-                error_type: ErrorType::Network,
-                message: format!("DNS resolution failed: {}", e),
-                url: final_url.to_string(),
-                timestamp: std::time::SystemTime::now(),
-                retry_possible: true,
-            })?;
+        // DNS resolution is handled by reqwest - respects system DNS settings
+        log::debug!("📍 Using system DNS configuration via reqwest for host: {}", host);
         
         // Make HTTP request
         let response = self.make_http_request(request).await.map_err(|e| LoadingError {
@@ -211,10 +205,8 @@ impl BrowserEngine {
             .with_privacy_level(self.network_config.privacy_level)
             .prepare();
         
-        // Perform DNS resolution
-        let host = final_url.host_str().ok_or("Invalid host in URL")?;
-        let _ip_addresses = self.dns_resolver.resolve(host).await
-            .map_err(|e| format!("DNS resolution failed: {}", e))?;
+        // DNS resolution is handled by reqwest - respects system DNS settings
+        log::debug!("📍 Using system DNS configuration via reqwest");
         
         // Make HTTP request
         let response = self.make_http_request(request).await?;
@@ -313,6 +305,66 @@ impl BrowserEngine {
             .map_err(|e| format!("HTML parsing failed: {}", e))?;
         log::info!("✅ DOM parsing completed successfully");
         
+        // Debug: Check DOM structure
+        let root = dom.root();
+        let root_node = root.read().unwrap();
+        log::info!("🌳 DOM root type: {:?}, children: {}", root_node.data, root_node.children().len());
+        
+        // Walk through first level of DOM to debug
+        for (i, child_handle) in root_node.children().iter().enumerate() {
+            let child = child_handle.read().unwrap();
+            match &child.data {
+                citadel_parser::dom::NodeData::Element(element) => {
+                    log::info!("  └─ Child {}: <{}> with {} children", i, element.local_name(), child.children().len());
+                    
+                    if element.local_name() == "html" {
+                        log::info!("    🎯 Found HTML element! Walking its children...");
+                        for (j, html_child) in child.children().iter().enumerate() {
+                            let html_child_node = html_child.read().unwrap();
+                            match &html_child_node.data {
+                                citadel_parser::dom::NodeData::Element(he) => {
+                                    log::info!("      HTML child {}: <{}> with {} children", j, he.local_name(), html_child_node.children().len());
+                                    
+                                    if he.local_name() == "body" {
+                                        log::info!("        🎯 Found BODY element! Sample of its children:");
+                                        for (k, body_child) in html_child_node.children().iter().take(5).enumerate() {
+                                            let body_child_node = body_child.read().unwrap();
+                                            match &body_child_node.data {
+                                                citadel_parser::dom::NodeData::Element(be) => {
+                                                    log::info!("          Body child {}: <{}> with {} children", k, be.local_name(), body_child_node.children().len());
+                                                }
+                                                citadel_parser::dom::NodeData::Text(t) => {
+                                                    log::info!("          Body child {}: TEXT '{}' ({} chars)", k, t.trim(), t.len());
+                                                }
+                                                _ => {
+                                                    log::info!("          Body child {}: Other node type", k);
+                                                }
+                                            }
+                                        }
+                                        if html_child_node.children().len() > 5 {
+                                            log::info!("          ... and {} more children", html_child_node.children().len() - 5);
+                                        }
+                                    }
+                                }
+                                citadel_parser::dom::NodeData::Text(t) => {
+                                    log::info!("      HTML child {}: TEXT '{}' ({} chars)", j, t.trim(), t.len());
+                                }
+                                _ => {
+                                    log::info!("      HTML child {}: Other node type", j);
+                                }
+                            }
+                        }
+                    }
+                }
+                citadel_parser::dom::NodeData::Text(t) => {
+                    log::info!("  └─ Child {}: TEXT '{}' ({} chars)", i, t.trim(), t.len());
+                }
+                _ => {
+                    log::info!("  └─ Child {}: {:?}", i, child.data);
+                }
+            }
+        }
+        
         // Extract page title from DOM
         let title = dom.get_title();
         log::info!("📄 Extracted title: '{}'", title);
@@ -346,21 +398,49 @@ impl BrowserEngine {
         // Count elements (more sophisticated)
         let element_count = self.count_elements(html);
         
-        // Create a basic stylesheet for now
-        // TODO: Extract CSS from <style> tags and <link> elements
-        let parser_security_context_css = Arc::new(ParserSecurityContext::new(15));
-        let basic_css = r#"
-            body { font-family: sans-serif; margin: 16px; }
-            h1 { font-size: 24px; margin: 16px 0; }
-            h2 { font-size: 22px; margin: 14px 0; }
-            h3 { font-size: 20px; margin: 12px 0; }
-            p { margin: 8px 0; }
-            a { color: #0066cc; }
+        // Extract and parse actual CSS from the webpage
+        log::info!("🎨 Extracting CSS from website content");
+        let extracted_css = self.extract_css_from_dom(&dom);
+        log::info!("📋 Extracted {} bytes of CSS from DOM", extracted_css.len());
+        
+        // Create base CSS for proper rendering
+        let base_css = r#"
+            body { font-family: sans-serif; margin: 16px; color: #000000; background-color: #ffffff; }
+            h1 { font-size: 24px; margin: 16px 0; color: #000000; font-weight: bold; }
+            h2 { font-size: 22px; margin: 14px 0; color: #000000; font-weight: bold; }
+            h3 { font-size: 20px; margin: 12px 0; color: #000000; font-weight: bold; }
+            h4 { font-size: 18px; margin: 12px 0; color: #000000; font-weight: bold; }
+            h5 { font-size: 16px; margin: 10px 0; color: #000000; font-weight: bold; }
+            h6 { font-size: 14px; margin: 8px 0; color: #000000; font-weight: bold; }
+            p { margin: 8px 0; color: #000000; line-height: 1.4; }
+            a { color: #0066cc; text-decoration: underline; }
             ul, ol { margin: 8px 0; padding-left: 20px; }
+            li { margin: 4px 0; }
+            section { margin: 16px 0; }
+            header { margin-bottom: 20px; }
+            footer { margin-top: 20px; }
+            strong, b { font-weight: bold; }
+            em, i { font-style: italic; }
+            blockquote { margin: 16px 0; padding-left: 16px; border-left: 4px solid #ccc; font-style: italic; }
+            pre { background: #f5f5f5; padding: 10px; font-family: monospace; }
+            .tagline { font-style: italic; }
+            .quote { font-style: italic; color: #555; }
         "#;
         
-        let stylesheet = parse_css(basic_css, parser_security_context_css)
+        // Combine base CSS with extracted website CSS
+        let combined_css = if extracted_css.is_empty() {
+            log::info!("📝 Using base CSS only (no website CSS found)");
+            base_css.to_string()
+        } else {
+            log::info!("🔗 Combining base CSS with extracted website CSS");
+            format!("{}\n\n/* Extracted Website CSS */\n{}", base_css, extracted_css)
+        };
+        
+        let parser_security_context_css = Arc::new(ParserSecurityContext::new(15));
+        let stylesheet = parse_css(&combined_css, parser_security_context_css)
             .map_err(|e| format!("CSS parsing failed: {}", e))?;
+        
+        log::info!("✅ CSS parsing completed: {} rules parsed", stylesheet.rules.len());
         
         log::info!("✅ Successfully parsed page: {} elements, {} bytes, {} warnings", 
                    element_count, html.len(), security_warnings.len());
@@ -534,6 +614,65 @@ impl BrowserEngine {
         content
     }
     
+    /// Extract CSS from DOM - looks for <style> tags and <link> elements
+    fn extract_css_from_dom(&self, dom: &Dom) -> String {
+        let mut extracted_css = String::new();
+        
+        // Walk the DOM tree to find CSS
+        self.extract_css_recursive(&dom.root(), &mut extracted_css);
+        
+        extracted_css
+    }
+    
+    /// Recursively extract CSS from DOM nodes
+    fn extract_css_recursive(&self, node_handle: &citadel_parser::dom::NodeHandle, css_accumulator: &mut String) {
+        if let Ok(node) = node_handle.read() {
+            match &node.data {
+                citadel_parser::dom::NodeData::Element(element) => {
+                    let tag_name = element.local_name();
+                    
+                    // Extract CSS from <style> tags
+                    if tag_name == "style" {
+                        log::info!("🎨 Found <style> tag, extracting CSS content");
+                        // Get the text content of the style element
+                        for child_handle in node.children() {
+                            if let Ok(child_node) = child_handle.read() {
+                                if let citadel_parser::dom::NodeData::Text(text) = &child_node.data {
+                                    log::info!("📝 Extracted {} bytes of CSS from <style> tag", text.len());
+                                    css_accumulator.push_str(text);
+                                    css_accumulator.push('\n');
+                                }
+                            }
+                        }
+                    }
+                    // TODO: Handle <link rel="stylesheet"> elements
+                    // This would require making HTTP requests to fetch external stylesheets
+                    else if tag_name == "link" {
+                        if let Some(rel) = element.get_attribute("rel") {
+                            if rel == "stylesheet" {
+                                if let Some(href) = element.get_attribute("href") {
+                                    log::info!("🔗 Found external stylesheet link: {} (not fetched in current implementation)", href);
+                                    // TODO: Fetch external stylesheet
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Recurse through children
+                    for child_handle in node.children() {
+                        self.extract_css_recursive(child_handle, css_accumulator);
+                    }
+                }
+                _ => {
+                    // Recurse through children for non-element nodes too
+                    for child_handle in node.children() {
+                        self.extract_css_recursive(child_handle, css_accumulator);
+                    }
+                }
+            }
+        }
+    }
+
     /// Count HTML elements more accurately
     fn count_elements(&self, html: &str) -> usize {
         let mut count = 0;
@@ -575,7 +714,7 @@ mod tests {
     async fn test_engine_creation() {
         let runtime = Arc::new(Runtime::new().unwrap());
         let network_config = NetworkConfig::default();
-        let security_context = Arc::new(SecurityContext::new());
+        let security_context = Arc::new(SecurityContext::new(10));
         
         let engine = BrowserEngine::new(runtime, network_config, security_context).await;
         assert!(engine.is_ok());
@@ -585,7 +724,7 @@ mod tests {
     async fn test_url_validation() {
         let runtime = Arc::new(Runtime::new().unwrap());
         let network_config = NetworkConfig::default();
-        let security_context = Arc::new(SecurityContext::new());
+        let security_context = Arc::new(SecurityContext::new(10));
         
         let engine = BrowserEngine::new(runtime, network_config, security_context).await.unwrap();
         

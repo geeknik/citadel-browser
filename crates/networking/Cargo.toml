@@ -23,7 +23,17 @@ rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }
+regex = { workspace = true }
+sha2 = "0.10"
+base64 = "0.22"
+
+# Examples dependencies
+env_logger = "0.10"
 
 [[example]]
 name = "fetch_html"
-path = "examples/fetch_html.rs" 
+path = "examples/fetch_html.rs"
+
+[[example]]
+name = "resource_loading_demo"
+path = "examples/resource_loading_demo.rs" 

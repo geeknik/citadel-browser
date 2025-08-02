@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use cssparser::{Parser as CssParserImpl, ParserInput, Token, ToCss, ParseError};
-use selectors::parser::{SelectorList, SelectorParseErrorKind};
-use euclid::{Point2D, Size2D, Rect};
-use app_units::Au;
+use cssparser::{Parser as CssParserImpl, Token, ToCss};
 use taffy::{Style, Display, FlexDirection, AlignItems, JustifyContent};
 
 use crate::error::{ParserError, ParserResult};
@@ -47,7 +44,16 @@ pub enum ColorValue {
 pub enum LengthValue {
     Px(f32),
     Em(f32),
+    Rem(f32),
     Percent(f32),
+    Vh(f32), // Viewport height
+    Vw(f32), // Viewport width
+    Vmin(f32), // Viewport minimum
+    Vmax(f32), // Viewport maximum
+    Ch(f32), // Character width
+    Ex(f32), // x-height
+    Auto,
+    Zero,
 }
 
 /// Simple color representation
@@ -68,14 +74,62 @@ impl ColorF {
 /// Computed style values using Servo components
 #[derive(Debug, Clone)]
 pub struct ComputedStyle {
+    // Visual properties
     pub color: Option<ColorValue>,
     pub background_color: Option<ColorValue>,
     pub font_size: Option<LengthValue>,
     pub font_weight: Option<String>,
     pub border_width: Option<LengthValue>,
     pub border_color: Option<ColorValue>,
-    pub layout_style: Style,
+    
+    // Layout properties
     pub display: DisplayType,
+    pub position: PositionType,
+    
+    // Size properties
+    pub width: Option<LengthValue>,
+    pub height: Option<LengthValue>,
+    pub min_width: Option<LengthValue>,
+    pub min_height: Option<LengthValue>,
+    pub max_width: Option<LengthValue>,
+    pub max_height: Option<LengthValue>,
+    
+    // Spacing properties
+    pub margin_top: Option<LengthValue>,
+    pub margin_right: Option<LengthValue>,
+    pub margin_bottom: Option<LengthValue>,
+    pub margin_left: Option<LengthValue>,
+    pub padding_top: Option<LengthValue>,
+    pub padding_right: Option<LengthValue>,
+    pub padding_bottom: Option<LengthValue>,
+    pub padding_left: Option<LengthValue>,
+    
+    // Position properties
+    pub top: Option<LengthValue>,
+    pub right: Option<LengthValue>,
+    pub bottom: Option<LengthValue>,
+    pub left: Option<LengthValue>,
+    
+    // Flexbox properties
+    pub flex_direction: Option<String>,
+    pub flex_wrap: Option<String>,
+    pub justify_content: Option<String>,
+    pub align_items: Option<String>,
+    pub align_content: Option<String>,
+    pub align_self: Option<String>,
+    pub flex_grow: Option<f32>,
+    pub flex_shrink: Option<f32>,
+    pub flex_basis: Option<LengthValue>,
+    
+    // Grid properties
+    pub grid_template_columns: Option<String>,
+    pub grid_template_rows: Option<String>,
+    pub grid_column: Option<String>,
+    pub grid_row: Option<String>,
+    pub grid_gap: Option<LengthValue>,
+    
+    // Legacy Taffy style for backward compatibility
+    pub layout_style: Style,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -85,20 +139,87 @@ pub enum DisplayType {
     InlineBlock,
     Flex,
     Grid,
+    Table,
+    TableRow,
+    TableCell,
     None,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PositionType {
+    Static,
+    Relative,
+    Absolute,
+    Fixed,
+    Sticky,
+}
+
+/// Helper enum for spacing shorthand parsing
+#[derive(Debug, Clone, PartialEq)]
+pub enum SpacingType {
+    Margin,
+    Padding,
 }
 
 impl Default for ComputedStyle {
     fn default() -> Self {
         Self {
+            // Visual properties
             color: None,
             background_color: None,
             font_size: None,
             font_weight: None,
             border_width: None,
             border_color: None,
-            layout_style: Style::default(),
+            
+            // Layout properties
             display: DisplayType::Block,
+            position: PositionType::Static,
+            
+            // Size properties
+            width: None,
+            height: None,
+            min_width: None,
+            min_height: None,
+            max_width: None,
+            max_height: None,
+            
+            // Spacing properties
+            margin_top: None,
+            margin_right: None,
+            margin_bottom: None,
+            margin_left: None,
+            padding_top: None,
+            padding_right: None,
+            padding_bottom: None,
+            padding_left: None,
+            
+            // Position properties
+            top: None,
+            right: None,
+            bottom: None,
+            left: None,
+            
+            // Flexbox properties
+            flex_direction: None,
+            flex_wrap: None,
+            justify_content: None,
+            align_items: None,
+            align_content: None,
+            align_self: None,
+            flex_grow: None,
+            flex_shrink: None,
+            flex_basis: None,
+            
+            // Grid properties
+            grid_template_columns: None,
+            grid_template_rows: None,
+            grid_column: None,
+            grid_row: None,
+            grid_gap: None,
+            
+            // Legacy Taffy style
+            layout_style: Style::default(),
         }
     }
 }
@@ -144,39 +265,8 @@ impl CitadelCssParser {
             ));
         }
 
-        let mut rules = Vec::new();
-        let mut input = ParserInput::new(content);
-        let mut parser = CssParserImpl::new(&mut input);
-
-        // Parse CSS rules using Servo's cssparser
-        while !parser.is_exhausted() {
-            // Skip whitespace and comments
-            if parser.expect_whitespace().is_ok() {
-                continue;
-            }
-            
-            if parser.is_exhausted() {
-                break;
-            }
-
-            match self.parse_rule(&mut parser) {
-                Ok(rule) => {
-                    rules.push(rule);
-                    self.metrics.increment_elements();
-                }
-                Err(ParserError::SecurityViolation(_)) => {
-                    self.metrics.increment_violations();
-                    return Err(ParserError::SecurityViolation(
-                        "Security violation in CSS rule".to_string()
-                    ));
-                }
-                Err(e) => {
-                    // Log error but continue parsing (lenient mode)
-                    tracing::warn!("CSS parsing error: {:?}", e);
-                    self.skip_to_next_rule(&mut parser);
-                }
-            }
-        }
+        // Use a simpler parsing approach for now
+        let rules = self.parse_css_simple(content)?;
 
         Ok(CitadelStylesheet {
             rules,
@@ -184,55 +274,139 @@ impl CitadelCssParser {
         })
     }
     
-    /// Parse a single CSS rule
-    fn parse_rule(&self, parser: &mut CssParserImpl) -> ParserResult<StyleRule> {
-        // Parse selectors
-        let selectors = self.parse_selectors(parser)?;
+    /// Simple CSS parser for basic rules
+    fn parse_css_simple(&self, content: &str) -> ParserResult<Vec<StyleRule>> {
+        let mut rules = Vec::new();
         
-        // For now, just parse declarations directly and handle errors
-        parser.expect_curly_bracket_block()
-            .map_err(|e| ParserError::CssError(format!("Expected opening brace: {:?}", e)))?;
+        // Split by closing braces to get rules
+        let rule_parts: Vec<&str> = content.split('}').collect();
         
-        let declarations = parser.parse_nested_block(|parser| {
-            Ok(self.parse_declarations(parser).unwrap_or_default())
-        }).map_err(|e: cssparser::ParseError<()>| ParserError::CssError(format!("Error parsing declarations: {:?}", e)))?;
-        
-        Ok(StyleRule {
-            selectors: selectors.clone(),
-            declarations,
-            specificity: self.calculate_specificity(&selectors),
-        })
-    }
-    
-    /// Parse CSS selectors with security validation
-    fn parse_selectors(&self, parser: &mut CssParserImpl) -> ParserResult<String> {
-        let mut selectors = String::new();
-        let mut first = true;
-        
-        while !parser.is_exhausted() {
-            match parser.next() {
-                Ok(Token::CurlyBracketBlock) => break,
-                Ok(token) => {
-                    if !first {
-                        selectors.push(' ');
-                    }
-                    selectors.push_str(&token.to_css_string());
-                    first = false;
+        for rule_part in rule_parts {
+            let rule_part = rule_part.trim();
+            if rule_part.is_empty() {
+                continue;
+            }
+            
+            // Find the opening brace
+            if let Some(brace_pos) = rule_part.find('{') {
+                let selector = rule_part[..brace_pos].trim().to_string();
+                let declarations_str = rule_part[brace_pos + 1..].trim();
+                
+                if selector.is_empty() {
+                    continue;
                 }
-                Err(_) => break,
+                
+                // Security validation
+                if self.is_dangerous_selector(&selector) {
+                    return Err(ParserError::SecurityViolation(
+                        format!("Dangerous selector detected: {}", selector)
+                    ));
+                }
+                
+                // Parse declarations
+                let declarations = self.parse_declarations_simple(declarations_str)?;
+                
+                let rule = StyleRule {
+                    selectors: selector.clone(),
+                    declarations,
+                    specificity: self.calculate_specificity(&selector),
+                };
+                
+                rules.push(rule);
+                self.metrics.increment_elements();
             }
         }
         
-        let selectors = selectors.trim().to_string();
+        Ok(rules)
+    }
+    
+    /// Simple declaration parser
+    fn parse_declarations_simple(&self, declarations_str: &str) -> ParserResult<Vec<Declaration>> {
+        let mut declarations = Vec::new();
         
-        // Security validation
-        if self.is_dangerous_selector(&selectors) {
-            return Err(ParserError::SecurityViolation(
-                format!("Dangerous selector detected: {}", selectors)
-            ));
+        // Split by semicolons
+        for decl_str in declarations_str.split(';') {
+            let decl_str = decl_str.trim();
+            if decl_str.is_empty() {
+                continue;
+            }
+            
+            // Find the colon
+            if let Some(colon_pos) = decl_str.find(':') {
+                let property = decl_str[..colon_pos].trim().to_string();
+                let value_part = decl_str[colon_pos + 1..].trim();
+                
+                // Check for !important
+                let (value, important) = if value_part.ends_with("!important") {
+                    (value_part[..value_part.len() - 10].trim().to_string(), true)
+                } else {
+                    (value_part.to_string(), false)
+                };
+                
+                // Security validation
+                if self.is_dangerous_property_value(&property, &value) {
+                    self.metrics.increment_sanitizations();
+                    tracing::warn!("Blocking dangerous CSS property: {} = {}", property, value);
+                    continue;
+                }
+                
+                declarations.push(Declaration {
+                    property,
+                    value,
+                    important,
+                });
+                
+                self.metrics.increment_attributes();
+            }
         }
         
-        Ok(selectors)
+        Ok(declarations)
+    }
+    
+    /// Parse a single CSS rule
+    fn parse_rule(&self, parser: &mut CssParserImpl) -> ParserResult<StyleRule> {
+        // Parse selectors - collect all tokens until we find a curly bracket
+        let mut selector_tokens = Vec::new();
+        
+        while !parser.is_exhausted() {
+            match parser.next() {
+                Ok(Token::CurlyBracketBlock) => {
+                    // Found the opening brace - now parse the declarations
+                    let selectors = selector_tokens.iter()
+                        .map(|t: &Token| t.to_css_string())
+                        .collect::<Vec<_>>()
+                        .join("")
+                        .trim()
+                        .to_string();
+                    
+                    // Security validation
+                    if self.is_dangerous_selector(&selectors) {
+                        return Err(ParserError::SecurityViolation(
+                            format!("Dangerous selector detected: {}", selectors)
+                        ));
+                    }
+                    
+                    let declarations = parser.parse_nested_block(|parser| {
+                        Ok(self.parse_declarations(parser).unwrap_or_default())
+                    }).map_err(|e: cssparser::ParseError<()>| ParserError::CssError(format!("Error parsing declarations: {:?}", e)))?;
+                    
+                    let specificity = self.calculate_specificity(&selectors);
+                    return Ok(StyleRule {
+                        selectors,
+                        declarations,
+                        specificity,
+                    });
+                }
+                Ok(token) => {
+                    selector_tokens.push(token.clone());
+                }
+                Err(e) => {
+                    return Err(ParserError::CssError(format!("Error parsing selector: {:?}", e)));
+                }
+            }
+        }
+        
+        Err(ParserError::CssError("Unexpected end of input while parsing rule".to_string()))
     }
     
     /// Parse CSS declarations
@@ -486,6 +660,7 @@ impl CitadelStylesheet {
     /// Apply a CSS declaration to computed styles
     fn apply_declaration(&self, computed: &mut ComputedStyle, declaration: &Declaration) {
         match declaration.property.as_str() {
+            // Visual properties
             "color" => {
                 computed.color = self.parse_color_value(&declaration.value);
             }
@@ -504,19 +679,98 @@ impl CitadelStylesheet {
             "border-color" => {
                 computed.border_color = self.parse_color_value(&declaration.value);
             }
+            
+            // Display property
             "display" => {
                 computed.display = self.parse_display(&declaration.value);
-                // Update Taffy layout style
+                // Update Taffy layout style for backward compatibility
                 computed.layout_style.display = match computed.display {
                     DisplayType::Block => Display::Block,
                     DisplayType::Inline => Display::Block, // Taffy doesn't have inline
                     DisplayType::InlineBlock => Display::Block,
                     DisplayType::Flex => Display::Flex,
                     DisplayType::Grid => Display::Grid,
+                    DisplayType::Table | DisplayType::TableRow | DisplayType::TableCell => Display::Block,
                     DisplayType::None => Display::None,
                 };
             }
+            
+            // Position property
+            "position" => {
+                computed.position = self.parse_position(&declaration.value);
+            }
+            
+            // Size properties
+            "width" => {
+                computed.width = self.parse_length_value(&declaration.value);
+            }
+            "height" => {
+                computed.height = self.parse_length_value(&declaration.value);
+            }
+            "min-width" => {
+                computed.min_width = self.parse_length_value(&declaration.value);
+            }
+            "min-height" => {
+                computed.min_height = self.parse_length_value(&declaration.value);
+            }
+            "max-width" => {
+                computed.max_width = self.parse_length_value(&declaration.value);
+            }
+            "max-height" => {
+                computed.max_height = self.parse_length_value(&declaration.value);
+            }
+            
+            // Margin properties
+            "margin" => {
+                self.apply_shorthand_spacing(computed, &declaration.value, SpacingType::Margin);
+            }
+            "margin-top" => {
+                computed.margin_top = self.parse_length_value(&declaration.value);
+            }
+            "margin-right" => {
+                computed.margin_right = self.parse_length_value(&declaration.value);
+            }
+            "margin-bottom" => {
+                computed.margin_bottom = self.parse_length_value(&declaration.value);
+            }
+            "margin-left" => {
+                computed.margin_left = self.parse_length_value(&declaration.value);
+            }
+            
+            // Padding properties
+            "padding" => {
+                self.apply_shorthand_spacing(computed, &declaration.value, SpacingType::Padding);
+            }
+            "padding-top" => {
+                computed.padding_top = self.parse_length_value(&declaration.value);
+            }
+            "padding-right" => {
+                computed.padding_right = self.parse_length_value(&declaration.value);
+            }
+            "padding-bottom" => {
+                computed.padding_bottom = self.parse_length_value(&declaration.value);
+            }
+            "padding-left" => {
+                computed.padding_left = self.parse_length_value(&declaration.value);
+            }
+            
+            // Position properties
+            "top" => {
+                computed.top = self.parse_length_value(&declaration.value);
+            }
+            "right" => {
+                computed.right = self.parse_length_value(&declaration.value);
+            }
+            "bottom" => {
+                computed.bottom = self.parse_length_value(&declaration.value);
+            }
+            "left" => {
+                computed.left = self.parse_length_value(&declaration.value);
+            }
+            
+            // Flexbox properties
             "flex-direction" => {
+                computed.flex_direction = Some(declaration.value.clone());
                 computed.layout_style.flex_direction = match declaration.value.as_str() {
                     "row" => FlexDirection::Row,
                     "column" => FlexDirection::Column,
@@ -525,16 +779,11 @@ impl CitadelStylesheet {
                     _ => FlexDirection::Row,
                 };
             }
-            "align-items" => {
-                computed.layout_style.align_items = Some(match declaration.value.as_str() {
-                    "flex-start" => AlignItems::FlexStart,
-                    "flex-end" => AlignItems::FlexEnd,
-                    "center" => AlignItems::Center,
-                    "stretch" => AlignItems::Stretch,
-                    _ => AlignItems::Stretch,
-                });
+            "flex-wrap" => {
+                computed.flex_wrap = Some(declaration.value.clone());
             }
             "justify-content" => {
+                computed.justify_content = Some(declaration.value.clone());
                 computed.layout_style.justify_content = Some(match declaration.value.as_str() {
                     "flex-start" => JustifyContent::FlexStart,
                     "flex-end" => JustifyContent::FlexEnd,
@@ -544,6 +793,49 @@ impl CitadelStylesheet {
                     _ => JustifyContent::FlexStart,
                 });
             }
+            "align-items" => {
+                computed.align_items = Some(declaration.value.clone());
+                computed.layout_style.align_items = Some(match declaration.value.as_str() {
+                    "flex-start" => AlignItems::FlexStart,
+                    "flex-end" => AlignItems::FlexEnd,
+                    "center" => AlignItems::Center,
+                    "stretch" => AlignItems::Stretch,
+                    _ => AlignItems::Stretch,
+                });
+            }
+            "align-content" => {
+                computed.align_content = Some(declaration.value.clone());
+            }
+            "align-self" => {
+                computed.align_self = Some(declaration.value.clone());
+            }
+            "flex-grow" => {
+                computed.flex_grow = declaration.value.parse::<f32>().ok();
+            }
+            "flex-shrink" => {
+                computed.flex_shrink = declaration.value.parse::<f32>().ok();
+            }
+            "flex-basis" => {
+                computed.flex_basis = self.parse_length_value(&declaration.value);
+            }
+            
+            // Grid properties
+            "grid-template-columns" => {
+                computed.grid_template_columns = Some(declaration.value.clone());
+            }
+            "grid-template-rows" => {
+                computed.grid_template_rows = Some(declaration.value.clone());
+            }
+            "grid-column" => {
+                computed.grid_column = Some(declaration.value.clone());
+            }
+            "grid-row" => {
+                computed.grid_row = Some(declaration.value.clone());
+            }
+            "grid-gap" | "gap" => {
+                computed.grid_gap = self.parse_length_value(&declaration.value);
+            }
+            
             _ => {
                 // Log unsupported properties for debugging
                 tracing::debug!("Unsupported CSS property: {}", declaration.property);
@@ -588,6 +880,14 @@ impl CitadelStylesheet {
     fn parse_length_value(&self, value: &str) -> Option<LengthValue> {
         let value = value.trim();
         
+        // Handle special keywords
+        match value {
+            "auto" => return Some(LengthValue::Auto),
+            "0" => return Some(LengthValue::Zero),
+            _ => {}
+        }
+        
+        // Parse numeric values with units
         if value.ends_with("px") {
             if let Ok(px) = value[..value.len()-2].parse::<f32>() {
                 return Some(LengthValue::Px(px));
@@ -596,13 +896,45 @@ impl CitadelStylesheet {
             if let Ok(em) = value[..value.len()-2].parse::<f32>() {
                 return Some(LengthValue::Em(em));
             }
+        } else if value.ends_with("rem") {
+            if let Ok(rem) = value[..value.len()-3].parse::<f32>() {
+                return Some(LengthValue::Rem(rem));
+            }
         } else if value.ends_with("%") {
             if let Ok(pct) = value[..value.len()-1].parse::<f32>() {
                 return Some(LengthValue::Percent(pct));
             }
+        } else if value.ends_with("vh") {
+            if let Ok(vh) = value[..value.len()-2].parse::<f32>() {
+                return Some(LengthValue::Vh(vh));
+            }
+        } else if value.ends_with("vw") {
+            if let Ok(vw) = value[..value.len()-2].parse::<f32>() {
+                return Some(LengthValue::Vw(vw));
+            }
+        } else if value.ends_with("vmin") {
+            if let Ok(vmin) = value[..value.len()-4].parse::<f32>() {
+                return Some(LengthValue::Vmin(vmin));
+            }
+        } else if value.ends_with("vmax") {
+            if let Ok(vmax) = value[..value.len()-4].parse::<f32>() {
+                return Some(LengthValue::Vmax(vmax));
+            }
+        } else if value.ends_with("ch") {
+            if let Ok(ch) = value[..value.len()-2].parse::<f32>() {
+                return Some(LengthValue::Ch(ch));
+            }
+        } else if value.ends_with("ex") {
+            if let Ok(ex) = value[..value.len()-2].parse::<f32>() {
+                return Some(LengthValue::Ex(ex));
+            }
         } else if let Ok(px) = value.parse::<f32>() {
-            // Assume unitless values are pixels
-            return Some(LengthValue::Px(px));
+            // Assume unitless values are pixels (except 0)
+            if px == 0.0 {
+                return Some(LengthValue::Zero);
+            } else {
+                return Some(LengthValue::Px(px));
+            }
         }
         
         None
@@ -616,8 +948,74 @@ impl CitadelStylesheet {
             "inline-block" => DisplayType::InlineBlock,
             "flex" => DisplayType::Flex,
             "grid" => DisplayType::Grid,
+            "table" => DisplayType::Table,
+            "table-row" => DisplayType::TableRow,
+            "table-cell" => DisplayType::TableCell,
             "none" => DisplayType::None,
             _ => DisplayType::Block, // Default
+        }
+    }
+    
+    /// Parse a CSS position value
+    fn parse_position(&self, value: &str) -> PositionType {
+        match value.trim() {
+            "static" => PositionType::Static,
+            "relative" => PositionType::Relative,
+            "absolute" => PositionType::Absolute,
+            "fixed" => PositionType::Fixed,
+            "sticky" => PositionType::Sticky,
+            _ => PositionType::Static, // Default
+        }
+    }
+    
+    /// Apply shorthand spacing properties (margin, padding)
+    pub fn apply_shorthand_spacing(&self, computed: &mut ComputedStyle, value: &str, spacing_type: SpacingType) {
+        let parts: Vec<&str> = value.split_whitespace().collect();
+        
+        let (top, right, bottom, left) = match parts.len() {
+            1 => {
+                // All sides same value
+                let val = self.parse_length_value(parts[0]);
+                (val.clone(), val.clone(), val.clone(), val)
+            }
+            2 => {
+                // top/bottom, left/right
+                let vertical = self.parse_length_value(parts[0]);
+                let horizontal = self.parse_length_value(parts[1]);
+                (vertical.clone(), horizontal.clone(), vertical, horizontal)
+            }
+            3 => {
+                // top, left/right, bottom
+                let top = self.parse_length_value(parts[0]);
+                let horizontal = self.parse_length_value(parts[1]);
+                let bottom = self.parse_length_value(parts[2]);
+                (top, horizontal.clone(), bottom, horizontal)
+            }
+            4 => {
+                // top, right, bottom, left
+                (
+                    self.parse_length_value(parts[0]),
+                    self.parse_length_value(parts[1]),
+                    self.parse_length_value(parts[2]),
+                    self.parse_length_value(parts[3]),
+                )
+            }
+            _ => return, // Invalid value
+        };
+        
+        match spacing_type {
+            SpacingType::Margin => {
+                computed.margin_top = top;
+                computed.margin_right = right;
+                computed.margin_bottom = bottom;
+                computed.margin_left = left;
+            }
+            SpacingType::Padding => {
+                computed.padding_top = top;
+                computed.padding_right = right;
+                computed.padding_bottom = bottom;
+                computed.padding_left = left;
+            }
         }
     }
 }
@@ -712,18 +1110,18 @@ mod tests {
 
         // Test body element
         let body_styles = stylesheet.compute_styles("body", &[], None);
-        assert_eq!(body_styles.color, ColorF::new(1.0, 0.0, 0.0, 1.0)); // Red
-        assert_eq!(body_styles.font_size, Au::from_px(16));
+        assert_eq!(body_styles.color, Some(ColorValue::Named("red".to_string()))); // Red
+        assert_eq!(body_styles.font_size, Some(LengthValue::Px(16.0)));
 
         // Test element with class
         let highlight_styles = stylesheet.compute_styles("div", &["highlight".to_string()], None);
-        assert_eq!(highlight_styles.background_color, ColorF::new(1.0, 1.0, 0.0, 1.0)); // Yellow
+        assert_eq!(highlight_styles.background_color, Some(ColorValue::Named("yellow".to_string()))); // Yellow
         assert_eq!(highlight_styles.display, DisplayType::Flex);
         assert_eq!(highlight_styles.layout_style.flex_direction, FlexDirection::Row);
 
         // Test element with ID (higher specificity)
         let main_styles = stylesheet.compute_styles("div", &[], Some("main"));
-        assert_eq!(main_styles.font_size, Au::from_px(20));
+        assert_eq!(main_styles.font_size, Some(LengthValue::Px(20.0)));
         if let Some(align) = main_styles.layout_style.align_items {
             assert_eq!(align, AlignItems::Center);
         }
@@ -779,14 +1177,14 @@ mod tests {
         let stylesheet = CitadelStylesheet::new(security_context);
 
         // Test named colors
-        assert_eq!(stylesheet.parse_color("red"), Some(ColorF::new(1.0, 0.0, 0.0, 1.0)));
-        assert_eq!(stylesheet.parse_color("blue"), Some(ColorF::new(0.0, 0.0, 1.0, 1.0)));
-        assert_eq!(stylesheet.parse_color("transparent"), Some(ColorF::new(0.0, 0.0, 0.0, 0.0)));
+        assert_eq!(stylesheet.parse_color_value("red"), Some(ColorValue::Named("red".to_string())));
+        assert_eq!(stylesheet.parse_color_value("blue"), Some(ColorValue::Named("blue".to_string())));
+        assert_eq!(stylesheet.parse_color_value("transparent"), Some(ColorValue::Named("transparent".to_string())));
 
         // Test hex colors
-        assert_eq!(stylesheet.parse_color("#ff0000"), Some(ColorF::new(1.0, 0.0, 0.0, 1.0)));
-        assert_eq!(stylesheet.parse_color("#00ff00"), Some(ColorF::new(0.0, 1.0, 0.0, 1.0)));
-        assert_eq!(stylesheet.parse_color("#0000ff"), Some(ColorF::new(0.0, 0.0, 1.0, 1.0)));
+        assert_eq!(stylesheet.parse_color_value("#ff0000"), Some(ColorValue::Hex("ff0000".to_string())));
+        assert_eq!(stylesheet.parse_color_value("#00ff00"), Some(ColorValue::Hex("00ff00".to_string())));
+        assert_eq!(stylesheet.parse_color_value("#0000ff"), Some(ColorValue::Hex("0000ff".to_string())));
     }
 
     #[test]
@@ -794,9 +1192,9 @@ mod tests {
         let security_context = Arc::new(SecurityContext::new(10));
         let stylesheet = CitadelStylesheet::new(security_context);
 
-        assert_eq!(stylesheet.parse_length("16px"), Some(Au::from_px(16)));
-        assert_eq!(stylesheet.parse_length("2em"), Some(Au::from_px(32))); // 2 * 16
-        assert_eq!(stylesheet.parse_length("20"), Some(Au::from_px(20))); // Unitless
+        assert_eq!(stylesheet.parse_length_value("16px"), Some(LengthValue::Px(16.0)));
+        assert_eq!(stylesheet.parse_length_value("2em"), Some(LengthValue::Em(2.0)));
+        assert_eq!(stylesheet.parse_length_value("20"), Some(LengthValue::Px(20.0))); // Unitless
     }
 
     #[test]

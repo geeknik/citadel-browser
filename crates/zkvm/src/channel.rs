@@ -1,7 +1,6 @@
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use blake3::Hash;
-use parking_lot::RwLock;
 use crate::{ZkVmResult, ZkVmError};
 use rand::RngCore;
 use aes_gcm::{
@@ -26,12 +25,12 @@ pub enum ChannelMessage {
     /// UI event
     UiEvent {
         event_type: String,
-        data: serde_json::Value,
+        data: String, // JSON string to avoid bincode issues
     },
     /// Control message
     Control {
         command: String,
-        params: serde_json::Value,
+        params: String, // JSON string to avoid bincode issues
     },
 }
 
@@ -161,7 +160,7 @@ impl Channel {
     
     /// Send a message through the channel
     pub async fn send(&self, message: ChannelMessage) -> ZkVmResult<()> {
-        let mut state = self.state.write();
+        let mut state = self.state.write().await;
         if !state.active {
             return Err(ZkVmError::ChannelError("Channel is closed".into()));
         }
@@ -204,7 +203,7 @@ impl Channel {
     
     /// Receive a message from the channel
     pub async fn receive(&mut self) -> ZkVmResult<ChannelMessage> {
-        let mut state = self.state.write();
+        let mut state = self.state.write().await;
         if !state.active {
             return Err(ZkVmError::ChannelError("Channel is closed".into()));
         }
@@ -241,8 +240,8 @@ impl Channel {
     }
     
     /// Close the channel
-    pub fn close(&self) {
-        let mut state = self.state.write();
+    pub async fn close(&self) {
+        let mut state = self.state.write().await;
         state.active = false;
     }
 }
@@ -254,9 +253,11 @@ mod tests {
     
     #[test]
     fn test_channel_creation() {
-        let (channel1, channel2) = Channel::new().unwrap();
-        assert!(channel1.state.read().active);
-        assert!(channel2.state.read().active);
+        block_on(async {
+            let (channel1, channel2) = Channel::new().unwrap();
+            assert!(channel1.state.read().await.active);
+            assert!(channel2.state.read().await.active);
+        });
     }
     
     #[test]
@@ -266,7 +267,7 @@ mod tests {
         // Send a test message
         let message = ChannelMessage::Control {
             command: "test".into(),
-            params: serde_json::json!({"key": "value"}),
+            params: serde_json::json!({"key": "value"}).to_string(),
         };
         
         block_on(async {
@@ -288,9 +289,11 @@ mod tests {
     
     #[test]
     fn test_channel_closure() {
-        let (channel1, _) = Channel::new().unwrap();
-        channel1.close();
-        assert!(!channel1.state.read().active);
+        block_on(async {
+            let (channel1, _) = Channel::new().unwrap();
+            channel1.close().await;
+            assert!(!channel1.state.read().await.active);
+        });
     }
 
     #[test]

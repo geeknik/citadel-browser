@@ -128,7 +128,7 @@ impl CanvasProtection {
     }
     
     /// Apply noise to image data with a provided RNG (useful for testing)
-    pub fn protect_image_data_with_rng<R: Rng + ?Sized>(&self, data: &mut [u8], _width: u32, _height: u32, domain: &str, rng: &mut R) -> Result<(), FingerprintError> {
+    pub fn protect_image_data_with_rng<R: Rng + ?Sized>(&self, data: &mut [u8], _width: u32, _height: u32, _domain: &str, rng: &mut R) -> Result<(), FingerprintError> {
         if !self.config.enabled || !self.config.protect_images {
             return Ok(());
         }
@@ -205,7 +205,7 @@ mod tests {
     use crate::SecurityContext;
     
     fn create_test_canvas_protection() -> CanvasProtection {
-        let security_context = SecurityContext::new();
+        let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         CanvasProtection::new(manager)
     }
@@ -282,7 +282,7 @@ mod tests {
         assert!(protection.should_protect_operation(CanvasOperation::ImageDrawing));
         
         // Create protection with custom config
-        let security_context = SecurityContext::new();
+        let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         let custom_config = CanvasProtectionConfig {
             protect_text: true,

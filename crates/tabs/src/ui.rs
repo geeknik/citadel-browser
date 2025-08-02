@@ -1,6 +1,6 @@
 use iced::{
-    widget::{button, container, row, text, Column, Row},
-    Element, Length, Padding, Theme,
+    widget::{button, container, text, Column, Row},
+    Element, Padding,
 };
 use uuid::Uuid;
 use crate::{TabState, TabType, SendSafeTabManager as TabManager};

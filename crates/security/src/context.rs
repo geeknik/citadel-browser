@@ -134,6 +134,12 @@ pub struct SecurityContext {
     blocked_attributes: RwLock<HashSet<String>>,
     /// Fingerprint protection configuration
     fingerprint_protection: FingerprintProtection,
+    /// Whether scripts are allowed
+    allow_scripts: RwLock<bool>,
+    /// Whether external resources are allowed
+    allow_external_resources: RwLock<bool>,
+    /// Maximum nesting depth for resource loading
+    max_nesting_depth: usize,
 }
 
 impl Clone for SecurityContext {
@@ -142,13 +148,16 @@ impl Clone for SecurityContext {
             blocked_elements: RwLock::new(self.blocked_elements.read().unwrap().clone()),
             blocked_attributes: RwLock::new(self.blocked_attributes.read().unwrap().clone()),
             fingerprint_protection: self.fingerprint_protection.clone(),
+            allow_scripts: RwLock::new(*self.allow_scripts.read().unwrap()),
+            allow_external_resources: RwLock::new(*self.allow_external_resources.read().unwrap()),
+            max_nesting_depth: self.max_nesting_depth,
         }
     }
 }
 
 impl SecurityContext {
-    /// Create a new security context with default blocked elements and attributes
-    pub fn new() -> Self {
+    /// Create a new security context with specified maximum nesting depth
+    pub fn new(max_depth: usize) -> Self {
         let mut blocked_elements = HashSet::new();
         blocked_elements.insert("script".to_string());
         blocked_elements.insert("iframe".to_string());
@@ -165,13 +174,15 @@ impl SecurityContext {
             blocked_elements: RwLock::new(blocked_elements),
             blocked_attributes: RwLock::new(blocked_attributes),
             fingerprint_protection: FingerprintProtection::default(),
+            allow_scripts: RwLock::new(false),
+            allow_external_resources: RwLock::new(true),
+            max_nesting_depth: max_depth,
         }
     }
-
-    /// Create a new security context with specified maximum nesting depth
-    /// Note: max_depth is accepted for compatibility but not currently used
-    pub fn new_with_depth(_max_depth: usize) -> Self {
-        Self::new()
+    
+    /// Create a new security context with default nesting depth
+    pub fn new_default() -> Self {
+        Self::new(10)
     }
 
     /// Check if an element is blocked
@@ -241,11 +252,51 @@ impl SecurityContext {
     pub fn customize_fingerprint_protection(&mut self, config: FingerprintProtection) {
         self.fingerprint_protection = config;
     }
+    
+    /// Check if scripts are allowed
+    pub fn allows_scripts(&self) -> bool {
+        *self.allow_scripts.read().unwrap()
+    }
+    
+    /// Enable script execution
+    pub fn enable_scripts(&mut self) {
+        *self.allow_scripts.write().unwrap() = true;
+    }
+    
+    /// Disable script execution
+    pub fn disable_scripts(&mut self) {
+        *self.allow_scripts.write().unwrap() = false;
+    }
+    
+    /// Check if external resources are allowed
+    pub fn allows_external_resources(&self) -> bool {
+        *self.allow_external_resources.read().unwrap()
+    }
+    
+    /// Enable external resource loading
+    pub fn enable_external_resources(&mut self) {
+        *self.allow_external_resources.write().unwrap() = true;
+    }
+    
+    /// Disable external resource loading
+    pub fn disable_external_resources(&mut self) {
+        *self.allow_external_resources.write().unwrap() = false;
+    }
+    
+    /// Get the maximum nesting depth
+    pub fn max_nesting_depth(&self) -> usize {
+        self.max_nesting_depth
+    }
+    
+    /// Set the maximum nesting depth
+    pub fn set_max_nesting_depth(&mut self, depth: usize) {
+        self.max_nesting_depth = depth;
+    }
 }
 
 impl Default for SecurityContext {
     fn default() -> Self {
-        Self::new()
+        Self::new_default()
     }
 }
 
@@ -255,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_default_blocked_elements() {
-        let context = SecurityContext::new();
+        let context = SecurityContext::new(10);
         assert!(context.is_element_blocked("script"));
         assert!(context.is_element_blocked("iframe"));
         assert!(!context.is_element_blocked("div"));
@@ -263,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_block_and_allow_element() {
-        let mut context = SecurityContext::new();
+        let mut context = SecurityContext::new(10);
         assert!(!context.is_element_blocked("div"));
         
         context.block_element("div");
@@ -275,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_attribute_blocking() {
-        let mut context = SecurityContext::new();
+        let mut context = SecurityContext::new(10);
         assert!(!context.is_attribute_allowed("onclick"));
         assert!(context.is_attribute_allowed("class"));
         
@@ -379,6 +430,9 @@ impl SecurityContextBuilder {
             blocked_elements: RwLock::new(self.blocked_elements),
             blocked_attributes: RwLock::new(HashSet::new()),
             fingerprint_protection: self.fingerprint_protection.unwrap_or_default(),
+            allow_scripts: RwLock::new(false),
+            allow_external_resources: RwLock::new(true),
+            max_nesting_depth: 10, // Default nesting depth
         })
     }
 } 

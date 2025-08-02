@@ -120,7 +120,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_resource_loader_creation() {
-        let security_context = Arc::new(SecurityContext::new()); // Use the default constructor
+        let security_context = Arc::new(SecurityContext::new(10)); // Use the default constructor
         let loader = ResourceLoader::new(security_context).await;
         
         // Test that loader was created successfully

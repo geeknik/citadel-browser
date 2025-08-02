@@ -13,17 +13,15 @@ mod audio;
 // mod timezone;
 mod metrics;
 
-use citadel_security::context::{SecurityContext, FingerprintProtection, FingerprintProtectionLevel};
+use citadel_security::context::{SecurityContext, FingerprintProtection};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use rand::{SeedableRng, Rng};
-use rand::rngs::StdRng;
+use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rand_distr::{Normal, Distribution};
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::Result;
-use log::{debug, info, warn};
+use log::info;
 use metrics::{FingerprintMetrics, ProtectionType, DomainStats};
 
 /// Errors that can occur during anti-fingerprinting operations
@@ -117,6 +115,11 @@ impl FingerprintManager {
         let value_f64 = value as f64;
         let result_f64 = self.apply_noise(value_f64, noise_factor, domain);
         result_f64 as f32
+    }
+    
+    /// Log a fingerprinting attempt
+    pub fn log_attempt(&self, category: &str, property: &str) {
+        log::debug!("Fingerprinting attempt blocked: category={}, property={}", category, property);
     }
 }
 
@@ -311,10 +314,10 @@ impl AntiFingerprintManager {
     /// Creates a complete set of protection modules with metrics tracking
     pub fn create_protection_modules(&self) -> (CanvasProtection, WebGLProtection, AudioProtection, NavigatorProtection) {
         let metrics = self.metrics();
-        let sc = self.config.enabled;
+        let _sc = self.config.enabled;
         
         // Create security context for fingerprint manager
-        let security_context = SecurityContext::new();
+        let security_context = SecurityContext::new(10);
         let fp_manager = FingerprintManager::new(security_context);
         
         // Create all protection modules with metrics attached
@@ -327,7 +330,7 @@ impl AntiFingerprintManager {
         let audio_protection = AudioProtection::new(fp_manager.clone())
             .with_metrics(metrics.clone());
             
-        let mut navigator_protection = NavigatorProtection::new(fp_manager);
+        let navigator_protection = NavigatorProtection::new(fp_manager);
         
         (canvas_protection, webgl_protection, audio_protection, navigator_protection)
     }

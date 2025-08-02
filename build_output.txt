@@ -1,0 +1,871 @@
+warning: unused variable: `config`
+  --> crates/networking/src/dns.rs:73:14
+   |
+73 |         let (config, mut opts) = match &mode {
+   |              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `config`
+   --> crates/networking/src/dns.rs:177:14
+    |
+177 |         let (config, mut opts) = match &mode {
+    |              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `addr`
+   --> crates/zkvm/src/executor.rs:203:42
+    |
+203 |             InstructionType::Load { reg, addr } => {
+    |                                          ^^^^ help: try ignoring the field: `addr: _`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `addr`
+   --> crates/zkvm/src/executor.rs:215:43
+    |
+215 |             InstructionType::Store { reg, addr } => {
+    |                                           ^^^^ help: try ignoring the field: `addr: _`
+
+warning: unused variable: `addr`
+   --> crates/zkvm/src/executor.rs:249:50
+    |
+249 |             InstructionType::JumpIf { condition, addr } => {
+    |                                                  ^^^^ help: try ignoring the field: `addr: _`
+
+warning: fields `permissions` and `key` are never read
+  --> crates/zkvm/src/lib.rs:55:5
+   |
+51 | struct MemoryPage {
+   |        ---------- fields in this struct
+...
+55 |     permissions: PagePermissions,
+   |     ^^^^^^^^^^^
+56 |     /// Cryptographic key for this page
+57 |     key: Arc<[u8; 32]>,
+   |     ^^^
+   |
+   = note: `MemoryPage` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: methods `encrypt` and `decrypt` are never used
+  --> crates/zkvm/src/lib.rs:74:8
+   |
+60 | impl MemoryPage {
+   | --------------- methods in this implementation
+...
+74 |     fn encrypt(&mut self) -> ZkVmResult<()> {
+   |        ^^^^^^^
+...
+88 |     fn decrypt(&mut self) -> ZkVmResult<()> {
+   |        ^^^^^^^
+
+warning: field `executor` is never read
+   --> crates/zkvm/src/lib.rs:113:5
+    |
+103 | pub struct ZkVm {
+    |            ---- field in this struct
+...
+113 |     executor: Executor,
+    |     ^^^^^^^^
+
+warning: fields `sp`, `bp`, and `flags` are never read
+  --> crates/zkvm/src/executor.rs:21:5
+   |
+17 | struct ExecutorState {
+   |        ------------- fields in this struct
+...
+21 |     sp: u64,
+   |     ^^
+22 |     /// Base pointer
+23 |     bp: u64,
+   |     ^^
+24 |     /// Status flags
+25 |     flags: u32,
+   |     ^^^^^
+   |
+   = note: `ExecutorState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `enable_jit` and `time_limit` are never read
+  --> crates/zkvm/src/executor.rs:32:5
+   |
+30 | struct ExecutionFlags {
+   |        -------------- fields in this struct
+31 |     /// Whether to enable JIT compilation
+32 |     enable_jit: bool,
+   |     ^^^^^^^^^^
+...
+36 |     time_limit: u64,
+   |     ^^^^^^^^^^
+   |
+   = note: `ExecutionFlags` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `shared` is never read
+  --> crates/zkvm/src/executor.rs:56:5
+   |
+48 | struct MemorySegment {
+   |        ------------- field in this struct
+...
+56 |     shared: bool,
+   |     ^^^^^^
+
+warning: field `raw` is never read
+   --> crates/zkvm/src/executor.rs:297:5
+    |
+293 | struct DecodedInstruction {
+    |        ------------------ field in this struct
+...
+297 |     raw: u32,
+    |     ^^^
+    |
+    = note: `DecodedInstruction` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: `citadel-networking` (lib) generated 2 warnings
+warning: `citadel-zkvm` (lib) generated 10 warnings
+warning: unused import: `std::sync::atomic::Ordering`
+ --> crates/parser/src/lib.rs:7:5
+  |
+7 | use std::sync::atomic::Ordering;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `thiserror::Error`
+ --> crates/parser/src/lib.rs:9:5
+  |
+9 | use thiserror::Error;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `parse_document` and `tendril::TendrilSink`
+  --> crates/parser/src/lib.rs:10:17
+   |
+10 | use html5ever::{parse_document, tendril::TendrilSink};
+   |                 ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ParseError`
+ --> crates/parser/src/css.rs:3:69
+  |
+3 | use cssparser::{Parser as CssParserImpl, ParserInput, Token, ToCss, ParseError};
+  |                                                                     ^^^^^^^^^^
+
+warning: unused imports: `SelectorList` and `SelectorParseErrorKind`
+ --> crates/parser/src/css.rs:4:25
+  |
+4 | use selectors::parser::{SelectorList, SelectorParseErrorKind};
+  |                         ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Point2D`, `Rect`, and `Size2D`
+ --> crates/parser/src/css.rs:5:14
+  |
+5 | use euclid::{Point2D, Size2D, Rect};
+  |              ^^^^^^^  ^^^^^^  ^^^^
+
+warning: unused import: `app_units::Au`
+ --> crates/parser/src/css.rs:6:5
+  |
+6 | use app_units::Au;
+  |     ^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::atomic::AtomicUsize`
+ --> crates/parser/src/dom/node.rs:4:5
+  |
+4 | use std::sync::atomic::AtomicUsize;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fmt`
+ --> crates/parser/src/dom/node.rs:5:5
+  |
+5 | use std::fmt;
+  |     ^^^^^^^^
+
+warning: unused import: `html5ever::tendril::StrTendril`
+ --> crates/parser/src/dom/node.rs:7:5
+  |
+7 | use html5ever::tendril::StrTendril;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `expanded_name`, `local_name`, `namespace_url`, and `ns`
+  --> crates/parser/src/html/tree_sink.rs:12:33
+   |
+12 | use markup5ever::{ExpandedName, expanded_name, local_name, ns, namespace_url};
+   |                                 ^^^^^^^^^^^^^  ^^^^^^^^^^  ^^  ^^^^^^^^^^^^^
+
+warning: unused imports: `Ctx`, `Function`, `Object`, `Result as QjsResult`, and `Value`
+ --> crates/parser/src/js/dom_bindings.rs:5:16
+  |
+5 | use rquickjs::{Ctx, Result as QjsResult, Function, Object, Value};
+  |                ^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^  ^^^^^
+
+warning: unused import: `crate::dom::Dom`
+  --> crates/parser/src/js/mod.rs:11:5
+   |
+11 | use crate::dom::Dom;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `ParserError`
+  --> crates/parser/src/layout_simple.rs:11:20
+   |
+11 | use crate::error::{ParserError, ParserResult};
+   |                    ^^^^^^^^^^^
+
+warning: unused variable: `sibling`
+  --> crates/parser/src/dom/mod.rs:73:37
+   |
+73 |     pub fn insert_before(&mut self, sibling: &NodeHandle, new_node: NodeHandle) {
+   |                                     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sibling`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `metrics`
+   --> crates/parser/src/dom/mod.rs:246:9
+    |
+246 |     let metrics = dom.metrics.clone();
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_metrics`
+
+warning: unused variable: `security_context`
+   --> crates/parser/src/dom/mod.rs:247:9
+    |
+247 |     let security_context = dom.security_context.clone();
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_security_context`
+
+warning: unused variable: `dom`
+   --> crates/parser/src/layout.rs:270:38
+    |
+270 |     fn extract_layout_results(&self, dom: &Dom, viewport_size: LayoutSize) -> ParserResult<LayoutResult> {
+    |                                      ^^^ help: if this is intentional, prefix it with an underscore: `_dom`
+
+warning: unused variable: `security_context`
+   --> crates/parser/src/lib.rs:184:33
+    |
+184 | pub fn parse_css(content: &str, security_context: std::sync::Arc<security::SecurityContext>) -> ParserResult<CitadelStylesheet> {
+    |                                 ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_security_context`
+
+warning: field `config` is never read
+   --> crates/parser/src/css.rs:109:5
+    |
+107 | pub struct CitadelCssParser {
+    |            ---------------- field in this struct
+108 |     /// Parser configuration
+109 |     config: ParserConfig,
+    |     ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: field `next_id` is never read
+  --> crates/parser/src/html/tree_sink.rs:50:5
+   |
+34 | pub struct HtmlTreeSink {
+   |            ------------ field in this struct
+...
+50 |     next_id: usize,
+   |     ^^^^^^^
+
+warning: field `security_context` is never read
+  --> crates/parser/src/layout_simple.rs:73:5
+   |
+71 | pub struct CitadelLayoutEngine {
+   |            ------------------- field in this struct
+72 |     /// Security context
+73 |     security_context: Arc<SecurityContext>,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: field `security_context` is never read
+  --> crates/parser/src/layout.rs:28:5
+   |
+24 | pub struct CitadelLayoutEngine {
+   |            ------------------- field in this struct
+...
+28 |     security_context: Arc<SecurityContext>,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: method `build_taffy_tree` is never used
+   --> crates/parser/src/layout.rs:152:8
+    |
+92  | impl CitadelLayoutEngine {
+    | ------------------------ method in this implementation
+...
+152 |     fn build_taffy_tree(&mut self, dom: &Dom, stylesheet: &CitadelStylesheet) -> ParserResult<()> {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: method `check_security_limits` is never used
+   --> crates/parser/src/layout.rs:362:8
+    |
+331 | impl CitadelLayoutEngine {
+    | ------------------------ method in this implementation
+...
+362 |     fn check_security_limits(&self, node_count: usize) -> ParserResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Length`, `Theme`, and `row`
+ --> crates/tabs/src/ui.rs:2:33
+  |
+2 |     widget::{button, container, row, text, Column, Row},
+  |                                 ^^^
+3 |     Element, Length, Padding, Theme,
+  |              ^^^^^^           ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `state`
+   --> crates/tabs/src/zkvm_renderer.rs:220:13
+    |
+220 |         let state = self.state.read().await;
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: fields `tabs` and `active_tab` are never read
+   --> crates/tabs/src/lib.rs:258:5
+    |
+256 | pub struct TabManager {
+    |            ---------- fields in this struct
+257 |     /// All active tabs
+258 |     tabs: Arc<RwLock<Vec<Tab>>>,
+    |     ^^^^
+259 |     /// Currently active tab ID
+260 |     active_tab: Arc<RwLock<Option<Uuid>>>,
+    |     ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: enum `Container` is never used
+   --> crates/tabs/src/ui.rs:164:14
+    |
+164 |     pub enum Container {
+    |              ^^^^^^^^^
+
+warning: variant `GetTabStates` is never constructed
+  --> crates/tabs/src/send_safe_tab_manager.rs:28:5
+   |
+14 | pub enum TabManagerCommand {
+   |          ----------------- variant in this enum
+...
+28 |     GetTabStates {
+   |     ^^^^^^^^^^^^
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+  --> crates/tabs/src/ui.rs:61:17
+   |
+61 |     pub fn view(&self) -> Element<Message> {
+   |                 ^^^^^     ---------------- the lifetime gets resolved as `'_`
+   |                 |
+   |                 this lifetime flows to the output
+   |
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+   |
+61 |     pub fn view(&self) -> Element<'_, Message> {
+   |                                   +++
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+  --> crates/tabs/src/ui.rs:84:17
+   |
+84 |     fn tab_view(&self, tab: &TabState) -> Element<Message> {
+   |                 ^^^^^                     ---------------- the lifetime gets resolved as `'_`
+   |                 |
+   |                 this lifetime flows to the output
+   |
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+   |
+84 |     fn tab_view(&self, tab: &TabState) -> Element<'_, Message> {
+   |                                                   +++
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+   --> crates/tabs/src/ui.rs:121:31
+    |
+121 |     fn conversion_dialog_view(&self, tab_id: Uuid) -> Element<Message> {
+    |                               ^^^^^                   ---------------- the lifetime gets resolved as `'_`
+    |                               |
+    |                               this lifetime flows to the output
+    |
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+    |
+121 |     fn conversion_dialog_view(&self, tab_id: Uuid) -> Element<'_, Message> {
+    |                                                               +++
+
+warning: `citadel-parser` (lib) generated 25 warnings (run `cargo fix --lib -p citadel-parser` to apply 14 suggestions)
+warning: `citadel-tabs` (lib) generated 8 warnings (run `cargo fix --lib -p citadel-tabs` to apply 1 suggestion)
+warning: unused imports: `Background` and `Padding`
+ --> crates/browser/src/ui.rs:4:22
+  |
+4 |     Element, Length, Padding, Background, Color, Alignment,
+  |                      ^^^^^^^  ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `std::sync::Arc`
+ --> crates/browser/src/zkvm_receiver.rs:6:5
+  |
+6 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `RwLock`
+ --> crates/browser/src/zkvm_receiver.rs:7:25
+  |
+7 | use tokio::sync::{mpsc, RwLock};
+  |                         ^^^^^^
+
+warning: unused variable: `content`
+   --> crates/browser/src/app.rs:561:59
+    |
+561 |                     ZkVmOutput::RenderedContent { tab_id, content } => {
+    |                                                           ^^^^^^^ help: try ignoring the field: `content: _`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `receiver`
+   --> crates/browser/src/app.rs:605:21
+    |
+605 |         if let Some(receiver) = &self.zkvm_output_receiver {
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_receiver`
+
+warning: variable `is_self_closing` is assigned to, but never used
+   --> crates/browser/src/engine.rs:542:17
+    |
+542 |         let mut is_self_closing = false;
+    |                 ^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_is_self_closing` instead
+
+warning: value assigned to `is_self_closing` is never read
+   --> crates/browser/src/engine.rs:549:21
+    |
+549 |                     is_self_closing = false;
+    |                     ^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` on by default
+
+warning: fields `runtime`, `security_context`, and `zkvm_output_sender` are never read
+  --> crates/browser/src/app.rs:23:5
+   |
+21 | pub struct CitadelBrowser {
+   |            -------------- fields in this struct
+22 |     /// Async runtime for network operations
+23 |     runtime: Arc<Runtime>,
+   |     ^^^^^^^
+...
+35 |     security_context: Arc<SecurityContext>,
+   |     ^^^^^^^^^^^^^^^^
+...
+41 |     zkvm_output_sender: tokio::sync::mpsc::UnboundedSender<zkvm_receiver::ZkVmOutput>,
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: function `extract_title` is never used
+   --> crates/browser/src/app.rs:651:4
+    |
+651 | fn extract_title(html: &str) -> Option<String> {
+    |    ^^^^^^^^^^^^^
+
+warning: fields `runtime` and `security_context` are never read
+  --> crates/browser/src/engine.rs:16:5
+   |
+14 | pub struct BrowserEngine {
+   |            ------------- fields in this struct
+15 |     /// Async runtime for network operations
+16 |     runtime: Arc<Runtime>,
+   |     ^^^^^^^
+...
+20 |     security_context: Arc<SecurityContext>,
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `BrowserEngine` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `extract_title`, `extract_content`, and `extract_content_enhanced` are never used
+   --> crates/browser/src/engine.rs:397:8
+    |
+25  | impl BrowserEngine {
+    | ------------------ methods in this implementation
+...
+397 |     fn extract_title(&self, html: &str) -> Option<String> {
+    |        ^^^^^^^^^^^^^
+...
+409 |     fn extract_content(&self, html: &str) -> String {
+    |        ^^^^^^^^^^^^^^^
+...
+459 |     fn extract_content_enhanced(&self, html: &str) -> String {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `security_context` is never read
+  --> crates/browser/src/resource_loader.rs:11:5
+   |
+7  | pub struct ResourceLoader {
+   |            -------------- field in this struct
+...
+11 |     security_context: Arc<SecurityContext>,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: field `security_violations` is never read
+  --> crates/browser/src/renderer.rs:51:5
+   |
+41 | pub struct CitadelRenderer {
+   |            --------------- field in this struct
+...
+51 |     security_violations: Vec<String>,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+   --> crates/browser/src/app.rs:599:13
+    |
+599 |     fn view(&self) -> Element<Message> {
+    |             ^^^^^     ---------------- the lifetime gets resolved as `'_`
+    |             |
+    |             this lifetime flows to the output
+    |
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+    |
+599 |     fn view(&self) -> Element<'_, Message> {
+    |                               +++
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+  --> crates/browser/src/ui.rs:92:9
+   |
+92 |         &self,
+   |         ^^^^^ this lifetime flows to the output
+...
+95 |     ) -> Element<Message> {
+   |          ---------------- the lifetime gets resolved as `'_`
+   |
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+   |
+95 |     ) -> Element<'_, Message> {
+   |                  +++
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+   --> crates/browser/src/ui.rs:134:33
+    |
+134 |     fn create_privacy_indicator(&self, network_config: &NetworkConfig) -> Element<Message> {
+    |                                 ^^^^^ this lifetime flows to the output   ---------------- the lifetime gets resolved as `'_`
+    |
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+    |
+134 |     fn create_privacy_indicator(&self, network_config: &NetworkConfig) -> Element<'_, Message> {
+    |                                                                                   +++
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+   --> crates/browser/src/ui.rs:160:24
+    |
+160 |     fn create_tabs_bar(&self, tab_manager: &Arc<TabManager>) -> Element<Message> {
+    |                        ^^^^^ this lifetime flows to the output  ---------------- the lifetime gets resolved as `'_`
+    |
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+    |
+160 |     fn create_tabs_bar(&self, tab_manager: &Arc<TabManager>) -> Element<'_, Message> {
+    |                                                                         +++
+
+warning: lifetime flowing from input to output with different syntax can be confusing
+   --> crates/browser/src/renderer.rs:108:19
+    |
+108 |     pub fn render(&self) -> Element<Message> {
+    |                   ^^^^^     ---------------- the lifetime gets resolved as `'_`
+    |                   |
+    |                   this lifetime flows to the output
+    |
+help: one option is to remove the lifetime for references and use the anonymous lifetime for paths
+    |
+108 |     pub fn render(&self) -> Element<'_, Message> {
+    |                                     +++
+
+warning: unused import: `FingerprintProtectionLevel`
+  --> crates/antifingerprint/src/lib.rs:16:73
+   |
+16 | use citadel_security::context::{SecurityContext, FingerprintProtection, FingerprintProtectionLevel};
+   |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `rand::rngs::StdRng`
+  --> crates/antifingerprint/src/lib.rs:20:5
+   |
+20 | use rand::rngs::StdRng;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/antifingerprint/src/lib.rs:25:5
+   |
+25 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `debug` and `warn`
+  --> crates/antifingerprint/src/lib.rs:26:11
+   |
+26 | use log::{debug, info, warn};
+   |           ^^^^^        ^^^^
+
+warning: unused import: `Rng`
+  --> crates/antifingerprint/src/lib.rs:19:25
+   |
+19 | use rand::{SeedableRng, Rng};
+   |                         ^^^
+
+warning: unused variable: `domain`
+   --> crates/antifingerprint/src/canvas.rs:131:108
+    |
+131 |     pub fn protect_image_data_with_rng<R: Rng + ?Sized>(&self, data: &mut [u8], _width: u32, _height: u32, domain: &str, rng: &mut R) -> Result<(), FingerprintError> {
+    |                                                                                                            ^^^^^^ help: if this is intentional, prefix it with an underscore: `_domain`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `sc`
+   --> crates/antifingerprint/src/lib.rs:314:13
+    |
+314 |         let sc = self.config.enabled;
+    |             ^^ help: if this is intentional, prefix it with an underscore: `_sc`
+
+warning: variable does not need to be mutable
+   --> crates/antifingerprint/src/lib.rs:330:13
+    |
+330 |         let mut navigator_protection = NavigatorProtection::new(fp_manager);
+    |             ----^^^^^^^^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: method `as_str` is never used
+  --> crates/antifingerprint/src/navigator.rs:48:12
+   |
+27 | impl BrowserCategory {
+   | -------------------- method in this implementation
+...
+48 |     pub fn as_str(&self) -> &'static str {
+   |            ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: field `manager` is never read
+  --> crates/antifingerprint/src/navigator.rs:87:5
+   |
+85 | pub struct NavigatorProtection {
+   |            ------------------- field in this struct
+86 |     /// Reference to the fingerprint manager
+87 |     manager: FingerprintManager,
+   |     ^^^^^^^
+   |
+   = note: `NavigatorProtection` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: `citadel-browser` (lib) generated 18 warnings (run `cargo fix --lib -p citadel-browser` to apply 3 suggestions)
+warning: `citadel-antifingerprint` (lib) generated 10 warnings (run `cargo fix --lib -p citadel-antifingerprint` to apply 5 suggestions)
+warning: unused import: `window`
+ --> crates/browser/src/main.rs:3:35
+  |
+3 | use iced::{Application, Settings, window};
+  |                                   ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused imports: `Background` and `Padding`
+ --> crates/browser/src/ui.rs:4:22
+  |
+4 |     Element, Length, Padding, Background, Color, Alignment,
+  |                      ^^^^^^^  ^^^^^^^^^^
+
+warning: variants `LoadingContent`, `ParsingContent`, `ApplyingSecurity`, and `Finalizing` are never constructed
+  --> crates/browser/src/app.rs:55:5
+   |
+47 | pub enum LoadingState {
+   |          ------------ variants in this enum
+...
+55 |     LoadingContent { progress: f32 },
+   |     ^^^^^^^^^^^^^^
+56 |     /// Parsing HTML content
+57 |     ParsingContent,
+   |     ^^^^^^^^^^^^^^
+58 |     /// Applying security policies
+59 |     ApplyingSecurity,
+   |     ^^^^^^^^^^^^^^^^
+60 |     /// Finalizing page render
+61 |     Finalizing,
+   |     ^^^^^^^^^^
+   |
+   = note: `LoadingState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `UpdatePrivacy`, `ClearError`, `RefreshTab`, `StopLoading`, and `ZkVmOutput` are never constructed
+  --> crates/browser/src/app.rs:80:5
+   |
+66 | pub enum Message {
+   |          ------- variants in this enum
+...
+80 |     UpdatePrivacy(PrivacyLevel),
+   |     ^^^^^^^^^^^^^
+...
+88 |     ClearError(uuid::Uuid),
+   |     ^^^^^^^^^^
+89 |     /// Refresh current tab
+90 |     RefreshTab,
+   |     ^^^^^^^^^^
+91 |     /// Stop loading current tab
+92 |     StopLoading(uuid::Uuid),
+   |     ^^^^^^^^^^^
+93 |     /// ZKVM output received
+94 |     ZkVmOutput(zkvm_receiver::ZkVmOutput),
+   |     ^^^^^^^^^^
+   |
+   = note: `Message` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `error_type`, `timestamp`, and `retry_possible` are never read
+   --> crates/browser/src/app.rs:105:9
+    |
+104 | pub struct LoadingError {
+    |            ------------ fields in this struct
+105 |     pub error_type: ErrorType,
+    |         ^^^^^^^^^^
+...
+108 |     pub timestamp: std::time::SystemTime,
+    |         ^^^^^^^^^
+109 |     pub retry_possible: bool,
+    |         ^^^^^^^^^^^^^^
+    |
+    = note: `LoadingError` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Resource` and `Internal` are never constructed
+   --> crates/browser/src/app.rs:122:5
+    |
+114 | pub enum ErrorType {
+    |          --------- variants in this enum
+...
+122 |     Resource,
+    |     ^^^^^^^^
+123 |     /// Internal browser errors
+124 |     Internal,
+    |     ^^^^^^^^
+    |
+    = note: `ErrorType` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `load_time_ms` and `security_warnings` are never read
+   --> crates/browser/src/app.rs:135:9
+    |
+129 | pub struct ParsedPageData {
+    |            -------------- fields in this struct
+...
+135 |     pub load_time_ms: u64,
+    |         ^^^^^^^^^^^^
+136 |     pub security_warnings: Vec<String>,
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: `ParsedPageData` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `AddressBarFocused` and `AddressBarUnfocused` are never constructed
+  --> crates/browser/src/ui.rs:28:5
+   |
+22 | pub enum UIMessage {
+   |          --------- variants in this enum
+...
+28 |     AddressBarFocused,
+   |     ^^^^^^^^^^^^^^^^^
+29 |     /// Address bar unfocused
+30 |     AddressBarUnfocused,
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `UIMessage` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `update_network_config`, `load_page`, `parse_html_content`, `extract_title`, `extract_content`, and `extract_content_enhanced` are never used
+   --> crates/browser/src/engine.rs:44:18
+    |
+25  | impl BrowserEngine {
+    | ------------------ methods in this implementation
+...
+44  |     pub async fn update_network_config(mut self, config: NetworkConfig) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+190 |     pub async fn load_page(&self, url: Url) -> Result<String, String> {
+    |                  ^^^^^^^^^
+...
+372 |     async fn parse_html_content(&self, html: &str, url: &str) -> Result<(String, String, usize), String> {
+    |              ^^^^^^^^^^^^^^^^^^
+...
+397 |     fn extract_title(&self, html: &str) -> Option<String> {
+    |        ^^^^^^^^^^^^^
+...
+409 |     fn extract_content(&self, html: &str) -> String {
+    |        ^^^^^^^^^^^^^^^
+...
+459 |     fn extract_content_enhanced(&self, html: &str) -> String {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ResourceLoader` is never constructed
+ --> crates/browser/src/resource_loader.rs:7:12
+  |
+7 | pub struct ResourceLoader {
+  |            ^^^^^^^^^^^^^^
+
+warning: associated items `new`, `load_resource`, `load_html`, `load_css`, `load_javascript`, and `load_image` are never used
+   --> crates/browser/src/resource_loader.rs:16:18
+    |
+14  | impl ResourceLoader {
+    | ------------------- associated items in this implementation
+15  |     /// Create a new resource loader
+16  |     pub async fn new(security_context: Arc<SecurityContext>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    |                  ^^^
+...
+26  |     pub async fn load_resource(&self, url: Url) -> Result<Vec<u8>, String> {
+    |                  ^^^^^^^^^^^^^
+...
+42  |     pub async fn load_html(&self, url: Url) -> Result<String, String> {
+    |                  ^^^^^^^^^
+...
+60  |     pub async fn load_css(&self, url: Url) -> Result<String, String> {
+    |                  ^^^^^^^^
+...
+81  |     pub async fn load_javascript(&self, url: Url) -> Result<String, String> {
+    |                  ^^^^^^^^^^^^^^^
+...
+102 |     pub async fn load_image(&self, url: Url) -> Result<Vec<u8>, String> {
+    |                  ^^^^^^^^^^
+
+warning: method `update_viewport_size` is never used
+  --> crates/browser/src/renderer.rs:90:12
+   |
+54 | impl CitadelRenderer {
+   | -------------------- method in this implementation
+...
+90 |     pub fn update_viewport_size(&mut self, width: f32, height: f32) {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: variants `RenderedContent` and `Error` are never constructed
+  --> crates/browser/src/zkvm_receiver.rs:16:5
+   |
+14 | pub enum ZkVmOutput {
+   |          ---------- variants in this enum
+15 |     /// Rendered content ready for display
+16 |     RenderedContent {
+   |     ^^^^^^^^^^^^^^^
+...
+21 |     Error {
+   |     ^^^^^
+   |
+   = note: `ZkVmOutput` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `ZkVmReceiver` is never constructed
+  --> crates/browser/src/zkvm_receiver.rs:28:12
+   |
+28 | pub struct ZkVmReceiver {
+   |            ^^^^^^^^^^^^
+
+warning: associated items `new`, `receive_from_tab`, and `handle_message` are never used
+  --> crates/browser/src/zkvm_receiver.rs:35:12
+   |
+33 | impl ZkVmReceiver {
+   | ----------------- associated items in this implementation
+34 |     /// Create a new ZKVM receiver
+35 |     pub fn new(output_sender: mpsc::UnboundedSender<ZkVmOutput>) -> Self {
+   |            ^^^
+...
+40 |     pub async fn receive_from_tab(&self, tab_id: Uuid, mut channel: Channel) {
+   |                  ^^^^^^^^^^^^^^^^
+...
+66 |     async fn handle_message(&self, tab_id: Uuid, message: ChannelMessage) -> Result<(), String> {
+   |              ^^^^^^^^^^^^^^
+
+warning: function `spawn_receiver_for_tab` is never used
+  --> crates/browser/src/zkvm_receiver.rs:96:8
+   |
+96 | pub fn spawn_receiver_for_tab(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `citadel-browser` (bin "citadel-browser") generated 31 warnings (15 duplicates) (run `cargo fix --bin "citadel-browser"` to apply 2 suggestions)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.30s
+warning: the following packages contain code that will be rejected by a future version of Rust: rquickjs-core v0.4.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

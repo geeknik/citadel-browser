@@ -8,7 +8,6 @@ pub mod security;
 
 use std::sync::Arc;
 use rquickjs::{Context, Runtime};
-use crate::dom::Dom;
 use crate::security::SecurityContext;
 use crate::error::ParserResult;
 

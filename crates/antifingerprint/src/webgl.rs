@@ -306,7 +306,7 @@ mod tests {
     use crate::SecurityContext;
     
     fn create_test_webgl_protection() -> WebGLProtection {
-        let security_context = SecurityContext::new();
+        let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         WebGLProtection::new(manager)
     }

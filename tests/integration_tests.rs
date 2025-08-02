@@ -17,7 +17,7 @@ async fn test_browser_initialization() {
     // Create runtime and components
     let runtime = Arc::new(Runtime::new().unwrap());
     let network_config = NetworkConfig::default();
-    let security_context = Arc::new(SecurityContext::new());
+    let security_context = Arc::new(SecurityContext::new(10));
     
     // Initialize browser engine
     let engine_result = citadel_browser::engine::BrowserEngine::new(

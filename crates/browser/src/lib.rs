@@ -13,6 +13,7 @@ pub mod engine;
 pub mod resource_loader;
 pub mod tabs;
 pub mod renderer;
+pub mod zkvm_receiver;
 
 // Re-export the main application
 pub use app::CitadelBrowser;

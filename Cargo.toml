@@ -40,6 +40,7 @@ serde               = { version = "1.0.197", features = ["derive"] }
 serde_json          = "1.0.114"
 url                 = "2.5.4"
 idna                = "1.0.3"  # Security fix for CVE affecting < 1.0.0
+regex               = "1.10.2"
 
 # macOS specific dependencies
 core-foundation     = "0.9.4"

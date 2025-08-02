@@ -33,7 +33,7 @@ impl Dom {
     pub fn new() -> Self {
         // Create metrics and a root document node
         let metrics = Arc::new(DomMetrics::new());
-        let security_context = Arc::new(SecurityContext::new());
+        let security_context = Arc::new(SecurityContext::new(10));
         let root_node_data = NodeData::Document;
         let root_node = Node::new(root_node_data);
         let root_handle = Arc::new(std::sync::RwLock::new(root_node));
@@ -70,7 +70,7 @@ impl Dom {
     }
 
     /// Inserts a new node before a specific sibling.
-    pub fn insert_before(&mut self, sibling: &NodeHandle, new_node: NodeHandle) {
+    pub fn insert_before(&mut self, _sibling: &NodeHandle, new_node: NodeHandle) {
         // This is a simplified implementation - in a full DOM, we'd need to:
         // 1. Find the parent of the sibling
         // 2. Find the index of the sibling in parent's children
@@ -130,13 +130,56 @@ impl Dom {
 
     /// Get the text content of the entire document
     pub fn get_text_content(&self) -> String {
+        tracing::info!("🔍 DOM::get_text_content() called");
+        
         let raw_content = self.extract_text_recursive(&self.document_node_handle);
         
         // Debug logging
         if raw_content.is_empty() {
-            tracing::warn!("🔍 DOM text extraction: Raw content is empty");
+            tracing::warn!("🔍 DOM text extraction: Raw content is empty - investigating DOM structure");
+            
+            // Debug: Examine the document structure when text extraction fails
+            if let Ok(root_node) = self.document_node_handle.read() {
+                tracing::info!("  🌳 Document root has {} children", root_node.children.len());
+                
+                for (i, child) in root_node.children.iter().enumerate() {
+                    if let Ok(child_node) = child.read() {
+                        match &child_node.data {
+                            crate::dom::node::NodeData::Element(element) => {
+                                tracing::info!("    Child {}: <{}> with {} children", i, element.local_name(), child_node.children.len());
+                                
+                                if element.local_name() == "html" {
+                                    tracing::info!("      🎯 Found HTML! Examining its structure...");
+                                    for (j, html_child) in child_node.children.iter().enumerate() {
+                                        if let Ok(html_child_node) = html_child.read() {
+                                            match &html_child_node.data {
+                                                crate::dom::node::NodeData::Element(he) => {
+                                                    tracing::info!("        HTML child {}: <{}> with {} children", j, he.local_name(), html_child_node.children.len());
+                                                }
+                                                crate::dom::node::NodeData::Text(t) => {
+                                                    tracing::info!("        HTML child {}: TEXT '{}' ({} chars)", j, t.trim(), t.len());
+                                                }
+                                                _ => {
+                                                    tracing::info!("        HTML child {}: Other", j);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            crate::dom::node::NodeData::Text(text) => {
+                                tracing::info!("    Child {}: TEXT '{}' ({} chars)", i, text.trim(), text.len());
+                            }
+                            _ => {
+                                tracing::info!("    Child {}: Other node type", i);
+                            }
+                        }
+                    }
+                }
+            }
         } else {
-            tracing::debug!("🔍 DOM text extraction: Raw content {} chars", raw_content.len());
+            tracing::info!("🔍 DOM text extraction: Raw content {} chars: '{}'", raw_content.len(), 
+                if raw_content.len() > 100 { &format!("{}...", &raw_content[..100]) } else { &raw_content });
         }
         
         // Clean up the extracted content
@@ -154,7 +197,16 @@ impl Dom {
             .collect::<Vec<&str>>()
             .join("\n\n");
             
-        tracing::debug!("🔍 DOM text extraction: Final content {} chars", final_content.len());
+        tracing::info!("🔍 DOM text extraction: Final content {} chars", final_content.len());
+        if final_content.len() > 0 {
+            let preview = if final_content.len() > 200 {
+                format!("{}...", &final_content[..200])
+            } else {
+                final_content.clone()
+            };
+            tracing::info!("📚 Final content preview: '{}'", preview);
+        }
+        
         final_content
     }
 
@@ -194,6 +246,7 @@ impl Dom {
                     // Add the text content, trimming excessive whitespace
                     let trimmed_text = text.trim();
                     if !trimmed_text.is_empty() {
+                        tracing::debug!("📄 Found text node: '{}' ({} chars)", trimmed_text, trimmed_text.len());
                         text_content.push_str(trimmed_text);
                         text_content.push(' '); // Add space after text nodes
                     }
@@ -202,6 +255,8 @@ impl Dom {
                     // Skip script and style elements
                     let tag_name = element.local_name();
                     if tag_name != "script" && tag_name != "style" {
+                        tracing::debug!("🏷️ Processing element <{}> with {} children", tag_name, node.children.len());
+                        
                         // Check if this is a block element that should have spacing
                         let is_block_element = matches!(tag_name, 
                             "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | 
@@ -210,24 +265,38 @@ impl Dom {
                             "li" | "dt" | "dd" | "td" | "th" | "tr"
                         );
                         
+                        let content_before = text_content.len();
+                        
                         // Add text content from children
                         for child in &node.children {
                             text_content.push_str(&self.extract_text_recursive(child));
+                        }
+                        
+                        let content_after = text_content.len();
+                        if content_after > content_before {
+                            tracing::debug!("  ✅ Element <{}> contributed {} chars", tag_name, content_after - content_before);
+                        } else {
+                            tracing::debug!("  ⚠️ Element <{}> contributed no text", tag_name);
                         }
                         
                         // Add spacing after block elements
                         if is_block_element && !text_content.is_empty() && !text_content.ends_with('\n') {
                             text_content.push('\n');
                         }
+                    } else {
+                        tracing::debug!("🚫 Skipping {} element (blocked)", tag_name);
                     }
                 }
                 _ => {
+                    tracing::debug!("🔄 Processing other node type with {} children", node.children.len());
                     // For other node types, check children
                     for child in &node.children {
                         text_content.push_str(&self.extract_text_recursive(child));
                     }
                 }
             }
+        } else {
+            tracing::warn!("⚠️ Failed to read node in extract_text_recursive");
         }
         
         text_content
@@ -243,8 +312,8 @@ impl Dom {
 #[allow(dead_code)] // Keep function for potential use even if not called directly here
 fn create_minimal_dom() -> Result<Dom, DomError> {
     let dom = Dom::new();
-    let metrics = dom.metrics.clone();
-    let security_context = dom.security_context.clone();
+    let _metrics = dom.metrics.clone();
+    let _security_context = dom.security_context.clone();
     
     // You could add elements to the DOM here if needed
     Ok(dom)

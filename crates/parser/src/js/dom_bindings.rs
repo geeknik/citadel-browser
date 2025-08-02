@@ -2,7 +2,6 @@
 //! 
 //! This module provides JavaScript access to DOM methods like getElementById, querySelector, etc.
 
-use rquickjs::{Ctx, Result as QjsResult, Function, Object, Value};
 use crate::dom::Dom;
 use crate::error::ParserResult;
 

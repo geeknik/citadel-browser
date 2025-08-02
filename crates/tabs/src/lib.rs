@@ -6,6 +6,7 @@
 
 mod ui;
 mod send_safe_tab_manager;
+pub mod zkvm_renderer;
 
 use std::sync::Arc;
 use parking_lot::RwLock as ParkingLotRwLock;
@@ -20,6 +21,8 @@ pub use ui::{TabBar, Message as TabMessage};
 
 // Re-export the Send-safe tab manager for browser use
 pub use send_safe_tab_manager::SendSafeTabManager;
+// Re-export zkvm_renderer types
+pub use zkvm_renderer::RenderedContent;
 
 /// Errors that can occur during tab operations
 #[derive(Error, Debug)]
@@ -259,9 +262,15 @@ pub struct TabManager {
 
 impl Tab {
     /// Create a new tab
-    pub async fn new(url: String, tab_type: TabType) -> TabResult<Self> {
+    pub async fn new(url: String, tab_type: TabType) -> TabResult<(Self, Channel)> {
         // Create a new ZKVM instance for this tab
-        let (vm, channel) = ZkVm::new().await?;
+        let (vm, _host_channel) = ZkVm::new().await?;
+        
+        // Create a channel pair for tab-host communication
+        let (tab_channel, _host_channel) = Channel::new()?;
+        
+        // Create another channel pair for renderer communication
+        let (renderer_vm_channel, renderer_host_channel) = Channel::new()?;
         
         let state = TabState {
             id: Uuid::new_v4(),
@@ -273,16 +282,26 @@ impl Tab {
             content: PageContent::Loading { url },
         };
         
+        let tab_id = state.id;
+        
         let tab = Self {
             state: Arc::new(RwLock::new(state)),
             vm: Arc::new(vm),
-            channel,
+            channel: tab_channel,
         };
         
         // Start the VM
         tab.vm.start().await?;
         
-        Ok(tab)
+        // Spawn the ZKVM renderer task
+        tokio::spawn(async move {
+            log::info!("Starting ZKVM renderer for tab {}", tab_id);
+            if let Err(e) = zkvm_renderer::spawn_zkvm_renderer(renderer_vm_channel).await {
+                log::error!("ZKVM renderer error for tab {}: {}", tab_id, e);
+            }
+        });
+        
+        Ok((tab, renderer_host_channel))
     }
     
     /// Convert tab type (with user warning)
@@ -300,7 +319,7 @@ impl Tab {
                     command: "convert_to_container".into(),
                     params: serde_json::json!({
                         "container_id": container_id.to_string()
-                    }),
+                    }).to_string(),
                 }).await?;
                 
                 Ok(())
@@ -342,7 +361,7 @@ impl Tab {
     }
     
     /// Persist container state
-    async fn persist_container_state(&self, container_id: Uuid) -> TabResult<()> {
+    async fn persist_container_state(&self, _container_id: Uuid) -> TabResult<()> {
         // TODO: Implement container state persistence
         Ok(())
     }

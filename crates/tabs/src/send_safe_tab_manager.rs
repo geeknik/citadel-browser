@@ -4,12 +4,13 @@
 //! by using message passing and async operations.
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use tokio::sync::{mpsc, RwLock, oneshot};
 use uuid::Uuid;
-use crate::{TabError, TabResult, TabType, TabState, PageContent};
+use crate::{TabError, TabResult, TabType, TabState, PageContent, Tab};
+use citadel_zkvm::{Channel as ZkVmChannel, ChannelMessage};
 
 /// Commands that can be sent to the tab manager
-#[derive(Debug)]
 pub enum TabManagerCommand {
     OpenTab {
         url: String,
@@ -34,6 +35,11 @@ pub enum TabManagerCommand {
     UpdatePageContent {
         tab_id: Uuid,
         content: PageContent,
+        response: oneshot::Sender<TabResult<()>>,
+    },
+    SendMessageToTab {
+        tab_id: Uuid,
+        message: ChannelMessage,
         response: oneshot::Sender<TabResult<()>>,
     },
 }
@@ -68,36 +74,57 @@ impl SendSafeTabManager {
         mut receiver: mpsc::UnboundedReceiver<TabManagerCommand>,
         states: Arc<RwLock<Vec<TabState>>>,
     ) {
-        // For now, we'll simulate tab operations
-        // In a real implementation, this would interface with the actual ZKVM TabManager
+        // Store actual Tab instances with ZKVM
+        let mut tabs: HashMap<Uuid, Tab> = HashMap::new();
+        // Store ZKVM channels for each tab
+        let mut tab_channels: HashMap<Uuid, ZkVmChannel> = HashMap::new();
         while let Some(command) = receiver.recv().await {
             match command {
                 TabManagerCommand::OpenTab { url, tab_type, response } => {
-                    let tab_id = Uuid::new_v4();
-                    let tab_state = TabState {
-                        id: tab_id,
-                        title: "New Tab".to_string(),
-                        url: url.clone(),
-                        tab_type,
-                        is_active: false,
-                        created_at: chrono::Utc::now(),
-                        content: PageContent::Loading { url },
-                    };
-                    
-                    let mut states_guard = states.write().await;
-                    
-                    // If this is the first tab, make it active
-                    if states_guard.is_empty() {
-                        let mut active_state = tab_state;
-                        active_state.is_active = true;
-                        states_guard.push(active_state);
-                    } else {
-                        states_guard.push(tab_state);
+                    // Create a real ZKVM tab
+                    match Tab::new(url.clone(), tab_type).await {
+                        Ok((tab, renderer_channel)) => {
+                            let tab_id = tab.state.read().await.id;
+                            let tab_state = tab.state.read().await.clone();
+                            
+                            // Store the ZKVM channel for renderer communication
+                            tab_channels.insert(tab_id, renderer_channel);
+                            
+                            // Store the tab instance
+                            tabs.insert(tab_id, tab);
+                            
+                            let mut states_guard = states.write().await;
+                            
+                            // If this is the first tab, make it active
+                            if states_guard.is_empty() {
+                                let mut active_state = tab_state;
+                                active_state.is_active = true;
+                                states_guard.push(active_state);
+                            } else {
+                                states_guard.push(tab_state);
+                            }
+                            
+                            log::info!("Created ZKVM tab {}", tab_id);
+                            let _ = response.send(Ok(tab_id));
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create ZKVM tab: {}", e);
+                            let _ = response.send(Err(e));
+                        }
                     }
-                    
-                    let _ = response.send(Ok(tab_id));
                 }
                 TabManagerCommand::CloseTab { tab_id, response } => {
+                    // Close the ZKVM tab first
+                    if let Some(tab) = tabs.remove(&tab_id) {
+                        // Close the tab (this will terminate the ZKVM)
+                        if let Err(e) = tab.close().await {
+                            log::error!("Failed to close ZKVM for tab {}: {}", tab_id, e);
+                        }
+                        
+                        // Remove the channel
+                        tab_channels.remove(&tab_id);
+                    }
+                    
                     let mut states_guard = states.write().await;
                     
                     if let Some(index) = states_guard.iter().position(|t| t.id == tab_id) {
@@ -109,6 +136,7 @@ impl SendSafeTabManager {
                             states_guard[0].is_active = true;
                         }
                         
+                        log::info!("Closed ZKVM tab {}", tab_id);
                         let _ = response.send(Ok(()));
                     } else {
                         let _ = response.send(Err(TabError::NotFound(tab_id)));
@@ -156,6 +184,19 @@ impl SendSafeTabManager {
                     }
                 }
                 TabManagerCommand::UpdatePageContent { tab_id, content, response } => {
+                    // Send content update through ZKVM channel
+                    if let Some(channel) = tab_channels.get_mut(&tab_id) {
+                        // Send rendering data through secure channel
+                        let message = ChannelMessage::Control {
+                            command: "update_content".to_string(),
+                            params: serde_json::to_string(&content).unwrap_or_else(|_| "{}".to_string()),
+                        };
+                        
+                        if let Err(e) = channel.send(message).await {
+                            log::error!("Failed to send content to ZKVM tab {}: {}", tab_id, e);
+                        }
+                    }
+                    
                     let mut states_guard = states.write().await;
                     
                     if let Some(state) = states_guard.iter_mut().find(|t| t.id == tab_id) {
@@ -167,7 +208,21 @@ impl SendSafeTabManager {
                             state.title = title.clone();
                         }
                         
+                        log::debug!("Updated content for ZKVM tab {}", tab_id);
                         let _ = response.send(Ok(()));
+                    } else {
+                        let _ = response.send(Err(TabError::NotFound(tab_id)));
+                    }
+                }
+                TabManagerCommand::SendMessageToTab { tab_id, message, response } => {
+                    // Send message through ZKVM channel
+                    if let Some(channel) = tab_channels.get_mut(&tab_id) {
+                        if let Err(e) = channel.send(message).await {
+                            log::error!("Failed to send message to tab {}: {}", tab_id, e);
+                            let _ = response.send(Err(TabError::InvalidOperation("Failed to send message".into())));
+                        } else {
+                            let _ = response.send(Ok(()));
+                        }
                     } else {
                         let _ = response.send(Err(TabError::NotFound(tab_id)));
                     }
@@ -258,6 +313,23 @@ impl SendSafeTabManager {
         let command = TabManagerCommand::UpdatePageContent {
             tab_id,
             content,
+            response: response_sender,
+        };
+        
+        self.command_sender.send(command)
+            .map_err(|_| TabError::InvalidOperation("TabManager channel closed".into()))?;
+        
+        response_receiver.await
+            .map_err(|_| TabError::InvalidOperation("Response channel closed".into()))?
+    }
+    
+    /// Send a message to a specific tab's ZKVM channel
+    pub async fn send_message_to_tab(&self, tab_id: Uuid, message: ChannelMessage) -> TabResult<()> {
+        let (response_sender, response_receiver) = oneshot::channel();
+        
+        let command = TabManagerCommand::SendMessageToTab {
+            tab_id,
+            message,
             response: response_sender,
         };
         

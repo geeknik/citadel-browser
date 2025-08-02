@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::css::{CitadelStylesheet, ComputedStyle, DisplayType};
 use crate::dom::{Dom, Node};
 use crate::security::SecurityContext;
-use crate::error::{ParserError, ParserResult};
+use crate::error::ParserResult;
 
 /// Simple layout rectangle
 #[derive(Debug, Clone)]

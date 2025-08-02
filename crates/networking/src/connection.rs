@@ -305,8 +305,8 @@ mod tests {
         let connection = Connection::new(dns_resolver, SecurityLevel::High).unwrap();
         
         // Get client from pool
-        let client1 = connection.get_client("example.com").await.unwrap();
-        let client2 = connection.get_client("example.com").await.unwrap();
+        let _client1 = connection.get_client("example.com").await.unwrap();
+        let _client2 = connection.get_client("example.com").await.unwrap();
         
         // Since we can't directly compare the Arc pointers (they're cloned),
         // we'll just check that we can get multiple clients for the same domain

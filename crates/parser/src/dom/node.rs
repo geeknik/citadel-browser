@@ -1,10 +1,7 @@
 //! Defines the core Node structure and associated builders for the DOM.
 
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::AtomicUsize;
-use std::fmt;
 use html5ever::QualName;
-use html5ever::tendril::StrTendril;
 use crate::dom::metrics::DomMetrics;
 use crate::dom::error::DomError;
 // Use our local SecurityContext implementation

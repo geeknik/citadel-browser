@@ -7,6 +7,7 @@ mod ui;
 mod engine;
 mod resource_loader;
 mod renderer;
+mod zkvm_receiver;
 
 use app::CitadelBrowser;
 

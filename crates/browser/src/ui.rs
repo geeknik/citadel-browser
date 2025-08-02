@@ -1,12 +1,33 @@
 use std::sync::Arc;
 use iced::{
     widget::{button, container, text, text_input, scrollable, Space, Column, Row},
-    Element, Length, Padding, Background, Color, Alignment,
+    Element, Length, Color, Alignment, theme, Background,
+    widget::container::{Appearance, StyleSheet},
 };
 use citadel_tabs::{SendSafeTabManager as TabManager};
 use crate::app::Message;
 use crate::renderer::CitadelRenderer;
 use citadel_networking::{NetworkConfig, PrivacyLevel};
+
+/// Custom style for the info bar
+#[derive(Clone, Copy, Debug)]
+struct InfoBarStyle;
+
+impl StyleSheet for InfoBarStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> Appearance {
+        Appearance {
+            background: Some(Background::Color(Color::from_rgb(0.1, 0.1, 0.15))),
+            border: iced::Border {
+                color: Color::from_rgb(0.2, 0.2, 0.3),
+                width: 1.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
 
 /// Main UI state and components
 #[derive(Debug, Clone)]
@@ -235,42 +256,37 @@ impl CitadelUI {
                     element_count, 
                     size_bytes 
                 } => {
-                    let header = Column::new()
-                        .push(Space::with_height(10))
-                        .push(text("🌐 Page Rendered Successfully")
-                            .size(20)
-                            .style(Color::from_rgb(0.0, 0.8, 0.0)))
-                        .push(Space::with_height(5))
-                        .push(text(format!("Title: {}", title))
-                            .size(16)
-                            .style(Color::from_rgb(0.8, 0.8, 0.8)))
-                        .push(Space::with_height(5))
-                        .push(text(format!("URL: {}", url))
-                            .size(12)
-                            .style(Color::from_rgb(0.6, 0.6, 0.6)))
-                        .push(Space::with_height(5))
-                        .push(text(format!("📊 {} elements, {} bytes", element_count, size_bytes))
-                            .size(12)
-                            .style(Color::from_rgb(0.5, 0.5, 0.5)))
-                        .push(Space::with_height(10))
-                        .push(text("🛡️ ZKVM Isolation Active - Content Rendered")
-                            .size(14)
-                            .style(Color::from_rgb(0.0, 0.6, 0.8)))
-                        .push(Space::with_height(15))
-                        .align_items(Alignment::Center);
-                    
-                    // Use the renderer for actual HTML/CSS rendering
+                    // Get the actual rendered content from the renderer
                     let rendered_content = renderer.render();
                     
+                    // Create a minimal header with essential info
+                    let header = Row::new()
+                        .push(text(format!("📊 {} elements", element_count))
+                            .size(11)
+                            .style(Color::from_rgb(0.6, 0.6, 0.6)))
+                        .push(text(" • ").size(11).style(Color::from_rgb(0.5, 0.5, 0.5)))
+                        .push(text(format!("{} bytes", size_bytes))
+                            .size(11)
+                            .style(Color::from_rgb(0.6, 0.6, 0.6)))
+                        .push(text(" • ").size(11).style(Color::from_rgb(0.5, 0.5, 0.5)))
+                        .push(text("🛡️ ZKVM Active")
+                            .size(11)
+                            .style(Color::from_rgb(0.0, 0.6, 0.8)))
+                        .spacing(0)
+                        .align_items(Alignment::Center);
+                    
+                    // Prioritize the rendered content - put it first with minimal header
                     let full_content = Column::new()
-                        .push(header)
+                        .push(container(header)
+                            .width(Length::Fill)
+                            .padding([5, 10, 5, 10])
+                            .style(theme::Container::Custom(Box::new(InfoBarStyle))))
                         .push(rendered_content)
                         .spacing(0);
                     
                     container(full_content)
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .padding(20)
                         .into()
                 }
                 citadel_tabs::PageContent::Error { url, error } => {

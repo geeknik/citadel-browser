@@ -5,6 +5,11 @@ pub mod connection;
 pub mod resource;
 pub mod resource_manager;
 pub mod error;
+pub mod resource_loader;
+pub mod resource_discovery;
+pub mod cache;
+pub mod advanced_loader;
+pub mod integrity;
 
 /// Re-export common types for easier usage
 pub use dns::{DnsMode, CitadelDnsResolver};
@@ -13,7 +18,12 @@ pub use response::Response;
 pub use connection::Connection;
 pub use resource::Resource;
 pub use resource_manager::{ResourceManager, ResourcePolicy, CachePolicy, ResourceStats, ResourceManagerConfig, OriginType};
+pub use resource_loader::{ResourceLoader, LoadProgress, LoadResult, LoadOptions};
+pub use resource_discovery::{ResourceDiscovery, ResourceRef, ResourceContext};
+pub use cache::{ResourceCache, CacheEntry, CacheConfig};
 pub use error::NetworkError;
+pub use advanced_loader::{AdvancedResourceLoader, LoadingStrategy, Priority, NetworkCondition, BandwidthTracker};
+pub use integrity::{IntegrityValidator, HashAlgorithm, IntegrityResult, CSPViolation};
 
 /// Types of privacy level configurations for the networking layer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

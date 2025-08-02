@@ -118,6 +118,13 @@ impl NavigatorProtection {
         self.normalized_info.as_ref()
     }
     
+    /// Log a navigator access attempt
+    pub fn log_access_attempt(&self, property: &str) {
+        if self.enabled {
+            self.manager.log_attempt("navigator", property);
+        }
+    }
+    
     /// Normalize navigator information based on browser category
     fn normalize_navigator(&self, real: NavigatorInfo, category: BrowserCategory) -> NavigatorInfo {
         if !self.enabled {
@@ -272,7 +279,7 @@ mod tests {
     use crate::SecurityContext;
     
     fn create_test_navigator_protection() -> NavigatorProtection {
-        let security_context = SecurityContext::new();
+        let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         NavigatorProtection::new(manager)
     }

@@ -9,7 +9,7 @@ use html5ever::{
     Attribute as HtmlAttribute,
     QualName,
 };
-use markup5ever::{ExpandedName, expanded_name, local_name, ns, namespace_url};
+use markup5ever::ExpandedName;
 use std::sync::Arc;
 use std::borrow::Cow;
 use std::collections::HashMap;
