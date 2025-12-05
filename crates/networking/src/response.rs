@@ -216,10 +216,10 @@ impl Response {
         let mut warnings = Vec::new();
         
         // HTTPS-only security headers
-        if self.url.scheme() == "https" {
-            if self.header("strict-transport-security").is_none() {
-                warnings.push("Missing HSTS header".to_string());
-            }
+        if self.url.scheme() == "https"
+            && self.header("strict-transport-security").is_none()
+        {
+            warnings.push("Missing HSTS header".to_string());
         }
         
         // General security headers

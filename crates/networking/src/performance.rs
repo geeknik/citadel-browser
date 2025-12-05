@@ -370,7 +370,7 @@ impl NetworkPerformanceMonitor {
     /// Record request timing
     pub fn record_request_time(&mut self, host: String, duration: Duration) {
         let host_key = host.clone();
-        self.request_times.entry(host).or_insert_with(Vec::new).push(duration);
+        self.request_times.entry(host).or_default().push(duration);
         
         // Keep only last 100 measurements
         if let Some(times) = self.request_times.get_mut(&host_key) {
@@ -445,6 +445,12 @@ impl NetworkPerformanceMonitor {
             active_connections: self.active_connections,
             connection_pool_stats: self.connection_pool_stats.clone(),
         }
+    }
+}
+
+impl Default for NetworkPerformanceMonitor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

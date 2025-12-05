@@ -40,6 +40,34 @@ pub enum ResourceType {
     Other,
 }
 
+/// Detect potential tracking attempts in the response
+fn detect_tracking_attempts(response: &mut Response) {
+    // Simple detection based on URL patterns
+    let tracking_patterns = [
+        "google-analytics.com",
+        "doubleclick.net",
+        "facebook.com/tr",
+        "connect.facebook.net",
+        "googletagmanager.com",
+        "analytics.",
+        "tracker.",
+        "tracking.",
+        "metric.",
+        "matomo.",
+        "piwik.",
+    ];
+    
+    let url = response.url().as_str().to_string();
+    
+    for pattern in tracking_patterns.iter() {
+        if url.contains(pattern) {
+            response.add_blocked_tracking(
+                format!("Potential tracking URL detected: {}", pattern)
+            );
+        }
+    }
+}
+
 /// Resource fetching client with privacy protections
 pub struct Resource {
     /// HTTP client
@@ -114,7 +142,7 @@ impl Resource {
         };
         
         // Convert hyper Response to our Response
-        self.from_hyper_response(hyper_response, final_url, method).await
+        self.parse_hyper_response(hyper_response, final_url, method).await
     }
     
     /// Convert our Request to a hyper Request
@@ -141,7 +169,7 @@ impl Resource {
     }
     
     /// Convert a hyper Response to our Response
-    async fn from_hyper_response(
+    async fn parse_hyper_response(
         &self,
         hyper_response: HyperResponse<Body>,
         url: Url,
@@ -175,43 +203,10 @@ impl Resource {
         );
         
         // Check for and flag any tracking attempts based on response content
-        self.detect_tracking_attempts(&mut response);
+        detect_tracking_attempts(&mut response);
         
         Ok(response)
     }
-    
-    /// Detect potential tracking attempts in the response
-    fn detect_tracking_attempts(&self, response: &mut Response) {
-        // Simple detection based on URL patterns
-        let tracking_patterns = [
-            "google-analytics.com",
-            "doubleclick.net",
-            "facebook.com/tr",
-            "connect.facebook.net",
-            "googletagmanager.com",
-            "analytics.",
-            "tracker.",
-            "tracking.",
-            "metric.",
-            "matomo.",
-            "piwik.",
-        ];
-        
-        // Copy the URL first to avoid borrowing issues
-        let url = response.url().as_str().to_string();
-        
-        for pattern in tracking_patterns.iter() {
-            if url.contains(pattern) {
-                response.add_blocked_tracking(
-                    format!("Potential tracking URL detected: {}", pattern)
-                );
-            }
-        }
-        
-        // More sophisticated detection could look at response body content
-        // for known tracking scripts, but that's beyond this simple example
-    }
-    
     /// Determine the resource type from a response
     pub fn determine_resource_type(response: &Response) -> ResourceType {
         let content_type = match response.content_type() {

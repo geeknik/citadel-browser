@@ -159,6 +159,12 @@ impl AdvancedProgress {
     }
 }
 
+impl Default for BandwidthTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Advanced resource loader with intelligent prioritization and adaptive loading
 pub struct AdvancedResourceLoader {
     /// Base resource loader components
@@ -269,7 +275,7 @@ impl AdvancedResourceLoader {
     fn update_priority_queue(&self, prioritized: HashMap<Priority, Vec<ResourceRef>>) {
         if let Ok(mut queue) = self.priority_queue.lock() {
             for (priority, resources) in prioritized {
-                queue.entry(priority).or_insert_with(Vec::new).extend(resources);
+                queue.entry(priority).or_default().extend(resources);
             }
         }
     }
@@ -500,9 +506,13 @@ impl AdvancedResourceLoader {
         );
 
         // First, load all critical resources
-        let critical_resources: Vec<ResourceRef> = prioritized.get(&Priority::Critical)
-            .cloned()
-            .unwrap_or_default();
+        let mut critical_resources = self.get_next_priority_batch(Priority::Critical);
+        if critical_resources.is_empty() {
+            critical_resources = prioritized
+                .get(&Priority::Critical)
+                .cloned()
+                .unwrap_or_default();
+        }
         
         for resource in &critical_resources {
             match self.load_single_resource_tracked(resource, &options).await {
@@ -526,22 +536,31 @@ impl AdvancedResourceLoader {
         let mut remaining_tasks = Vec::new();
         
         for priority in remaining_priorities {
-            if let Some(resources) = prioritized.get(&priority) {
-                let max_concurrent = self.max_concurrent_per_priority.get(&priority).unwrap_or(&4);
-                let semaphore = Arc::new(Semaphore::new(*max_concurrent));
-                
-                for resource in resources {
-                    let semaphore = Arc::clone(&semaphore);
-                    let options = options.clone();
-                    let resource = resource.clone();
-                    
-                    remaining_tasks.push(async move {
-                        let _permit = semaphore.acquire().await.unwrap();
-                        let url = resource.url.clone();
-                        let result = self.load_single_resource_tracked(&resource, &options).await;
-                        (url, result)
-                    });
+            let mut resources = self.get_next_priority_batch(priority);
+            if resources.is_empty() {
+                if let Some(fallback) = prioritized.get(&priority) {
+                    resources = fallback.clone();
                 }
+            }
+
+            if resources.is_empty() {
+                continue;
+            }
+
+            let max_concurrent = self.max_concurrent_per_priority.get(&priority).unwrap_or(&4);
+            let semaphore = Arc::new(Semaphore::new(*max_concurrent));
+            
+            for resource in resources {
+                let semaphore = Arc::clone(&semaphore);
+                let options = options.clone();
+                let resource = resource.clone();
+                
+                remaining_tasks.push(async move {
+                    let _permit = semaphore.acquire().await.unwrap();
+                    let url = resource.url.clone();
+                    let result = self.load_single_resource_tracked(&resource, &options).await;
+                    (url, result)
+                });
             }
         }
 
@@ -559,6 +578,9 @@ impl AdvancedResourceLoader {
                 }
             }
         }
+
+        // Clear queue now that all prioritized work is complete
+        self.clear_priority_queue();
 
         Ok(LoadResult {
             progress: progress.basic,

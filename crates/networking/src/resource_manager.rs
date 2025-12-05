@@ -297,10 +297,8 @@ impl ResourceManager {
             
             // Handle special cases like co.uk
             if parts.len() >= 3 && (
-                (parts[parts.len() - 1] == "uk" && parts[parts.len() - 2] == "co") ||
-                (parts[parts.len() - 1] == "au" && parts[parts.len() - 2] == "com") || 
-                // Add other special TLDs as needed
-                false
+                parts[parts.len() - 1] == "uk" && parts[parts.len() - 2] == "co" ||
+                parts[parts.len() - 1] == "au" && parts[parts.len() - 2] == "com"
             ) {
                 return format!("{}.{}.{}", parts[parts.len() - 3], parts[parts.len() - 2], parts[parts.len() - 1]);
             }
