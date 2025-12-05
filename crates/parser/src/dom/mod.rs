@@ -178,8 +178,16 @@ impl Dom {
                 }
             }
         } else {
-            tracing::info!("🔍 DOM text extraction: Raw content {} chars: '{}'", raw_content.len(), 
-                if raw_content.len() > 100 { &format!("{}...", &raw_content[..100]) } else { &raw_content });
+            let preview = if raw_content.len() > 100 {
+                format!("{}...", &raw_content[..100])
+            } else {
+                raw_content.clone()
+            };
+            tracing::info!(
+                "🔍 DOM text extraction: Raw content {} chars: '{}'",
+                raw_content.len(),
+                preview
+            );
         }
         
         // Clean up the extracted content

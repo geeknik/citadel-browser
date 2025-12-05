@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 use iced::{Application, Command, Element, Subscription, Theme};
-use iced::event;
 use iced::keyboard::Key;
 use url::Url;
 

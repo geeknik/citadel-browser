@@ -25,6 +25,13 @@ pub use error::ZkVmError;
 /// Result type for ZKVM operations
 pub type ZkVmResult<T> = Result<T, ZkVmError>;
 
+/// Basic information about an execution attempt
+#[derive(Debug, Default)]
+pub struct ExecutionResult {
+    /// Whether the executor finished without error
+    pub completed: bool,
+}
+
 /// Represents the state of a ZKVM instance
 #[derive(Debug, PartialEq)]
 pub enum ZkVmState {
@@ -125,7 +132,7 @@ pub struct ZkVm {
     /// Communication channel to the host
     channel: Channel,
     /// Executor for running code
-    executor: Executor,
+    executor: Mutex<Executor>,
 }
 
 impl ZkVm {
@@ -142,7 +149,7 @@ impl ZkVm {
             memory: Mutex::new(Vec::new()),
             id: Arc::new(id),
             channel: vm_channel,
-            executor,
+            executor: Mutex::new(executor),
         };
         
         Ok((vm, host_channel))
@@ -241,14 +248,17 @@ impl ZkVm {
     }
     
     /// Execute bytecode using the internal executor
-    pub async fn execute_code(&self, bytecode: &[u8]) -> ZkVmResult<ExecutionResult> {
+    pub async fn execute_code(&self, entry_point: u64) -> ZkVmResult<ExecutionResult> {
         let state = self.state.read().await;
         match *state {
             ZkVmState::Running => {
                 drop(state); // Release read lock
                 
                 // Use the executor to run the code
-                self.executor.execute(bytecode).await
+                let mut executor = self.executor.lock().await;
+                executor.execute(entry_point)?;
+
+                Ok(ExecutionResult { completed: true })
             }
             _ => Err(ZkVmError::InvalidOperation(
                 "VM must be running to execute code".into()

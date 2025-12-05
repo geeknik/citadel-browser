@@ -1294,11 +1294,9 @@ impl CitadelLayoutEngine {
     /// Recursively count DOM nodes
     fn count_node_recursive(&self, node: &Node, count: &mut usize) {
         *count += 1;
-        if let Ok(children) = node.children() {
-            for child in children.iter() {
-                if let Ok(child_guard) = child.read() {
-                    self.count_node_recursive(&*child_guard, count);
-                }
+        for child in node.children() {
+            if let Ok(child_guard) = child.read() {
+                self.count_node_recursive(&*child_guard, count);
             }
         }
     }
@@ -1565,6 +1563,8 @@ mod tests {
     use crate::security::SecurityContext;
     use crate::css::{StyleRule, Declaration};
     use crate::dom::*;
+    use html5ever::{local_name, namespace_url, QualName};
+    use html5ever::ns;
 
     fn create_test_security_context() -> Arc<SecurityContext> {
         Arc::new(SecurityContext::new(10))
@@ -1588,8 +1588,8 @@ mod tests {
         assert!(result.is_ok());
         let layout_result = result.unwrap();
         
-        // Check that we have layouts for nodes (empty DOM is acceptable for basic test)
-        assert!(layout_result.node_layouts.len() >= 0);
+        // Check that we produced layout boxes for the seeded DOM
+        assert!(!layout_result.node_layouts.is_empty());
         assert!(layout_result.document_size.width >= 0.0);
         assert!(layout_result.document_size.height >= 0.0);
     }
@@ -1612,8 +1612,8 @@ mod tests {
         assert!(result.is_ok());
         let layout_result = result.unwrap();
         
-        // Verify flex layout was computed (empty DOM is acceptable for basic test)
-        assert!(layout_result.node_layouts.len() >= 0); // Accept empty DOM for now
+        // Verify flex layout was computed for at least the container
+        assert!(!layout_result.node_layouts.is_empty());
     }
 
     #[test]
@@ -1636,24 +1636,69 @@ mod tests {
     }
 
     fn create_test_dom() -> Dom {
-        // Create a simple DOM structure for testing
-        let dom = Dom::new();
-        
-        // For now, just return an empty DOM since the Node creation
-        // would require more complex setup. The layout engine
-        // should handle empty DOMs gracefully.
-        
+        let mut dom = Dom::new();
+
+        // <html>
+        let html = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("html")),
+            vec![],
+        )));
+
+        // <body>
+        let body = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("body")),
+            vec![],
+        )));
+
+        // <p>Test content</p>
+        let paragraph = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("p")),
+            vec![],
+        )));
+
+        let root = dom.document_node_handle.clone();
+        dom.append_child(&root, html.clone());
+        dom.append_child(&html, body.clone());
+        dom.append_child(&body, paragraph.clone());
+        dom.append_text(&paragraph, "Test content".to_string());
+
         dom
     }
 
     fn create_flex_test_dom() -> Dom {
         // Create DOM with flex container
-        let dom = Dom::new();
-        
-        // For now, just return an empty DOM since the Node creation
-        // would require more complex setup. The layout engine
-        // should handle empty DOMs gracefully.
-        
+        let mut dom = Dom::new();
+
+        let html = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("html")),
+            vec![],
+        )));
+
+        let body = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("body")),
+            vec![],
+        )));
+
+        let flex_container = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("div")),
+            vec![Attribute {
+                name: QualName::new(None, ns!(html), local_name!("class")),
+                value: "flex-container".to_string(),
+            }],
+        )));
+
+        let item = Node::create_new(NodeData::Element(Element::new(
+            QualName::new(None, ns!(html), local_name!("span")),
+            vec![],
+        )));
+
+        let root = dom.document_node_handle.clone();
+        dom.append_child(&root, html.clone());
+        dom.append_child(&html, body.clone());
+        dom.append_child(&body, flex_container.clone());
+        dom.append_child(&flex_container, item.clone());
+        dom.append_text(&item, "Item 1".to_string());
+
         dom
     }
 
@@ -1920,7 +1965,7 @@ mod tests {
         let layout_result = result.unwrap();
         
         // Verify layout metrics
-        assert!(layout_result.metrics.layout_time_ms >= 0);
+        assert!(layout_result.metrics.layout_time_ms < 10_000);
         assert!(layout_result.metrics.memory_used_kb > 0);
         assert_eq!(layout_result.document_size.width, 1200.0);
         assert_eq!(layout_result.document_size.height, 800.0);

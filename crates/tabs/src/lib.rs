@@ -255,9 +255,9 @@ impl Default for SimpleTabManager {
 /// Manages all browser tabs
 pub struct TabManager {
     /// All active tabs
-    tabs: Arc<RwLock<Vec<Tab>>>,
+    tabs: Arc<ParkingLotRwLock<Vec<Tab>>>,
     /// Currently active tab ID
-    active_tab: Arc<RwLock<Option<Uuid>>>,
+    active_tab: Arc<ParkingLotRwLock<Option<Uuid>>>,
 }
 
 impl Tab {
@@ -373,8 +373,8 @@ impl TabManager {
     /// Use SendSafeTabManager instead for browser integration.
     pub fn new() -> Self {
         Self {
-            tabs: Arc::new(RwLock::new(Vec::new())),
-            active_tab: Arc::new(RwLock::new(None)),
+            tabs: Arc::new(ParkingLotRwLock::new(Vec::new())),
+            active_tab: Arc::new(ParkingLotRwLock::new(None)),
         }
     }
     
@@ -386,30 +386,19 @@ impl TabManager {
     
     /// Get the number of open tabs
     pub fn tab_count(&self) -> usize {
-        if let Ok(tabs) = self.tabs.read() {
-            tabs.len()
-        } else {
-            0
-        }
+        self.tabs.read().len()
     }
     
     /// Get the currently active tab ID
     pub fn get_active_tab_id(&self) -> Option<Uuid> {
-        if let Ok(active_tab) = self.active_tab.read() {
-            *active_tab
-        } else {
-            None
-        }
+        *self.active_tab.read()
     }
     
     /// Set the active tab
     pub fn set_active_tab(&self, tab_id: Option<Uuid>) -> bool {
-        if let Ok(mut active_tab) = self.active_tab.write() {
-            *active_tab = tab_id;
-            true
-        } else {
-            false
-        }
+        let mut active_tab = self.active_tab.write();
+        *active_tab = tab_id;
+        true
     }
     
     /// Check if there are any tabs open

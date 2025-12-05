@@ -260,14 +260,14 @@ impl AdvancedResourceLoader {
         }
         
         // Update the priority queue with discovered resources
-        self.update_priority_queue(prioritized.clone()).await;
+        self.update_priority_queue(prioritized.clone());
         
         prioritized
     }
     
     /// Update the internal priority queue with new resources
-    async fn update_priority_queue(&self, prioritized: HashMap<Priority, Vec<ResourceRef>>) {
-        if let Ok(mut queue) = self.priority_queue.lock().await {
+    fn update_priority_queue(&self, prioritized: HashMap<Priority, Vec<ResourceRef>>) {
+        if let Ok(mut queue) = self.priority_queue.lock() {
             for (priority, resources) in prioritized {
                 queue.entry(priority).or_insert_with(Vec::new).extend(resources);
             }
@@ -275,10 +275,13 @@ impl AdvancedResourceLoader {
     }
     
     /// Get the next batch of resources to load from priority queue
-    async fn get_next_priority_batch(&self, priority: Priority) -> Vec<ResourceRef> {
-        if let Ok(mut queue) = self.priority_queue.lock().await {
+    fn get_next_priority_batch(&self, priority: Priority) -> Vec<ResourceRef> {
+        if let Ok(mut queue) = self.priority_queue.lock() {
             if let Some(resources) = queue.get_mut(&priority) {
-                let batch_size = self.max_concurrent_per_priority;
+                let batch_size = *self
+                    .max_concurrent_per_priority
+                    .get(&priority)
+                    .unwrap_or(&2);
                 resources.drain(..resources.len().min(batch_size)).collect()
             } else {
                 Vec::new()
@@ -289,8 +292,8 @@ impl AdvancedResourceLoader {
     }
     
     /// Clear completed resources from priority queue
-    async fn clear_priority_queue(&self) {
-        if let Ok(mut queue) = self.priority_queue.lock().await {
+    fn clear_priority_queue(&self) {
+        if let Ok(mut queue) = self.priority_queue.lock() {
             queue.clear();
         }
     }

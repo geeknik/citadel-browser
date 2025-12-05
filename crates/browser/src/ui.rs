@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use iced::{
-    widget::{button, container, text, text_input, scrollable, Space, Column, Row, horizontal_rule, vertical_rule},
-    Element, Length, Color, Alignment, theme, Background, Padding,
+    widget::{button, container, text, text_input, scrollable, Space, Column, Row},
+    Element, Length, Color, Alignment, theme, Background,
     widget::container::{Appearance, StyleSheet},
 };
 use citadel_tabs::{SendSafeTabManager as TabManager};
