@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn test_channel_communication() {
         block_on(async {
-            let (mut vm, mut host_channel) = ZkVm::new().await.unwrap();
+            let (mut vm, host_channel) = ZkVm::new().await.unwrap();
             
             // Send a message from host to VM
             let message = ChannelMessage::Control {

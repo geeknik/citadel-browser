@@ -262,7 +262,7 @@ mod tests {
     
     #[test]
     fn test_message_transmission() {
-        let (mut channel1, mut channel2) = Channel::new().unwrap();
+        let (channel1, mut channel2) = Channel::new().unwrap();
         
         // Send a test message
         let message = ChannelMessage::Control {

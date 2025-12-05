@@ -231,22 +231,17 @@ impl UrlScheme {
 }
 
 /// Enum defining the levels of fingerprint protection
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FingerprintProtectionLevel {
     /// No fingerprint protection
     None,
     /// Basic fingerprint protection (minimal performance impact)
     Basic,
     /// Medium fingerprint protection (some performance impact)
+    #[default]
     Medium,
     /// Maximum fingerprint protection (may impact functionality)
     Maximum,
-}
-
-impl Default for FingerprintProtectionLevel {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 /// Configuration for fingerprint protection
@@ -676,7 +671,7 @@ impl SecurityContext {
         
         // Record violation
         let violation = SecurityViolation::CspViolation {
-            directive: directive.clone(),
+            directive,
             blocked_uri: url.to_string(),
             violated_directive: format!("{:?}", directive),
             source_file: None,
@@ -726,8 +721,7 @@ impl SecurityContext {
             return true;
         }
         
-        if pattern.starts_with("*.") {
-            let domain = &pattern[2..];
+        if let Some(domain) = pattern.strip_prefix("*.") {
             return host == domain || host.ends_with(&format!(".{}", domain));
         }
         
