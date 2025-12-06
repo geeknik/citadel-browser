@@ -620,7 +620,7 @@ impl CitadelRenderer {
                 // Create viewport-aware scrollable container
                 self.create_viewport_aware_container(rendered_content)
             }
-            (Some(dom), Some(stylesheet), None) => {
+            (Some(dom), Some(_stylesheet), None) => {
                 log::error!("❌ CRITICAL: Layout computation failed - this should not happen with proper ZKVM processing");
                 
                 // Layout computation failed, show text content as fallback
@@ -871,7 +871,7 @@ impl CitadelRenderer {
             let font_size = self.get_comprehensive_font_size(tag_name, computed_style);
             let text_color = self.get_comprehensive_text_color(tag_name, computed_style);
             let font_weight = self.get_font_weight_from_style(computed_style);
-            let text_decoration = self.get_text_decoration_from_style(computed_style);
+            let _text_decoration = self.get_text_decoration_from_style(computed_style);
             
             log::info!("📝 Creating enhanced text widget for {}: '{}' (size: {}, weight: {:?})", 
                 tag_name, text_content, font_size, font_weight);
@@ -1165,7 +1165,7 @@ impl CitadelRenderer {
                 if children_widgets.is_empty() {
                     Space::with_height(0).into()
                 } else {
-                    let form_id = element.get_attribute("id").unwrap_or_else(|| format!("form_{}", self.form_element_counter));
+                    let _form_id = element.get_attribute("id").unwrap_or_else(|| format!("form_{}", self.form_element_counter));
                     
                     let enhanced_style = self.create_enhanced_container_style(&computed_style, tag_name);
                     let padding = self.get_comprehensive_padding(tag_name, &computed_style);
@@ -1597,7 +1597,7 @@ impl CitadelRenderer {
     fn create_image_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
-        computed_style: &ComputedStyle,
+        _computed_style: &ComputedStyle,
     ) -> Element<'a, Message> {
         let alt_text = element.get_attribute("alt").unwrap_or_else(|| "Image".to_string());
         let src = element.get_attribute("src");
@@ -2168,7 +2168,7 @@ impl CitadelRenderer {
     fn create_text_input_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
-        element_id: &str,
+        _element_id: &str,
         input_type: &str,
     ) -> Option<Element<'a, Message>> {
         let placeholder = element.get_attribute("placeholder").unwrap_or_default();
@@ -2425,7 +2425,7 @@ impl CitadelRenderer {
         // Update cache hit/miss ratio
         let total_cache_requests = self.render_metrics.widget_cache_hits + self.render_metrics.widget_cache_misses;
         if total_cache_requests > 0 {
-            let hit_ratio = self.render_metrics.widget_cache_hits as f64 / total_cache_requests as f64;
+            let _hit_ratio = self.render_metrics.widget_cache_hits as f64 / total_cache_requests as f64;
             
             // TODO: Re-enable performance monitoring
             // if let Some(monitor) = &self.performance_monitor {

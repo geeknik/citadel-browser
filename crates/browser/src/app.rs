@@ -561,7 +561,7 @@ impl Application for CitadelBrowser {
                             
                             // Send to ZKVM channel for isolated processing
                             match citadel_zkvm::Channel::new() {
-                                Ok((mut vm_channel, _host_channel)) => {
+                                Ok((vm_channel, _host_channel)) => {
                                     // Send rendering command to ZKVM
                                     let message = citadel_zkvm::ChannelMessage::Control {
                                         command: "render_content".to_string(),
@@ -615,7 +615,7 @@ impl Application for CitadelBrowser {
                              size_bytes: page_data.size_bytes,
                          };
                         
-                        return Command::perform(
+                        Command::perform(
                             async move {
                                 let _ = tab_manager.update_page_content(tab_id, content).await;
                             },
@@ -623,7 +623,7 @@ impl Application for CitadelBrowser {
                                 let tab_id_copy = tab_id;
                                 move |_| Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle)
                             }
-                        );
+                        )
                     }
                     Err(error) => {
                         log::error!("❌ Page loading failed: {} - {}", error.url, error.message);
@@ -638,7 +638,7 @@ impl Application for CitadelBrowser {
                              error: error.message.clone(),
                          };
                         
-                        return Command::perform(
+                        Command::perform(
                             async move {
                                 let _ = tab_manager.update_page_content(tab_id, error_content).await;
                             },
@@ -646,7 +646,7 @@ impl Application for CitadelBrowser {
                                 let tab_id_copy = tab_id;
                                 move |_| Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle)
                             }
-                        );
+                        )
                      }
                  }
              }

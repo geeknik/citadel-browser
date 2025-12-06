@@ -144,13 +144,18 @@ impl NavigatorProtection {
     
     /// Normalize navigator information based on browser category
     fn normalize_navigator(&self, real: NavigatorInfo, category: BrowserCategory) -> NavigatorInfo {
+        log::debug!(
+            "Normalizing navigator for {} ({})",
+            category.display_name(),
+            category.as_str()
+        );
         if !self.enabled {
             return real;
         }
         
         // Keep the real browser category but normalize fingerprinting factors
         match category {
-            BrowserCategory::Chrome => NavigatorInfo {
+            BrowserCategory::Chrome if category.matches_str("chrome") => NavigatorInfo {
                 // Keep real UA but standardize platform and hardware metrics
                 user_agent: real.user_agent,
                 platform: self.normalize_platform(&real.platform),
@@ -407,4 +412,12 @@ mod tests {
         assert_eq!(normalized.device_memory, Some(8.0)); // Standardized to 8GB
         assert!(!normalized.plugins_enabled); // Disabled for privacy
     }
-} 
+
+    #[test]
+    fn test_category_helper_methods() {
+        let chrome = BrowserCategory::Chrome;
+        assert_eq!(chrome.as_str(), "chrome");
+        assert_eq!(chrome.display_name(), "Google Chrome");
+        assert!(chrome.matches_str("chrome"));
+    }
+}
