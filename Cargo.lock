@@ -711,6 +711,7 @@ dependencies = [
 name = "citadel-browser"
 version = "0.0.1-alpha"
 dependencies = [
+ "async-trait",
  "chrono",
  "citadel-networking",
  "citadel-parser",
