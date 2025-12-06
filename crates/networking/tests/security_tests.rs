@@ -220,7 +220,7 @@ fn test_request_body_limits() {
     
     // Test reasonable body sizes
     let small_body = b"small content";
-    request = request.with_body(small_body.to_vec());
+    request = request.with_body(small_body);
     
     // Test large body (should be limited or rejected)
     let large_body = vec![0u8; 10_000_000]; // 10MB

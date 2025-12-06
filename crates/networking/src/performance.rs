@@ -307,18 +307,26 @@ impl RequestBatcher {
     }
     
     /// Check if batch should be processed
-    pub fn should_process_batch(&self) -> bool {
-        self.pending_requests.len() >= self.max_batch_size ||
-        (self.last_batch_time.elapsed() >= self.batch_timeout && !self.pending_requests.is_empty())
+    pub fn should_process_batch(&mut self) -> bool {
+        self.drop_stale();
+        self.pending_requests.len() >= self.max_batch_size
+            || (self.last_batch_time.elapsed() >= self.batch_timeout && !self.pending_requests.is_empty())
     }
     
     /// Get next batch of requests to process
     pub fn get_next_batch(&mut self) -> Vec<Url> {
+        self.drop_stale();
         let batch_size = std::cmp::min(self.max_batch_size, self.pending_requests.len());
         let batch_requests = self.pending_requests.drain(..batch_size).collect::<Vec<_>>();
         self.last_batch_time = Instant::now();
         
         batch_requests.into_iter().map(|req| req.url).collect()
+    }
+
+    /// Remove stale pending requests that exceeded the batch timeout
+    fn drop_stale(&mut self) {
+        let timeout_ms = self.batch_timeout.as_millis() as u64;
+        self.pending_requests.retain(|req| !req.is_stale(timeout_ms));
     }
     
     /// Get pending request count

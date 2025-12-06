@@ -253,7 +253,7 @@ impl AdvancedResourceLoader {
         
         for resource in resources {
             let priority = self.calculate_priority(&resource, base_url);
-            prioritized.entry(priority).or_insert_with(Vec::new).push(resource);
+            prioritized.entry(priority).or_default().push(resource);
         }
         
         // Sort within each priority level

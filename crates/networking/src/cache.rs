@@ -24,6 +24,12 @@ pub struct CacheConfig {
     pub enable_validation: bool,
 }
 
+impl Default for ResourceCache {
+    fn default() -> Self {
+        Self::new(CacheConfig::default())
+    }
+}
+
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
@@ -132,11 +138,6 @@ impl ResourceCache {
             config,
             current_size: Arc::new(RwLock::new(0)),
         }
-    }
-    
-    /// Create a new resource cache with default configuration
-    pub fn default() -> Self {
-        Self::new(CacheConfig::default())
     }
     
     /// Get a cached response if available and fresh
@@ -474,8 +475,10 @@ mod tests {
     
     #[test]
     fn test_cache_expiration() {
-        let mut config = CacheConfig::default();
-        config.default_ttl = Duration::from_millis(10); // Very short TTL
+        let config = CacheConfig {
+            default_ttl: Duration::from_millis(10), // Very short TTL
+            ..Default::default()
+        };
         
         let cache = ResourceCache::new(config);
         let url = Url::parse("https://example.com/test").unwrap();
@@ -496,8 +499,10 @@ mod tests {
     
     #[test]
     fn test_cache_size_limit() {
-        let mut config = CacheConfig::default();
-        config.max_size_bytes = 100; // Very small cache
+        let config = CacheConfig {
+            max_size_bytes: 100, // Very small cache
+            ..Default::default()
+        };
         
         let cache = ResourceCache::new(config);
         
@@ -513,8 +518,10 @@ mod tests {
     
     #[test]
     fn test_lru_eviction() {
-        let mut config = CacheConfig::default();
-        config.max_entries = 2; // Only allow 2 entries
+        let config = CacheConfig {
+            max_entries: 2, // Only allow 2 entries
+            ..Default::default()
+        };
         
         let cache = ResourceCache::new(config);
         

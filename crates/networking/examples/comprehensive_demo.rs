@@ -172,7 +172,7 @@ async fn demo_advanced_loading_strategies() -> Result<(), Box<dyn std::error::Er
         progress_monitor.abort();
 
         match result {
-            Ok(load_result) => {
+            Ok(_) => {
                 println!("    ✅ {} completed in {:?}", name, elapsed);
                 println!("    📈 Bandwidth: {} bytes/s, Condition: {:?}", 
                         loader.current_bandwidth(),
@@ -343,7 +343,7 @@ async fn demo_cache_management() -> Result<(), Box<dyn std::error::Error>> {
     println!("    Entry utilization: {:.1}%", stats.entry_utilization());
 
     // Test cache retrieval
-    let test_url = Url::parse(&urls[0])?;
+    let test_url = Url::parse(urls[0])?;
     if let Some(cached) = cache.get(&test_url) {
         println!("    ✅ Cache hit for: {}", urls[0]);
         println!("    📄 Content length: {} bytes", cached.body().len());

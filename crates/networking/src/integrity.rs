@@ -275,9 +275,8 @@ impl IntegrityValidator {
             _ => {
                 // Host/domain match
                 if let Some(host) = url.host_str() {
-                    if source.starts_with("*.") {
+                    if let Some(domain) = source.strip_prefix("*.") {
                         // Wildcard subdomain match
-                        let domain = &source[2..];
                         host.ends_with(domain)
                     } else {
                         // Exact host match
@@ -307,10 +306,10 @@ impl IntegrityValidator {
             warnings.push("Missing X-Frame-Options header".to_string());
         }
 
-        if response.url().scheme() == "https" {
-            if response.header("strict-transport-security").is_none() {
-                warnings.push("Missing Strict-Transport-Security header".to_string());
-            }
+        if response.url().scheme() == "https"
+            && response.header("strict-transport-security").is_none()
+        {
+            warnings.push("Missing Strict-Transport-Security header".to_string());
         }
 
         // Check for potentially dangerous content types
@@ -327,7 +326,7 @@ impl IntegrityValidator {
 
         // Check for suspicious response patterns
         let body = response.body();
-        if body.len() > 0 {
+        if !body.is_empty() {
             let body_str = String::from_utf8_lossy(body);
             
             // Check for potential XSS payloads in responses

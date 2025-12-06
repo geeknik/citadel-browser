@@ -39,8 +39,10 @@ async fn test_privacy_levels() {
         PrivacyLevel::Balanced
     ].iter() {
         // Create config with specific privacy level
-        let mut config = NetworkConfig::default();
-        config.privacy_level = *privacy_level;
+        let config = NetworkConfig {
+            privacy_level: *privacy_level,
+            ..Default::default()
+        };
         
         // Create a resource fetcher
         let _resource = Resource::new(config).await.expect("Failed to create resource fetcher");
@@ -105,11 +107,13 @@ async fn test_tracking_param_removal() {
 #[ignore] // Ignore by default as it makes network requests
 async fn test_complete_resource_loading_pipeline() {
     // Create a comprehensive network configuration
-    let mut config = NetworkConfig::default();
-    config.privacy_level = PrivacyLevel::High;
-    config.enforce_https = true;
-    config.randomize_user_agent = true;
-    config.strip_tracking_params = true;
+    let config = NetworkConfig {
+        privacy_level: PrivacyLevel::High,
+        enforce_https: true,
+        randomize_user_agent: true,
+        strip_tracking_params: true,
+        ..Default::default()
+    };
 
     // Create resource loader with custom cache
     let cache_config = CacheConfig {

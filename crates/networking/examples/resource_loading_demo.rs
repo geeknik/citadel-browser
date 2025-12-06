@@ -128,10 +128,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📋 Discovered {} resources:", discovered_resources.len());
     for (i, resource) in discovered_resources.iter().enumerate() {
         println!(
-            "   {}. {} [{}] (Priority: {}, Critical: {})",
+            "   {}. {} [{:?}] (Priority: {}, Critical: {})",
             i + 1,
             resource.url,
-            format!("{:?}", resource.resource_type),
+            resource.resource_type,
             resource.priority,
             resource.is_critical
         );
