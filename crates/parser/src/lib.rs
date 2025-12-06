@@ -9,6 +9,8 @@ use std::sync::Arc;
 pub mod css;
 pub mod css_security;
 pub mod css_processor;
+pub mod cssom;
+pub mod servo_css_processor;
 pub mod dom;
 pub mod error;
 pub mod html;

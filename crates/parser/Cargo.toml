@@ -20,6 +20,9 @@ regex = "1.10"        # Regular expressions for security pattern matching
 # Servo-compatible HTML parser with proper TreeSink implementation
 kuchiki = "0.8"       # HTML/XML tree manipulation library based on html5ever
 
+# Servo CSS Engine Integration (Using our own implementation)
+# Note: We're implementing Servo-compatible CSS parsing without external dependencies
+
 # Servo rendering components (macOS optimized) - simplified approach
 taffy = "0.5"             # Modern layout engine (Servo's layout 2020)
 euclid = "0.22"           # Geometric primitives for rendering

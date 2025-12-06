@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS Rendering Test - Citadel Browser</title>
+    <style>
+        /* Basic reset and typography */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        /* Layout test */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Typography tests */
+        h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 15px;
+        }
+
+        h2 {
+            color: #34495e;
+            font-size: 1.8em;
+            margin: 30px 0 15px 0;
+            border-left: 4px solid #e74c3c;
+            padding-left: 15px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        /* Class selector tests */
+        .highlight {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        /* ID selector tests */
+        #main-content {
+            background-color: #ffffff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 2px solid #dee2e6;
+        }
+
+        #special-element {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-weight: bold;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        /* Flexbox test */
+        .flex-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 6px;
+        }
+
+        .flex-item {
+            flex: 1;
+            text-align: center;
+            padding: 15px;
+            margin: 0 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+
+        /* Position test */
+        .positioned-box {
+            position: relative;
+            height: 200px;
+            background-color: #e9ecef;
+            margin: 20px 0;
+            border: 1px solid #ced4da;
+        }
+
+        .absolute-box {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 100px;
+            height: 100px;
+            background-color: #28a745;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+
+        /* Pseudo-class test */
+        a {
+            color: #007bff;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        a:hover {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+
+        /* Grid test */
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .grid-item {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+
+        /* Media query test */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .flex-container {
+                flex-direction: column;
+            }
+            
+            .flex-item {
+                margin: 10px 0;
+            }
+        }
+
+        /* Complex selector test */
+        .list-item {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 3px solid #007bff;
+            background-color: #f8f9fa;
+        }
+
+        .list-item:first-child {
+            border-left-color: #28a745;
+            font-weight: bold;
+        }
+
+        .list-item:last-child {
+            border-left-color: #dc3545;
+        }
+
+        /* Attribute selector test */
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        /* Custom properties test */
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+        }
+
+        .custom-properties {
+            color: var(--primary-color);
+            background-color: var(--light-color);
+            border: 2px solid var(--dark-color);
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CSS Rendering Test - Citadel Browser</h1>
+        
+        <div id="main-content">
+            <h2>Typography Tests</h2>
+            <p>This is a paragraph with standard styling. The Citadel Browser should render this with proper typography, including the correct font family, line height, and color.</p>
+            
+            <div class="highlight">
+                <strong>Highlight Box:</strong> This box should have a light yellow background with a border, demonstrating CSS class selectors and background colors.
+            </div>
+            
+            <div class="success">
+                <strong>Success Message:</strong> This demonstrates successful styling with green colors.
+            </div>
+            
+            <div class="error">
+                <strong>Error Message:</strong> This shows error styling with red colors.
+            </div>
+        </div>
+
+        <div id="special-element">
+            Special Element with Gradient Background
+        </div>
+
+        <h2>Layout Tests</h2>
+        
+        <div class="flex-container">
+            <div class="flex-item">
+                <strong>Flex Item 1</strong><br>
+                Should be evenly spaced
+            </div>
+            <div class="flex-item">
+                <strong>Flex Item 2</strong><br>
+                With flexbox layout
+            </div>
+            <div class="flex-item">
+                <strong>Flex Item 3</strong><br>
+                Responsive design
+            </div>
+        </div>
+
+        <div class="grid-container">
+            <div class="grid-item">
+                <strong>Grid Item 1</strong><br>
+                CSS Grid layout
+            </div>
+            <div class="grid-item">
+                <strong>Grid Item 2</strong><br>
+                Auto-fit columns
+            </div>
+            <div class="grid-item">
+                <strong>Grid Item 3</strong><br>
+                Responsive grid
+            </div>
+        </div>
+
+        <h2>Positioning Tests</h2>
+        
+        <div class="positioned-box">
+            <div class="absolute-box">
+                Absolute
+            </div>
+            This container has relative positioning with an absolutely positioned child in the top-right corner.
+        </div>
+
+        <h2>Complex Selectors</h2>
+        
+        <div class="list-item">First list item (should be bold with green border)</div>
+        <div class="list-item">Second list item (normal styling)</div>
+        <div class="list-item">Third list item (normal styling)</div>
+        <div class="list-item">Last list item (should have red border)</div>
+
+        <h2>Form Elements</h2>
+        
+        <div>
+            <label for="test-input">Test Input Field:</label>
+            <input type="text" id="test-input" placeholder="Type something here...">
+        </div>
+
+        <h2>Custom Properties (CSS Variables)</h2>
+        
+        <div class="custom-properties">
+            This box uses CSS variables for colors and styling. The color should be blue (primary color) with a light gray background.
+        </div>
+
+        <h2>Links and Interactions</h2>
+        
+        <p>
+            <a href="#">This is a test link</a> - it should be blue and turn darker with underline on hover.
+        </p>
+
+        <h2>Media Query Response</h2>
+        
+        <div class="highlight">
+            <strong>Responsive Design:</strong> If you resize the browser window to be less than 768px wide, this layout should adapt with smaller padding and vertical flex layout.
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity to test CSS transitions and dynamic changes
+        document.addEventListener('DOMContentLoaded', function() {
+            const specialElement = document.getElementById('special-element');
+            const testInput = document.getElementById('test-input');
+            
+            // Test dynamic styling
+            specialElement.addEventListener('click', function() {
+                this.style.transform = 'scale(1.05)';
+                setTimeout(() => {
+                    this.style.transform = 'scale(1)';
+                }, 200);
+            });
+            
+            // Test input styling
+            testInput.addEventListener('focus', function() {
+                console.log('Input focused - CSS focus styles should apply');
+            });
+            
+            testInput.addEventListener('blur', function() {
+                console.log('Input blurred - normal styles should restore');
+            });
+        });
+    </script>
+</body>
+</html>
