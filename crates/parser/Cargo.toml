@@ -16,6 +16,9 @@ markup5ever = "0.12"  # Shared types between html5ever and xml5ever
 string_cache = "0.8"  # String interning for efficient DOM operations
 lazy_static = "1.4"   # For static resources
 
+# Servo-compatible HTML parser with proper TreeSink implementation
+kuchiki = "0.8"       # HTML/XML tree manipulation library based on html5ever
+
 # Servo rendering components (macOS optimized) - simplified approach
 taffy = "0.5"             # Modern layout engine (Servo's layout 2020)
 euclid = "0.22"           # Geometric primitives for rendering
@@ -58,6 +61,18 @@ citadel-security = { path = "../security" }
 tokio-test = "0.4"
 pretty_assertions = "1.0"
 
+[[example]]
+name = "html_parse_test"
+path = "../../examples/html_parse_test.rs"
+
+[[example]]
+name = "full_pipeline_test"
+path = "../../examples/full_pipeline_test.rs"
+
+[[example]]
+name = "real_html_test"
+path = "../../examples/real_html_test.rs"
+
 [features]
 default = []
 benchmarks = ["criterion"]
@@ -65,4 +80,4 @@ benchmarks = ["criterion"]
 [[bench]]
 name = "parser_benchmarks"
 harness = false
-required-features = ["benchmarks"] 
+required-features = ["benchmarks"]
