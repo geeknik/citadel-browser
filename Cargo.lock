@@ -788,6 +788,7 @@ dependencies = [
  "lazy_static",
  "markup5ever 0.12.1",
  "pretty_assertions",
+ "regex",
  "rquickjs",
  "selectors 0.26.0",
  "serde",

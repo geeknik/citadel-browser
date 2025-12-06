@@ -1,5 +1,5 @@
 //! Citadel's privacy-focused HTML/CSS parser
-//! 
+//!
 //! This module implements a secure HTML and CSS parser with built-in
 //! privacy protections and security measures.
 
@@ -7,6 +7,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 pub mod css;
+pub mod css_security;
+pub mod css_processor;
 pub mod dom;
 pub mod error;
 pub mod html;
@@ -27,6 +29,7 @@ pub use dom::node::{Node, NodeData};
 pub use dom::Dom;
 pub use html::parse_html;
 pub use css::{CitadelCssParser as CssParser, CitadelStylesheet, ComputedStyle, StyleRule, Declaration};
+pub use css_processor::CitadelCssProcessor;
 // Re-export layout types from the full Taffy engine
 pub use metrics::{ParserMetrics, DocumentMetrics, ParseTimer};
 pub use config::ParserConfig;
@@ -75,7 +78,7 @@ pub enum SanitizationLevel {
 pub trait UrlResolver {
     /// Resolve a URL relative to the document base URL
     fn resolve(&self, url: &str) -> Result<url::Url, error::ParserError>;
-    
+
     /// Check if a URL should be blocked based on security policies
     fn should_block(&self, url: &url::Url) -> bool;
 }
@@ -117,7 +120,7 @@ impl<R: UrlResolver> ParseContext<R> {
             tokens_processed: 0,
         }
     }
-    
+
     /// Increment the current parsing depth
     pub fn increment_depth(&mut self) -> Result<(), error::ParserError> {
         if self.current_depth >= self.config.max_depth {
@@ -126,14 +129,14 @@ impl<R: UrlResolver> ParseContext<R> {
         self.current_depth += 1;
         Ok(())
     }
-    
+
     /// Decrement the current parsing depth
     pub fn decrement_depth(&mut self) {
         if self.current_depth > 0 {
             self.current_depth -= 1;
         }
     }
-    
+
     /// Increment the token counter and check limits
     pub fn count_token(&mut self) -> Result<(), error::ParserError> {
         self.tokens_processed += 1;
@@ -142,7 +145,7 @@ impl<R: UrlResolver> ParseContext<R> {
         }
         Ok(())
     }
-    
+
     /// Reset the token counter
     pub fn reset_token_count(&mut self) {
         self.tokens_processed = 0;
@@ -174,13 +177,27 @@ impl std::fmt::Display for Stylesheet {
 /// Alias for a parsed document node
 pub type Document = Node;
 
-/// Parse CSS content into a Citadel stylesheet with Servo integration
+/// Parse CSS content into a Citadel stylesheet with nation-state security
 pub fn parse_css(content: &str, _security_context: std::sync::Arc<security::SecurityContext>) -> ParserResult<CitadelStylesheet> {
     let config = ParserConfig::default();
     let metrics = Arc::new(ParserMetrics::default());
-    let parser = css::CitadelCssParser::new(config, metrics);
-    
-    parser.parse_stylesheet(content)
+    let processor = CitadelCssProcessor::new(config, metrics);
+
+    let result = processor.process_css(content)?;
+    Ok(result.stylesheet)
+}
+
+/// Parse CSS content with maximum security protection
+pub fn parse_css_secure(content: &str) -> ParserResult<CitadelStylesheet> {
+    let config = ParserConfig {
+        security_level: SecurityLevel::Maximum,
+        ..ParserConfig::default()
+    };
+    let metrics = Arc::new(ParserMetrics::default());
+    let processor = CitadelCssProcessor::new(config, metrics);
+
+    let result = processor.process_css(content)?;
+    Ok(result.stylesheet)
 }
 
 /// Compute layout for a DOM tree with styles using Taffy
@@ -192,7 +209,7 @@ pub fn compute_layout(
 ) -> ParserResult<LayoutResult> {
     let security_context = Arc::new(security::SecurityContext::new(10));
     let mut layout_engine = layout::CitadelLayoutEngine::new(security_context);
-    
+
     let viewport_size = layout::LayoutSize::new(viewport_width, viewport_height);
     layout_engine.compute_layout(dom, stylesheet, viewport_size)
 }
@@ -201,7 +218,7 @@ pub fn compute_layout(
 pub fn create_js_engine() -> ParserResult<js::CitadelJSEngine> {
     let mut security_context = security::SecurityContext::new(10);
     security_context.enable_scripts(); // Enable JS for this engine
-    
+
     js::CitadelJSEngine::new(Arc::new(security_context))
 }
 
@@ -214,11 +231,11 @@ pub fn execute_js_simple(code: &str) -> ParserResult<String> {
 /// Execute JavaScript with DOM context
 pub fn execute_js_with_dom(code: &str, html: &str) -> ParserResult<String> {
     let engine = create_js_engine()?;
-    
-    // Parse the HTML to create DOM  
+
+    // Parse the HTML to create DOM
     let security_context = Arc::new(security::SecurityContext::new(10));
     let dom = parse_html(html, security_context)?;
-    
+
     // Execute JS with DOM context
     engine.execute_browser_script(code, &dom)
 }
@@ -227,25 +244,25 @@ pub fn execute_js_with_dom(code: &str, html: &str) -> ParserResult<String> {
 mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
-    
+
     struct TestUrlResolver;
-    
+
     impl UrlResolver for TestUrlResolver {
         fn resolve(&self, url: &str) -> Result<url::Url, error::ParserError> {
             url::Url::parse(url).map_err(error::ParserError::InvalidUrl)
         }
-        
+
         fn should_block(&self, url: &url::Url) -> bool {
             url.host_str()
                 .is_some_and(|host| host.contains("tracker") || host.contains("ads"))
         }
     }
-    
+
     #[test]
     fn test_security_level_default() {
         assert_eq!(SecurityLevel::default(), SecurityLevel::Balanced);
     }
-    
+
     #[test]
     fn test_parser_config_default() {
         let config = ParserConfig::default();
@@ -255,7 +272,7 @@ mod tests {
         assert!(config.allow_comments);
         assert!(!config.allow_processing_instructions);
     }
-    
+
     #[test]
     fn test_parser_metrics() {
         let metrics = ParserMetrics::default();
@@ -269,22 +286,22 @@ mod tests {
         assert_eq!(metrics.security_violations.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.sanitization_actions.load(Ordering::Relaxed), 1);
     }
-    
+
     #[test]
     fn test_parse_context() {
         let config = ParserConfig::default();
         let resolver = TestUrlResolver;
         let base_url = url::Url::parse("https://example.com").ok();
-        
+
         let mut context = ParseContext::new(config, resolver, base_url);
-        
+
         // Test depth tracking
         assert_eq!(context.current_depth, 0);
         context.increment_depth().unwrap();
         assert_eq!(context.current_depth, 1);
         context.decrement_depth();
         assert_eq!(context.current_depth, 0);
-        
+
         // Test token counting
         assert_eq!(context.tokens_processed, 0);
         context.count_token().unwrap();
@@ -318,7 +335,7 @@ mod tests {
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
-        
+
         // Since we don't have Dom methods yet, just verify it parsed
         let _dom = result.unwrap();
     }
@@ -338,7 +355,7 @@ mod tests {
 
         let security_context = create_test_security_context();
         let result = parse_html(&html, security_context);
-        
+
         // Should either succeed with truncation or fail with security violation
         match result {
             Ok(_dom) => {
@@ -372,10 +389,10 @@ mod tests {
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
-        
+
         let dom = result.unwrap();
         let content = dom.get_text_content();
-        
+
         // Script content should be removed/sanitized
         assert!(!content.contains("alert"));
         assert!(!content.contains("evil.js"));
@@ -389,7 +406,7 @@ mod tests {
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
-        
+
         let dom = result.unwrap();
         assert!(dom.get_text_content().is_empty() || dom.get_text_content().trim().is_empty());
     }
@@ -397,13 +414,13 @@ mod tests {
     #[test]
     fn test_malformed_html() {
         let html = r#"<html><head><title>Test</title><body><p>Unclosed paragraph<div>Nested div</html>"#;
-        
+
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
-        
+
         // HTML5 parser should handle malformed HTML gracefully
         assert!(result.is_ok());
-        
+
         let dom = result.unwrap();
         assert!(dom.get_title().contains("Test"));
     }
@@ -424,14 +441,14 @@ mod tests {
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
-        
+
         let dom = result.unwrap();
         let title = dom.get_title();
         let content = dom.get_text_content();
-        
-        
+
+
         assert!(title.contains("Test & Entities"));
-        
+
         // The HTML sanitizer may add spaces to break up potentially dangerous patterns
         // So we check for the core content rather than exact formatting
         assert!(content.contains("s cript") && content.contains("a lert"));
@@ -442,7 +459,7 @@ mod tests {
     fn test_large_html_document() {
         // Create a large HTML document to test resource limits
         let mut html = String::from("<!DOCTYPE html><html><head><title>Large Doc</title></head><body>");
-        
+
         for i in 0..1000 {
             html.push_str(&format!("<p>Paragraph number {}</p>", i));
         }
@@ -450,7 +467,7 @@ mod tests {
 
         let security_context = create_test_security_context();
         let result = parse_html(&html, security_context);
-        
+
         match result {
             Ok(dom) => {
                 assert!(dom.get_title().contains("Large Doc"));
@@ -481,10 +498,10 @@ mod tests {
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
-        
+
         let dom = result.unwrap();
         let content = dom.get_text_content();
-        
+
         // Comments should not appear in text content
         assert!(!content.contains("This is a comment"));
         assert!(content.contains("Visible content"));
@@ -494,11 +511,11 @@ mod tests {
     fn test_security_context_limits() {
         // Test that security context limits are respected
         let security_context = Arc::new(security::SecurityContext::new(5)); // Very low limit
-        
+
         let html = r#"<div><div><div><div><div><div><p>Too deep</p></div></div></div></div></div></div>"#;
-        
+
         let result = parse_html(html, security_context);
-        
+
         match result {
             Ok(dom) => {
                 // If parsing succeeds, verify depth limit was enforced
@@ -534,7 +551,28 @@ body {
         let security_context = create_test_security_context();
         let result = parse_css(css, security_context);
         assert!(result.is_ok());
-        
+
+        let stylesheet = result.unwrap();
+        assert!(!stylesheet.rules.is_empty());
+    }
+
+    #[test]
+    fn test_secure_css_parsing() {
+        let css = r#"
+body {
+    font-family: Arial, sans-serif;
+    background-color: #ffffff;
+}
+
+.test-class {
+    color: red;
+    margin: 10px;
+}
+"#;
+
+        let result = parse_css_secure(css);
+        assert!(result.is_ok());
+
         let stylesheet = result.unwrap();
         assert!(!stylesheet.rules.is_empty());
     }
@@ -552,7 +590,7 @@ body {
 
         let security_context = create_test_security_context();
         let result = parse_css(css, security_context);
-        
+
         // Should either sanitize or reject malicious CSS
         match result {
             Ok(stylesheet) => {
@@ -571,7 +609,7 @@ body {
     #[test]
     fn test_concurrent_parsing() {
         use std::thread;
-        
+
         let html = r#"<!DOCTYPE html>
 <html>
 <head><title>Concurrent Test</title></head>
@@ -607,7 +645,7 @@ body {
         ];
 
         let security_context = create_test_security_context();
-        
+
         for html in test_cases {
             let result = parse_html(html, security_context.clone());
             // All should either succeed or fail gracefully, not crash
@@ -636,7 +674,7 @@ body {
 
         let security_context = create_test_security_context();
         let result = parse_html(html, security_context);
-        
+
         // For our vertical slice, we just need parsing to succeed without panics
         match result {
             Ok(dom) => {
@@ -688,20 +726,20 @@ body {
 
         let security_context = create_test_security_context();
         let result = parse_html(complex_html, security_context);
-        
+
         match result {
             Ok(dom) => {
                 let title = dom.get_title();
                 let content = dom.get_text_content();
-                
+
                 println!("✅ Successfully parsed complex HTML!");
                 println!("📑 Title: '{}'", title);
-                println!("📝 Content preview: '{}'", 
+                println!("📝 Content preview: '{}'",
                          content.chars().take(100).collect::<String>());
-                
+
                 // Verify that we extracted the title correctly
                 assert_eq!(title, "X - Test Page");
-                
+
                 // Verify that we extracted some content
                 assert!(content.contains("test tweet"));
                 assert!(content.contains("links"));
@@ -711,29 +749,29 @@ body {
             }
         }
     }
-    
+
     #[test]
     fn test_js_engine_integration() {
         // Test basic JavaScript execution
         let result = execute_js_simple("5 + 3").unwrap();
         assert_eq!(result, "8");
-        
+
         // Test with string operations
         let result = execute_js_simple("'Hello ' + 'World'").unwrap();
         assert_eq!(result, "Hello World");
-        
+
         // Test boolean operations
         let result = execute_js_simple("true && false").unwrap();
         assert_eq!(result, "false");
-        
+
         // Test null and undefined
         let result = execute_js_simple("null").unwrap();
         assert_eq!(result, "null");
-        
+
         let result = execute_js_simple("undefined").unwrap();
         assert_eq!(result, "undefined");
     }
-    
+
     #[test]
     fn test_js_with_dom_integration() {
         let html = r#"
@@ -746,15 +784,15 @@ body {
         </body>
         </html>
         "#;
-        
+
         // Test simple arithmetic (DOM doesn't affect basic math)
         let result = execute_js_with_dom("10 * 2", html).unwrap();
         assert_eq!(result, "20");
-        
+
         // Test string operations with DOM context
         let result = execute_js_with_dom("'Citadel' + ' Browser'", html).unwrap();
         assert_eq!(result, "Citadel Browser");
-        
+
         // Test math operations
         let result = execute_js_with_dom("Math.max(5, 10)", html).unwrap();
         assert_eq!(result, "10");
@@ -767,7 +805,7 @@ body {
         let result = execute_js_simple(dangerous_code);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("eval("));
-        
+
         // Test that XMLHttpRequest is blocked
         let xhr_code = "new XMLHttpRequest()";
         let result = execute_js_simple(xhr_code);

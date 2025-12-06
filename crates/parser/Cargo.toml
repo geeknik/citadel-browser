@@ -15,6 +15,7 @@ selectors = "0.26"    # CSS selector matching - updated
 markup5ever = "0.12"  # Shared types between html5ever and xml5ever
 string_cache = "0.8"  # String interning for efficient DOM operations
 lazy_static = "1.4"   # For static resources
+regex = "1.10"        # Regular expressions for security pattern matching
 
 # Servo-compatible HTML parser with proper TreeSink implementation
 kuchiki = "0.8"       # HTML/XML tree manipulation library based on html5ever

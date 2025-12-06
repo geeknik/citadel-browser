@@ -30,6 +30,15 @@ A from-scratch browser engine engineered to obliterate tracking, crush fingerpri
 
 ![image](https://github.com/user-attachments/assets/facfd73d-6552-4f11-9685-fd142b7ed33d)
 
+## 📚 Documentation
+
+For comprehensive documentation about Citadel Browser, please see the [docs/](docs/) directory:
+
+- **[Documentation Overview](docs/README.md)** - Complete guide to all documentation
+- **[Release Information](docs/releases/)** - Changelog and release notes
+- **[Architecture & Design](docs/design/)** - Technical documentation and philosophy
+- **[Development](docs/development/)** - Contributing guidelines and security practices
+
 ## Project Status
 
 🎉 **ALPHA RELEASE - SERVO INTEGRATION COMPLETE** 🎉
@@ -326,7 +335,7 @@ Citadel is currently in alpha with real browsing capabilities. Help us build a m
 
 ### Contributing
 
-We welcome contributions that align with our vision of uncompromising privacy and security. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+We welcome contributions that align with our vision of uncompromising privacy and security. Please read [docs/development/CONTRIBUTING.md](docs/development/CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
 
@@ -338,7 +347,7 @@ Inspired by those who believe in digital autonomy and the right to privacy in an
 
 Special thanks to the **Servo team** for their groundbreaking work on web browser engine components that power our HTML parsing capabilities.
 
-See [DESIGN.md](DESIGN.md) for comprehensive information about project architecture and philosophy.
+See [docs/design/DESIGN.md](docs/design/DESIGN.md) for comprehensive information about project architecture and philosophy.
 
 ---
 
@@ -398,6 +407,6 @@ cd fuzz && cargo fuzz run dns_resolver corpus/dns_resolver -dict=dictionaries/dn
 
 Each fuzzer uses dictionaries and corpus files specifically designed to test edge cases and potential security vulnerabilities. Our CI automatically runs these fuzzers on every commit to ensure continuous security testing.
 
-See [FUZZING.md](FUZZING.md) for our complete fuzzing strategy and details on how to contribute to our security efforts.
+See [docs/development/FUZZING.md](docs/development/FUZZING.md) for our complete fuzzing strategy and details on how to contribute to our security efforts.
 
 Any fuzzing failures are considered critical build failures and must be addressed immediately to maintain our security standards.
