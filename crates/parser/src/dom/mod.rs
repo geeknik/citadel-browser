@@ -117,7 +117,8 @@ impl Dom {
     pub fn into_document(self) -> crate::Document {
         // For now, this simply extracts the document node
         // In the future, we might want to wrap it with additional document-specific APIs
-        let node = self.document_node_handle.read().ok()
+        let node = self.document_node_handle
+            .read()
             .expect("Failed to get read lock on document node")
             .clone();
         node
@@ -206,7 +207,7 @@ impl Dom {
             .join("\n\n");
             
         tracing::info!("🔍 DOM text extraction: Final content {} chars", final_content.len());
-        if final_content.len() > 0 {
+        if !final_content.is_empty() {
             let preview = if final_content.len() > 200 {
                 format!("{}...", &final_content[..200])
             } else {
@@ -389,29 +390,24 @@ impl Dom {
     
     /// Basic querySelector implementation (ID and tag name only for now)
     pub fn query_selector(&self, selector: &str) -> Option<NodeHandle> {
-        if selector.starts_with('#') {
-            // ID selector
-            let id = &selector[1..];
-            self.get_element_by_id(id)
-        } else if selector.starts_with('.') {
-            // Class selector - return first match
-            let class_name = &selector[1..];
-            self.get_elements_by_class_name(class_name).into_iter().next()
-        } else {
-            // Tag selector - return first match
-            self.get_elements_by_tag_name(selector).into_iter().next()
-        }
+        selector
+            .strip_prefix('#')
+            .and_then(|id| self.get_element_by_id(id))
+            .or_else(|| {
+                selector
+                    .strip_prefix('.')
+                    .and_then(|class_name| self.get_elements_by_class_name(class_name).into_iter().next())
+            })
+            .or_else(|| self.get_elements_by_tag_name(selector).into_iter().next())
     }
     
     /// Basic querySelectorAll implementation
     pub fn query_selector_all(&self, selector: &str) -> Vec<NodeHandle> {
-        if selector.starts_with('#') {
+        if let Some(id) = selector.strip_prefix('#') {
             // ID selector - return at most one element
-            let id = &selector[1..];
             self.get_element_by_id(id).into_iter().collect()
-        } else if selector.starts_with('.') {
+        } else if let Some(class_name) = selector.strip_prefix('.') {
             // Class selector
-            let class_name = &selector[1..];
             self.get_elements_by_class_name(class_name)
         } else {
             // Tag selector
@@ -492,6 +488,12 @@ impl Dom {
         }
         
         count
+    }
+}
+
+impl Default for Dom {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

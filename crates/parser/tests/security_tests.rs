@@ -76,7 +76,7 @@ fn test_empty_html_document() {
 
 #[test]
 fn test_malformed_html_resilience() {
-    let test_cases = vec![
+    let test_cases = [
         "<html><head><title>Test</title><body><p>Unclosed paragraph<div>Nested div</html>",
         "<html><body><p>Missing head</p></body></html>",
         "<p>Just a paragraph",
@@ -208,7 +208,7 @@ fn test_large_document_limits() {
 
 #[test]
 fn test_unicode_and_encoding_edge_cases() {
-    let test_cases = vec![
+    let test_cases = [
         "<!DOCTYPE html><html><body><p>Unicode: 🦀 Rust</p></body></html>",
         "<!DOCTYPE html><html><body><p>中文测试</p></body></html>", 
         "<!DOCTYPE html><html><body><p>العربية</p></body></html>",

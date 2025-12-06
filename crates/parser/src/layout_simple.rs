@@ -50,21 +50,11 @@ pub struct LayoutResult {
 }
 
 /// Metrics for layout computation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LayoutMetrics {
     pub nodes_processed: usize,
     pub layout_time_ms: u32,
     pub memory_used_kb: usize,
-}
-
-impl Default for LayoutMetrics {
-    fn default() -> Self {
-        Self {
-            nodes_processed: 0,
-            layout_time_ms: 0,
-            memory_used_kb: 0,
-        }
-    }
 }
 
 /// Simple layout engine for basic positioning
@@ -97,7 +87,7 @@ impl CitadelLayoutEngine {
         let root = dom.root();
         if let Ok(root_guard) = root.read() {
             self.layout_node_recursive(
-                &*root_guard,
+                &root_guard,
                 stylesheet,
                 0.0,
                 &mut current_y,
@@ -136,6 +126,11 @@ impl CitadelLayoutEngine {
         layouts: &mut HashMap<u32, LayoutRect>,
     ) -> ParserResult<()> {
         let computed_style = self.compute_node_styles(node, stylesheet);
+        if let Some(tag_name) = node.tag_name() {
+            if !self.security_context.is_element_allowed(tag_name) {
+                return Ok(());
+            }
+        }
         
         // Skip nodes with display: none
         if computed_style.display == DisplayType::None {
@@ -156,7 +151,7 @@ impl CitadelLayoutEngine {
         for child in node.children() {
             if let Ok(child_guard) = child.read() {
                 self.layout_node_recursive(
-                    &*child_guard,
+                    &child_guard,
                     stylesheet,
                     x + 10.0, // Simple indentation
                     y,

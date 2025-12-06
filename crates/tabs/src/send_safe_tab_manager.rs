@@ -51,6 +51,12 @@ pub struct SendSafeTabManager {
     tab_states: Arc<RwLock<Vec<TabState>>>,
 }
 
+impl Default for SendSafeTabManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SendSafeTabManager {
     /// Create a new Send-safe tab manager
     pub fn new() -> Self {
@@ -67,6 +73,10 @@ impl SendSafeTabManager {
             command_sender,
             tab_states,
         }
+    }
+
+    pub fn command_sender(&self) -> mpsc::UnboundedSender<TabManagerCommand> {
+        self.command_sender.clone()
     }
     
     /// Handle commands in the background

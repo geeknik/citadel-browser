@@ -520,8 +520,8 @@ impl CitadelCssParser {
                 let value_part = decl_str[colon_pos + 1..].trim();
                 
                 // Check for !important
-                let (value, important) = if value_part.ends_with("!important") {
-                    (value_part[..value_part.len() - 10].trim().to_string(), true)
+                let (value, important) = if let Some(stripped) = value_part.strip_suffix("!important") {
+                    (stripped.trim().to_string(), true)
                 } else {
                     (value_part.to_string(), false)
                 };
@@ -815,17 +815,14 @@ impl CitadelStylesheet {
         
         // ID selector
         if let Some(element_id) = id {
-            if selector.starts_with('#') && selector[1..] == *element_id {
+            if selector.strip_prefix('#') == Some(element_id) {
                 return true;
             }
         }
         
         // Class selector
-        if selector.starts_with('.') {
-            let class_name = &selector[1..];
-            if classes.contains(&class_name.to_string()) {
-                return true;
-            }
+        if let Some(class_name) = selector.strip_prefix('.') {
+            return classes.contains(&class_name.to_string());
         }
         
         // Compound selectors (simplified)
@@ -1196,44 +1193,44 @@ impl CitadelStylesheet {
         }
         
         // Parse numeric values with units
-        if value.ends_with("px") {
-            if let Ok(px) = value[..value.len()-2].parse::<f32>() {
+        if let Some(px) = value.strip_suffix("px") {
+            if let Ok(px) = px.parse::<f32>() {
                 return Some(LengthValue::Px(px));
             }
-        } else if value.ends_with("em") {
-            if let Ok(em) = value[..value.len()-2].parse::<f32>() {
-                return Some(LengthValue::Em(em));
-            }
-        } else if value.ends_with("rem") {
-            if let Ok(rem) = value[..value.len()-3].parse::<f32>() {
+        } else if let Some(rem) = value.strip_suffix("rem") {
+            if let Ok(rem) = rem.parse::<f32>() {
                 return Some(LengthValue::Rem(rem));
             }
-        } else if value.ends_with("%") {
-            if let Ok(pct) = value[..value.len()-1].parse::<f32>() {
+        } else if let Some(em) = value.strip_suffix("em") {
+            if let Ok(em) = em.parse::<f32>() {
+                return Some(LengthValue::Em(em));
+            }
+        } else if let Some(pct) = value.strip_suffix('%') {
+            if let Ok(pct) = pct.parse::<f32>() {
                 return Some(LengthValue::Percent(pct));
             }
-        } else if value.ends_with("vh") {
-            if let Ok(vh) = value[..value.len()-2].parse::<f32>() {
+        } else if let Some(vh) = value.strip_suffix("vh") {
+            if let Ok(vh) = vh.parse::<f32>() {
                 return Some(LengthValue::Vh(vh));
             }
-        } else if value.ends_with("vw") {
-            if let Ok(vw) = value[..value.len()-2].parse::<f32>() {
+        } else if let Some(vw) = value.strip_suffix("vw") {
+            if let Ok(vw) = vw.parse::<f32>() {
                 return Some(LengthValue::Vw(vw));
             }
-        } else if value.ends_with("vmin") {
-            if let Ok(vmin) = value[..value.len()-4].parse::<f32>() {
+        } else if let Some(vmin) = value.strip_suffix("vmin") {
+            if let Ok(vmin) = vmin.parse::<f32>() {
                 return Some(LengthValue::Vmin(vmin));
             }
-        } else if value.ends_with("vmax") {
-            if let Ok(vmax) = value[..value.len()-4].parse::<f32>() {
+        } else if let Some(vmax) = value.strip_suffix("vmax") {
+            if let Ok(vmax) = vmax.parse::<f32>() {
                 return Some(LengthValue::Vmax(vmax));
             }
-        } else if value.ends_with("ch") {
-            if let Ok(ch) = value[..value.len()-2].parse::<f32>() {
+        } else if let Some(ch) = value.strip_suffix("ch") {
+            if let Ok(ch) = ch.parse::<f32>() {
                 return Some(LengthValue::Ch(ch));
             }
-        } else if value.ends_with("ex") {
-            if let Ok(ex) = value[..value.len()-2].parse::<f32>() {
+        } else if let Some(ex) = value.strip_suffix("ex") {
+            if let Ok(ex) = ex.parse::<f32>() {
                 return Some(LengthValue::Ex(ex));
             }
         } else if let Ok(px) = value.parse::<f32>() {
@@ -1329,7 +1326,7 @@ impl CitadelStylesheet {
     
     /// Parse CSS flex shorthand property
     fn parse_flex_shorthand(&self, computed: &mut ComputedStyle, value: &str) {
-        let parts: Vec<&str> = value.trim().split_whitespace().collect();
+        let parts: Vec<&str> = value.split_whitespace().collect();
         
         match parts.len() {
             1 => {
@@ -1487,16 +1484,13 @@ impl CitadelStylesheet {
     
     /// Parse transform-origin property
     fn parse_transform_origin(&self, value: &str) -> Option<(LengthValue, LengthValue)> {
-        let parts: Vec<&str> = value.trim().split_whitespace().collect();
+        let parts: Vec<&str> = value.split_whitespace().collect();
         
         match parts.len() {
             1 => {
                 // Single value applies to both X and Y
-                if let Some(length) = self.parse_length_value(parts[0]) {
-                    Some((length.clone(), length))
-                } else {
-                    None
-                }
+                self.parse_length_value(parts[0])
+                    .map(|length| (length.clone(), length))
             }
             2 => {
                 // X and Y values
@@ -1516,7 +1510,7 @@ impl CitadelStylesheet {
         
         // Split by commas for multiple transitions
         for transition_str in value.split(',') {
-            let parts: Vec<&str> = transition_str.trim().split_whitespace().collect();
+            let parts: Vec<&str> = transition_str.split_whitespace().collect();
             
             if !parts.is_empty() {
                 let property = parts[0].to_string();
@@ -1550,16 +1544,10 @@ impl CitadelStylesheet {
     
     /// Parse time values (seconds or milliseconds)
     fn parse_time_value(&self, value: &str) -> Option<f32> {
-        if value.ends_with("s") {
-            if value.ends_with("ms") {
-                // Milliseconds
-                let ms_str = &value[..value.len() - 2];
-                ms_str.parse::<f32>().ok().map(|ms| ms / 1000.0)
-            } else {
-                // Seconds
-                let num_str = &value[..value.len() - 1];
-                num_str.parse::<f32>().ok()
-            }
+        if let Some(ms_str) = value.strip_suffix("ms") {
+            ms_str.parse::<f32>().ok().map(|ms| ms / 1000.0)
+        } else if let Some(num_str) = value.strip_suffix('s') {
+            num_str.parse::<f32>().ok()
         } else {
             value.parse::<f32>().ok()
         }

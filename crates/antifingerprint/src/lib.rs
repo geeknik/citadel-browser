@@ -252,14 +252,6 @@ impl AntiFingerprintManager {
         }
     }
     
-    /// Creates a new anti-fingerprinting manager with default configuration
-    pub fn default() -> Self {
-        Self {
-            config: AntiFingerprintConfig::default(),
-            metrics: self::FingerprintMetrics::new(),
-        }
-    }
-    
     /// Returns the current configuration
     pub fn config(&self) -> &AntiFingerprintConfig {
         &self.config
@@ -363,6 +355,12 @@ impl AntiFingerprintManager {
             top_domains: self.metrics.top_fingerprinting_domains(5),
             since_first_attempt: self.metrics.time_since_first_attempt().map(|d| d.as_secs()),
         }
+    }
+}
+
+impl Default for AntiFingerprintManager {
+    fn default() -> Self {
+        Self::new(AntiFingerprintConfig::default())
     }
 }
 

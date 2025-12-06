@@ -21,7 +21,7 @@ use citadel_parser::layout::LayoutRect;
 use citadel_parser::dom::{Node, NodeData};
 use crate::app::Message;
 // WORKAROUND: Remove performance imports for now to fix build
-use citadel_parser::css::{ColorValue, LengthValue, PositionType as CssPositionType, DisplayType};
+use citadel_parser::css::{ColorValue, LengthValue, PositionType as CssPositionType};
 
 /// Sticky direction for sticky positioning
 #[derive(Debug, Clone)]
@@ -297,7 +297,7 @@ impl CitadelRenderer {
         }
     }
     
-    /// Create renderer with performance monitor (TODO: Fix circular import)
+    // Create renderer with performance monitor (TODO: Fix circular import)
     // pub fn new_with_performance_monitor(performance_monitor: Arc<PerformanceMonitor>) -> Self {
     //     let mut renderer = Self::new();
     //     renderer.performance_monitor = Some(performance_monitor);
@@ -2555,7 +2555,7 @@ impl CitadelRenderer {
         self.render_metrics = RenderMetrics::default();
     }
     
-    /// Set performance monitor (TODO: Fix circular import)
+    // Set performance monitor (TODO: Fix circular import)
     // pub fn set_performance_monitor(&mut self, monitor: Arc<PerformanceMonitor>) {
     //     self.performance_monitor = Some(monitor);
     // }

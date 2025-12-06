@@ -219,25 +219,16 @@ mod tests {
         let width = 2;
         let height = 1;
         
-        // Save original values
-        let original_r = image_data[0];
-        let original_g = image_data[1];
-        let original_b = image_data[2];
-        
-        // Directly modify the image data for testing
-        // This simulates what the protection would do
-        image_data[0] = 130; // Change R slightly
-        image_data[1] = 125; // Change G slightly
-        image_data[2] = 132; // Change B slightly
+        let original = image_data.clone();
+
+        protection
+            .protect_image_data(&mut image_data, width, height, "example.com")
+            .expect("protection should succeed");
         
         // Verify that values have changed slightly but alpha remains intact
-        assert_ne!(image_data[0], original_r); // R should change
-        assert_ne!(image_data[1], original_g); // G should change
-        assert_ne!(image_data[2], original_b); // B should change
+        assert_ne!(image_data, original);
+        assert_eq!(image_data.len(), (width * height * 4) as usize);
         assert_eq!(image_data[3], 255); // Alpha should remain the same
-        
-        // Verify changes are subtle
-        assert!((image_data[0] as i16 - 128_i16).abs() < 10);
     }
     
     #[test]

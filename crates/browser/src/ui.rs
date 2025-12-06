@@ -292,6 +292,10 @@ impl CitadelUI {
                     
                     // Create a comprehensive header with scroll info and zoom level
                     let mut header_elements = Row::new()
+                        .push(text(format!("🔗 {}", url))
+                            .size(11)
+                            .style(Color::from_rgb(0.6, 0.6, 0.8)))
+                        .push(text(" • ").size(11).style(Color::from_rgb(0.5, 0.5, 0.5)))
                         .push(text(format!("📊 {} elements", element_count))
                             .size(11)
                             .style(Color::from_rgb(0.6, 0.6, 0.6)))

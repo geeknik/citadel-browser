@@ -147,24 +147,28 @@ mod tests {
 
     #[test]
     fn test_element_security_levels() {
-        let mut config = ParserConfig::default();
-        
-        // Test Maximum security
-        config.security_level = SecurityLevel::Maximum;
+        let mut config = ParserConfig {
+            security_level: SecurityLevel::Maximum,
+            ..Default::default()
+        };
+
         assert!(config.is_element_allowed("div"));
         assert!(config.is_element_allowed("p"));
         assert!(!config.is_element_allowed("script"));
         assert!(!config.is_element_allowed("iframe"));
         
         // Test High security
-        config.security_level = SecurityLevel::High;
+        config = ParserConfig {
+            security_level: SecurityLevel::High,
+            ..Default::default()
+        };
         assert!(config.is_element_allowed("div"));
         assert!(config.is_element_allowed("img"));
         assert!(!config.is_element_allowed("script"));
         assert!(!config.is_element_allowed("iframe"));
         
         // Test Balanced security
-        config.security_level = SecurityLevel::Balanced;
+        config = ParserConfig::default();
         assert!(config.is_element_allowed("div"));
         assert!(config.is_element_allowed("img"));
         assert!(!config.is_element_allowed("script"));
@@ -173,23 +177,27 @@ mod tests {
 
     #[test]
     fn test_attribute_security_levels() {
-        let mut config = ParserConfig::default();
+        let mut config = ParserConfig {
+            security_level: SecurityLevel::Maximum,
+            ..Default::default()
+        };
         
-        // Test Maximum security
-        config.security_level = SecurityLevel::Maximum;
         assert!(config.is_attribute_allowed("class"));
         assert!(config.is_attribute_allowed("id"));
         assert!(!config.is_attribute_allowed("onclick"));
         assert!(!config.is_attribute_allowed("style"));
         
         // Test High security
-        config.security_level = SecurityLevel::High;
+        config = ParserConfig {
+            security_level: SecurityLevel::High,
+            ..Default::default()
+        };
         assert!(config.is_attribute_allowed("class"));
         assert!(!config.is_attribute_allowed("onclick"));
         assert!(!config.is_attribute_allowed("style"));
         
         // Test Balanced security
-        config.security_level = SecurityLevel::Balanced;
+        config = ParserConfig::default();
         assert!(config.is_attribute_allowed("class"));
         assert!(!config.is_attribute_allowed("onclick"));
         assert!(!config.is_attribute_allowed("javascript:"));

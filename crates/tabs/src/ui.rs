@@ -20,6 +20,10 @@ pub struct TabBar {
 }
 
 impl TabBar {
+    fn themed_container(style: theme::Container) -> iced::theme::Container {
+        iced::theme::Container::Custom(Box::new(style))
+    }
+
     pub fn new(manager: TabManager) -> Self {
         Self {
             manager,
@@ -58,7 +62,7 @@ impl TabBar {
         }
     }
     
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let tabs = self.manager.get_tab_states();
         
         let tab_row = Row::new()
@@ -81,7 +85,7 @@ impl TabBar {
         container(content).into()
     }
     
-    fn tab_view(&self, tab: &TabState) -> Element<Message> {
+    fn tab_view(&self, tab: &TabState) -> Element<'_, Message> {
         let title = text(&tab.title)
             .size(14);
             
@@ -106,9 +110,9 @@ impl TabBar {
         // Wrap tab content in a container
         let tab_container = container(tab_content)
             .style(if tab.is_active {
-                iced::theme::Container::Box
+                Self::themed_container(theme::Container::Box)
             } else {
-                iced::theme::Container::Transparent
+                Self::themed_container(theme::Container::Default)
             });
             
         // Add a clickable button over the container for tab selection
@@ -118,7 +122,7 @@ impl TabBar {
             .into()
     }
     
-    fn conversion_dialog_view(&self, tab_id: Uuid) -> Element<Message> {
+    fn conversion_dialog_view(&self, tab_id: Uuid) -> Element<'_, Message> {
         let title = text("Convert to Container Tab?")
             .size(20);
             
@@ -152,7 +156,7 @@ impl TabBar {
                 .push(description)
                 .push(buttons)
         )
-        .style(iced::theme::Container::Box)
+        .style(Self::themed_container(theme::Container::Box))
         .into()
     }
 }
@@ -163,7 +167,6 @@ mod theme {
     
     pub enum Container {
         Default,
-        Primary,
         Box,
     }
     
@@ -176,15 +179,6 @@ mod theme {
                     background: Some(Background::Color(Color::from_rgb(0.9, 0.9, 0.9))),
                     border: iced::Border {
                         color: Color::from_rgb(0.8, 0.8, 0.8),
-                        width: 1.0,
-                        radius: iced::border::Radius::from(5.0),
-                    },
-                    ..Default::default()
-                },
-                Container::Primary => container::Appearance {
-                    background: Some(Background::Color(Color::from_rgb(0.8, 0.8, 1.0))),
-                    border: iced::Border {
-                        color: Color::from_rgb(0.7, 0.7, 0.9),
                         width: 1.0,
                         radius: iced::border::Radius::from(5.0),
                     },

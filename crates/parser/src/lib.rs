@@ -32,22 +32,17 @@ pub use metrics::{ParserMetrics, DocumentMetrics, ParseTimer};
 pub use config::ParserConfig;
 
 /// Security level for the parser
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SecurityLevel {
     /// Maximum security - most restrictive
     Maximum,
     /// High security - very restrictive
     High,
     /// Balanced security - moderate restrictions
+    #[default]
     Balanced,
     /// Custom security settings
     Custom,
-}
-
-impl Default for SecurityLevel {
-    fn default() -> Self {
-        SecurityLevel::Balanced
-    }
 }
 
 /// Parse mode options to control parsing behavior
@@ -155,14 +150,14 @@ impl<R: UrlResolver> ParseContext<R> {
 }
 
 /// Simple CSS stylesheet structure for tests
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Stylesheet {
     pub rules: Vec<String>,
 }
 
 impl Stylesheet {
     pub fn new() -> Self {
-        Self { rules: Vec::new() }
+        Self::default()
     }
 }
 
@@ -176,6 +171,8 @@ impl std::fmt::Display for Stylesheet {
 }
 
 // parse_html is already re-exported at line 24
+/// Alias for a parsed document node
+pub type Document = Node;
 
 /// Parse CSS content into a Citadel stylesheet with Servo integration
 pub fn parse_css(content: &str, _security_context: std::sync::Arc<security::SecurityContext>) -> ParserResult<CitadelStylesheet> {
@@ -235,13 +232,12 @@ mod tests {
     
     impl UrlResolver for TestUrlResolver {
         fn resolve(&self, url: &str) -> Result<url::Url, error::ParserError> {
-            url::Url::parse(url).map_err(|e| error::ParserError::InvalidUrl(e))
+            url::Url::parse(url).map_err(error::ParserError::InvalidUrl)
         }
         
         fn should_block(&self, url: &url::Url) -> bool {
-            url.host_str().map_or(false, |host| {
-                host.contains("tracker") || host.contains("ads")
-            })
+            url.host_str()
+                .is_some_and(|host| host.contains("tracker") || host.contains("ads"))
         }
     }
     
@@ -506,7 +502,8 @@ mod tests {
         match result {
             Ok(dom) => {
                 // If parsing succeeds, verify depth limit was enforced
-                // DOM was successfully created despite depth limit
+                let metrics = dom.get_metrics();
+                assert!(metrics.get_elements_created() >= 1);
             }
             Err(ParserError::SecurityViolation(_)) => {
                 // This is also acceptable
@@ -539,7 +536,7 @@ body {
         assert!(result.is_ok());
         
         let stylesheet = result.unwrap();
-        assert!(stylesheet.rules.len() > 0);
+        assert!(!stylesheet.rules.is_empty());
     }
 
     #[test]
@@ -762,7 +759,7 @@ body {
         let result = execute_js_with_dom("Math.max(5, 10)", html).unwrap();
         assert_eq!(result, "10");
     }
-    
+
     #[test]
     fn test_js_security_validation() {
         // Test that dangerous JavaScript is blocked
@@ -778,6 +775,3 @@ body {
         assert!(result.unwrap_err().to_string().contains("XMLHttpRequest"));
     }
 }
-
-// Re-export common types
-pub type Document = Node; 

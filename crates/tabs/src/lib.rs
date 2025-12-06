@@ -205,7 +205,7 @@ impl SimpleTabManager {
         
         if tabs.remove(&id).is_some() {
             // If we closed the active tab, activate the next available tab
-            if active_tab.map_or(false, |active_id| active_id == id) {
+            if active_tab.is_some_and(|active_id| active_id == id) {
                 *active_tab = tabs.keys().next().copied();
             }
             true
@@ -331,7 +331,6 @@ impl Tab {
             }
         }
     }
-    
     /// Load a URL in the tab
     pub async fn load_url(&self, url: String) -> TabResult<()> {
         let mut state = self.state.write().await;
@@ -404,6 +403,12 @@ impl TabManager {
     /// Check if there are any tabs open
     pub fn has_tabs(&self) -> bool {
         self.tab_count() > 0
+    }
+}
+
+impl Default for TabManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -680,14 +680,12 @@ impl BrowserEngine {
         let mut count = 0;
         let mut in_tag = false;
         let mut is_closing_tag = false;
-        let mut is_self_closing = false;
         
         for ch in html.chars() {
             match ch {
                 '<' => {
                     in_tag = true;
                     is_closing_tag = false;
-                    is_self_closing = false;
                 }
                 '>' => {
                     if in_tag && !is_closing_tag {
@@ -777,6 +775,7 @@ impl BrowserEngine {
         
         // Submit the form using the network layer
         log::info!("🌐 Sending form request to: {}", target_url);
+        log::debug!("📑 Prepared {} request to {}", request.method(), request.url());
         
         // Form submission would be handled by the networking layer
         

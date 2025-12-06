@@ -561,7 +561,7 @@ impl Application for CitadelBrowser {
                             
                             // Send to ZKVM channel for isolated processing
                             match citadel_zkvm::Channel::new() {
-                                Ok((mut vm_channel, mut _host_channel)) => {
+                                Ok((mut vm_channel, _host_channel)) => {
                                     // Send rendering command to ZKVM
                                     let message = citadel_zkvm::ChannelMessage::Control {
                                         command: "render_content".to_string(),
@@ -569,7 +569,7 @@ impl Application for CitadelBrowser {
                                     };
                                     
                                     // Process in isolated environment
-                                    let render_result = tokio::spawn(async move {
+                                    tokio::spawn(async move {
                                         if let Err(e) = vm_channel.send(message).await {
                                             log::error!("Failed to send to ZKVM: {}", e);
                                             return Err(e.to_string());
@@ -811,6 +811,7 @@ impl Application for CitadelBrowser {
                 match output {
                     ZkVmOutput::RenderedContent { tab_id, content } => {
                         log::info!("📦 Received rendered content from ZKVM for tab {}", tab_id);
+                        log::debug!("🧩 ZKVM payload length: {} bytes", content.html.len());
                         
                         // Update the renderer with the sanitized content
                         // In a real implementation, we would use the rendered content
@@ -1359,6 +1360,7 @@ impl CitadelBrowser {
         let loading_state_memory = self.loading_states.len() * std::mem::size_of::<LoadingState>();
         
         let total_app_memory = tab_data_memory + scroll_state_memory + error_state_memory + loading_state_memory;
+        log::debug!("📊 Estimated app memory usage: {} bytes", total_app_memory);
         
         // TODO: Re-enable performance monitoring
         // self.performance_monitor.update_memory_usage("app", total_app_memory);

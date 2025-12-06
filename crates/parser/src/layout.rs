@@ -205,7 +205,7 @@ pub struct LayoutResult {
 }
 
 /// Metrics for layout computation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LayoutMetrics {
     pub nodes_processed: usize,
     pub layout_time_ms: u32,
@@ -214,20 +214,6 @@ pub struct LayoutMetrics {
     pub cache_misses: usize,
     pub nodes_culled: usize,
     pub viewport_intersections: usize,
-}
-
-impl Default for LayoutMetrics {
-    fn default() -> Self {
-        Self {
-            nodes_processed: 0,
-            layout_time_ms: 0,
-            memory_used_kb: 0,
-            cache_hits: 0,
-            cache_misses: 0,
-            nodes_culled: 0,
-            viewport_intersections: 0,
-        }
-    }
 }
 
 impl CitadelLayoutEngine {
@@ -313,13 +299,12 @@ impl CitadelLayoutEngine {
         
         // Check cache first
         if let Some(cached_result) = self.check_cache(cache_key) {
-            self.performance_monitor.cache_hit_ratio = 
+            self.performance_monitor.cache_hit_ratio =
                 (self.performance_monitor.cache_hit_ratio * 0.9) + 0.1; // Moving average
             return Ok(cached_result);
         }
         
-        self.performance_monitor.cache_hit_ratio = 
-            self.performance_monitor.cache_hit_ratio * 0.9; // Decrease for cache miss
+        self.performance_monitor.cache_hit_ratio *= 0.9; // Decrease for cache miss
         
         // Detect changes for incremental updates
         let dom_hash = self.hash_dom(dom);
@@ -446,7 +431,7 @@ impl CitadelLayoutEngine {
         
         let root = dom.root();
         if let Ok(root_guard) = root.read() {
-            self.build_node_recursive(&*root_guard, dom, stylesheet)?;
+            self.build_node_recursive(&root_guard, dom, stylesheet)?;
         }
         Ok(())
     }
@@ -505,7 +490,7 @@ impl CitadelLayoutEngine {
         let mut layout_children = Vec::new();
         for child_handle in dom_node.children() {
             if let Ok(child_guard) = child_handle.read() {
-                if self.should_participate_in_layout(&*child_guard, stylesheet) {
+                if self.should_participate_in_layout(&child_guard, stylesheet) {
                     layout_children.push(child_handle);
                 }
             }
@@ -522,7 +507,7 @@ impl CitadelLayoutEngine {
             let mut child_ids = Vec::new();
             for child_handle in layout_children {
                 if let Ok(child_guard) = child_handle.read() {
-                    let child_id = self.build_node_recursive(&*child_guard, dom, stylesheet)?;
+                    let child_id = self.build_node_recursive(&child_guard, dom, stylesheet)?;
                     child_ids.push(child_id);
                 }
             }
@@ -1192,11 +1177,9 @@ impl CitadelLayoutEngine {
     
     /// Parse simple length value for grid parsing
     fn parse_length_value_simple(&self, value: &str) -> Option<LengthValue> {
-        if value.ends_with("px") {
-            let px_str = &value[..value.len() - 2];
+        if let Some(px_str) = value.strip_suffix("px") {
             px_str.parse::<f32>().ok().map(LengthValue::Px)
-        } else if value.ends_with("%") {
-            let pct_str = &value[..value.len() - 1];
+        } else if let Some(pct_str) = value.strip_suffix('%') {
             pct_str.parse::<f32>().ok().map(LengthValue::Percent)
         } else if value == "auto" {
             Some(LengthValue::Auto)
@@ -1286,7 +1269,7 @@ impl CitadelLayoutEngine {
         let mut count = 0;
         let root = dom.root();
         if let Ok(root_guard) = root.read() {
-            self.count_node_recursive(&*root_guard, &mut count);
+            self.count_node_recursive(&root_guard, &mut count);
         }
         count
     }
@@ -1296,7 +1279,7 @@ impl CitadelLayoutEngine {
         *count += 1;
         for child in node.children() {
             if let Ok(child_guard) = child.read() {
-                self.count_node_recursive(&*child_guard, count);
+                self.count_node_recursive(&child_guard, count);
             }
         }
     }
@@ -1335,7 +1318,7 @@ impl CitadelLayoutEngine {
         // Hash node count as a simple structure indicator
         let root = dom.root();
         if let Ok(root_guard) = root.read() {
-            self.hash_node_recursive(&*root_guard, &mut hasher);
+            self.hash_node_recursive(&root_guard, &mut hasher);
         }
         
         hasher.finish()
@@ -1356,7 +1339,7 @@ impl CitadelLayoutEngine {
         // Recursively hash children (limit depth for performance)
         for child_handle in node.children().iter().take(50) { // Limit to prevent deep recursion
             if let Ok(child) = child_handle.read() {
-                self.hash_node_recursive(&*child, hasher);
+                self.hash_node_recursive(&child, hasher);
             }
         }
     }
