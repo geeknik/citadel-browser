@@ -149,7 +149,7 @@ impl NavigatorProtection {
         }
         
         // Keep the real browser category but normalize fingerprinting factors
-        let normalized = match category {
+        match category {
             BrowserCategory::Chrome => NavigatorInfo {
                 // Keep real UA but standardize platform and hardware metrics
                 user_agent: real.user_agent,
@@ -198,9 +198,7 @@ impl NavigatorProtection {
                     do_not_track: real.do_not_track,
                 }
             }
-        };
-        
-        normalized
+        }
     }
     
     /// Normalize platform string to reduce entropy
@@ -407,6 +405,6 @@ mod tests {
         // Check normalization
         assert_eq!(normalized.hardware_concurrency, 8); // 6 rounded up to 8
         assert_eq!(normalized.device_memory, Some(8.0)); // Standardized to 8GB
-        assert_eq!(normalized.plugins_enabled, false); // Disabled for privacy
+        assert!(!normalized.plugins_enabled); // Disabled for privacy
     }
 } 

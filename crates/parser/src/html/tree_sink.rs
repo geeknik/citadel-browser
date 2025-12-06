@@ -10,6 +10,7 @@ use html5ever::{
     QualName,
 };
 use markup5ever::ExpandedName;
+use std::cell::Cell;
 use std::sync::Arc;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -47,7 +48,7 @@ pub struct HtmlTreeSink {
     /// Map of node handles to their element names (CRITICAL for html5ever)
     element_names: HashMap<usize, QualName>,
     /// Next ID for handles (using pointer addresses as unique IDs)
-    next_id: usize,
+    next_id: Cell<usize>,
 }
 
 impl HtmlTreeSink {
@@ -66,13 +67,23 @@ impl HtmlTreeSink {
             quirks_mode: QuirksMode::NoQuirks,
             document_handle,
             element_names: HashMap::new(),
-            next_id: 1,
+            next_id: Cell::new(1),
         }
     }
     
-    /// Get a unique ID for a handle (using Arc pointer address)
+    /// Get a unique ID for a handle (using internal counter as fallback)
     fn get_handle_id(&self, handle: &NodeHandle) -> usize {
-        Arc::as_ptr(handle) as *const _ as usize
+        let ptr_id = Arc::as_ptr(handle) as *const _ as usize;
+        if ptr_id == 0 {
+            // Rare, but ensure forward progress with a monotonic counter
+            let id = self.next_id.get();
+            self.next_id.set(id.saturating_add(1));
+            id
+        } else {
+            let next = self.next_id.get().saturating_add(1);
+            self.next_id.set(next);
+            ptr_id ^ next
+        }
     }
     
     /// Convert html5ever attributes to Citadel attributes with security filtering

@@ -538,17 +538,17 @@ impl CitadelLayoutEngine {
     
     /// Convert ComputedStyle to Taffy Style with complete CSS property mapping
     fn convert_to_taffy_style(&self, computed: &ComputedStyle) -> Style {
-        let mut style = Style::default();
-        
-        // Display type
-        style.display = match computed.display {
-            DisplayType::Block => Display::Block,
-            DisplayType::Inline => Display::Block, // Taffy treats inline as block
-            DisplayType::InlineBlock => Display::Block,
-            DisplayType::Flex => Display::Flex,
-            DisplayType::Grid => Display::Grid,
-            DisplayType::Table | DisplayType::TableRow | DisplayType::TableCell => Display::Block,
-            DisplayType::None => Display::None,
+        let mut style = Style {
+            display: match computed.display {
+                DisplayType::Block => Display::Block,
+                DisplayType::Inline => Display::Block, // Taffy treats inline as block
+                DisplayType::InlineBlock => Display::Block,
+                DisplayType::Flex => Display::Flex,
+                DisplayType::Grid => Display::Grid,
+                DisplayType::Table | DisplayType::TableRow | DisplayType::TableCell => Display::Block,
+                DisplayType::None => Display::None,
+            },
+            ..Style::default()
         };
         
         // Apply all CSS properties from computed style
@@ -1039,7 +1039,7 @@ impl CitadelLayoutEngine {
             width += self.text_measurement.char_widths
                 .get(&ch)
                 .copied()
-                .unwrap_or_else(|| {
+                .unwrap_or({
                     // Estimate width based on character type
                     match ch {
                         ' ' => self.text_measurement.base_font_size * 0.25,

@@ -13,7 +13,12 @@ mod audio;
 // mod timezone;
 mod metrics;
 
+
 use citadel_security::context::{SecurityContext, FingerprintProtection};
+use crate::audio::AudioProtection;
+use crate::canvas::CanvasProtection;
+use crate::navigator::NavigatorProtection;
+use crate::webgl::WebGLProtection;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use rand::SeedableRng;
@@ -404,13 +409,13 @@ mod tests {
         
         // Values should be different (with very high probability)
         let mut unique_values = 0;
-        let mut seen_values = Vec::new();
+        let mut seen_values: Vec<f32> = Vec::new();
         
         for &value in &results {
             // Check if this exact value has been seen before
             let mut is_new = true;
             for &seen in &seen_values {
-                if (seen as f32 - value as f32).abs() < std::f32::EPSILON {
+                if (seen - value).abs() < f32::EPSILON {
                     is_new = false;
                     break;
                 }
@@ -474,9 +479,3 @@ mod tests {
         assert!(manager.should_protect_feature("screen_resolution"));
     }
 }
-
-// Re-export important types from modules
-pub use audio::{AudioProtection, AudioParamValues};
-pub use canvas::CanvasProtection;
-pub use webgl::{WebGLProtection, WebGLInfo, WebGLParameter};
-pub use navigator::{NavigatorProtection, NavigatorInfo}; 

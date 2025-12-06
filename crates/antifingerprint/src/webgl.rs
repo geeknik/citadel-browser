@@ -383,7 +383,7 @@ mod tests {
         let protection = create_test_webgl_protection();
         
         let mut vertices = [0.0, 1.0, 0.5, -1.0];
-        let original = vertices.clone();
+        let original = vertices;
         
         protection.normalize_vertices(&mut vertices, "example.com").unwrap();
         

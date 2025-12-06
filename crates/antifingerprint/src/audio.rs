@@ -179,7 +179,7 @@ mod tests {
         
         // Create a test audio buffer
         let mut buffer = [0.0, 0.5, -0.5, 0.0, 0.25, -0.25];
-        let original = buffer.clone();
+        let original = buffer;
         
         // Apply protection
         protection.protect_audio_buffer(&mut buffer, "example.com").unwrap();
@@ -199,7 +199,7 @@ mod tests {
         
         // Create a test frequency data buffer
         let mut data = [0, 64, 128, 192, 255];
-        let original = data.clone();
+        let original = data;
         
         // Apply protection
         protection.protect_frequency_data(&mut data, "example.com").unwrap();
