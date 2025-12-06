@@ -23,6 +23,52 @@ use crate::app::Message;
 // WORKAROUND: Remove performance imports for now to fix build
 use citadel_parser::css::{ColorValue, LengthValue, PositionType as CssPositionType};
 
+/// Result of a rendering operation
+#[derive(Debug, Clone)]
+pub struct RenderResult {
+    pub success: bool,
+    pub elements_rendered: usize,
+    pub render_time_ms: u64,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+    pub warnings: Vec<String>,
+}
+
+impl RenderResult {
+    pub fn success(elements_rendered: usize, render_time_ms: u64, viewport_width: f32, viewport_height: f32) -> Self {
+        Self {
+            success: true,
+            elements_rendered,
+            render_time_ms,
+            viewport_width,
+            viewport_height,
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn with_warnings(elements_rendered: usize, render_time_ms: u64, viewport_width: f32, viewport_height: f32, warnings: Vec<String>) -> Self {
+        Self {
+            success: true,
+            elements_rendered,
+            render_time_ms,
+            viewport_width,
+            viewport_height,
+            warnings,
+        }
+    }
+
+    pub fn error(message: String) -> Self {
+        Self {
+            success: false,
+            elements_rendered: 0,
+            render_time_ms: 0,
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+            warnings: vec![message],
+        }
+    }
+}
+
 /// Sticky direction for sticky positioning
 #[derive(Debug, Clone)]
 pub enum StickyDirection {
@@ -159,22 +205,154 @@ pub struct ContentSize {
     pub height: f32,
 }
 
-/// Widget cache entry for render tree caching
+/// Send-safe widget cache entry that stores render data instead of Elements
 struct WidgetCacheEntry {
-    element: Element<'static, Message>,
-    timestamp: Instant,
-    access_count: usize,
+    /// Cached widget data that can be reconstructed
+    widget_data: CachedWidgetData,
+    /// When this cache entry was created
+    timestamp: std::time::Instant,
+    /// How many times this entry has been accessed
+    access_count: std::sync::atomic::AtomicUsize,
+    /// Hash of the DOM node this widget represents
     node_hash: u64,
+}
+
+/// Cached widget data that can be used to reconstruct Elements
+#[derive(Debug, Clone)]
+struct CachedWidgetData {
+    /// Widget type for reconstruction
+    widget_type: WidgetType,
+    /// Content hash to detect changes
+    content_hash: u64,
+    /// Whether this element should be rendered
+    is_visible: bool,
+}
+
+/// Types of widgets we can cache
+#[derive(Debug, Clone)]
+enum WidgetType {
+    Text(TextWidgetData),
+    Container(ContainerWidgetData),
+    Image(ImageWidgetData),
+    Space(SpaceWidgetData),
+    FormInput(FormInputData),
+}
+
+/// Data for text widgets
+#[derive(Debug, Clone)]
+struct TextWidgetData {
+    content: String,
+    size: f32,
+    color: Option<Color>,
+    font_family: Option<String>,
+}
+
+/// Data for container widgets
+#[derive(Debug, Clone)]
+struct ContainerWidgetData {
+    width: Option<Length>,
+    height: Option<Length>,
+    background_color: Option<Background>,
+    padding: Option<Padding>,
+}
+
+/// Data for image widgets
+#[derive(Debug, Clone)]
+struct ImageWidgetData {
+    source: String,
+    width: Option<Length>,
+    height: Option<Length>,
+}
+
+/// Data for space widgets
+#[derive(Debug, Clone)]
+struct SpaceWidgetData {
+    width: Length,
+    height: Length,
+}
+
+/// Data for form input widgets
+#[derive(Debug, Clone)]
+struct FormInputData {
+    input_type: String,
+    value: String,
+    placeholder: Option<String>,
+    width: Length,
 }
 
 impl std::fmt::Debug for WidgetCacheEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WidgetCacheEntry")
             .field("timestamp", &self.timestamp)
-            .field("access_count", &self.access_count)
+            .field("access_count", &self.access_count.load(std::sync::atomic::Ordering::Relaxed))
             .field("node_hash", &self.node_hash)
-            .field("element", &"<Element>")
+            .field("widget_type", &"WidgetType")
             .finish()
+    }
+}
+
+impl Clone for WidgetCacheEntry {
+    fn clone(&self) -> Self {
+        Self {
+            widget_data: self.widget_data.clone(),
+            timestamp: self.timestamp,
+            access_count: std::sync::atomic::AtomicUsize::new(
+                self.access_count.load(std::sync::atomic::Ordering::Relaxed)
+            ),
+            node_hash: self.node_hash,
+        }
+    }
+}
+
+impl WidgetCacheEntry {
+    /// Create a new cache entry
+    fn new(widget_data: CachedWidgetData, node_hash: u64) -> Self {
+        Self {
+            widget_data,
+            timestamp: std::time::Instant::now(),
+            access_count: std::sync::atomic::AtomicUsize::new(1),
+            node_hash,
+        }
+    }
+
+    /// Increment access count and get current value
+    fn increment_access(&self) -> usize {
+        self.access_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    }
+
+    /// Check if this entry is stale (older than given duration)
+    fn is_stale(&self, max_age: std::time::Duration) -> bool {
+        self.timestamp.elapsed() > max_age
+    }
+
+    /// Reconstruct an Element from the cached data
+    fn to_element(&self) -> Element<Message> {
+        match &self.widget_data.widget_type {
+            WidgetType::Text(data) => {
+                let mut text_widget = text(&data.content);
+                if let Some(size) = Some(data.size) {
+                    text_widget = text_widget.size(size);
+                }
+                if let Some(color) = &data.color {
+                    text_widget = text_widget.style(*color);
+                }
+                text_widget.into()
+            }
+            WidgetType::Container(data) => {
+                let container = container(text(""));
+                container.into()
+            }
+            WidgetType::Image(data) => {
+                // Would need to load the image from source
+                text(format!("[Image: {}]", data.source)).into()
+            }
+            WidgetType::Space(data) => {
+                Space::new(data.width, data.height).into()
+            }
+            WidgetType::FormInput(data) => {
+                text_input("Form inputs not yet cached", &data.value).into()
+            }
+        }
     }
 }
 

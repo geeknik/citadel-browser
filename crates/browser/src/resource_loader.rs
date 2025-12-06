@@ -2,6 +2,70 @@ use std::sync::Arc;
 use url::Url;
 use citadel_networking::{ResourceManager, resource::ResourceType};
 use citadel_security::SecurityContext;
+use serde::{Deserialize, Serialize};
+
+/// Error types for resource loading operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LoadingError {
+    NetworkError(String),
+    SecurityViolation(String),
+    ParseError(String),
+    NotFound(String),
+    Timeout(String),
+}
+
+impl std::fmt::Display for LoadingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadingError::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            LoadingError::SecurityViolation(msg) => write!(f, "Security violation: {}", msg),
+            LoadingError::ParseError(msg) => write!(f, "Parse error: {}", msg),
+            LoadingError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            LoadingError::Timeout(msg) => write!(f, "Timeout: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for LoadingError {}
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for LoadingError {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        LoadingError::NetworkError(err.to_string())
+    }
+}
+
+/// Result of resource loading operation
+#[derive(Debug, Clone)]
+pub struct ResourceLoadResult {
+    pub content: Vec<u8>,
+    pub content_type: String,
+    pub status_code: u16,
+    pub headers: std::collections::HashMap<String, String>,
+}
+
+/// Configuration for web requests
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebRequestConfig {
+    pub timeout: std::time::Duration,
+    pub user_agent: String,
+    pub follow_redirects: bool,
+    pub max_redirects: usize,
+    pub verify_ssl: bool,
+    pub custom_headers: std::collections::HashMap<String, String>,
+}
+
+impl Default for WebRequestConfig {
+    fn default() -> Self {
+        Self {
+            timeout: std::time::Duration::from_secs(30),
+            user_agent: "Citadel-Browser/1.0 (Security-First)".to_string(),
+            follow_redirects: true,
+            max_redirects: 5,
+            verify_ssl: true,
+            custom_headers: std::collections::HashMap::new(),
+        }
+    }
+}
 
 /// Resource loader for fetching web resources (HTML, CSS, JS, images, etc.)
 pub struct ResourceLoader {
@@ -9,6 +73,10 @@ pub struct ResourceLoader {
     resource_manager: Arc<ResourceManager>,
     /// Security context for validation
     security_context: Arc<SecurityContext>,
+    /// Current page URL for tracking
+    current_url: Arc<std::sync::Mutex<Option<Url>>>,
+    /// Current page title for tracking
+    page_title: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl std::fmt::Debug for ResourceLoader {
@@ -24,10 +92,12 @@ impl ResourceLoader {
     /// Create a new resource loader
     pub async fn new(security_context: Arc<SecurityContext>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let resource_manager = Arc::new(ResourceManager::new().await?);
-        
+
         Ok(Self {
             resource_manager,
             security_context,
+            current_url: Arc::new(std::sync::Mutex::new(None)),
+            page_title: Arc::new(std::sync::Mutex::new(None)),
         })
     }
     
@@ -120,6 +190,38 @@ impl ResourceLoader {
                 Err(format!("Failed to fetch image: {}", e))
             }
         }
+    }
+
+    /// Get the current page URL
+    pub fn get_current_url(&self) -> Option<String> {
+        self.current_url.lock().unwrap().as_ref().map(|url| url.to_string())
+    }
+
+    /// Get the current page title
+    pub fn get_page_title(&self) -> Option<String> {
+        self.page_title.lock().unwrap().clone()
+    }
+
+    /// Update page information
+    pub fn update_page_info(&self, url: Option<Url>, title: Option<String>) {
+        if let Some(new_url) = url {
+            *self.current_url.lock().unwrap() = Some(new_url);
+        }
+        if let Some(new_title) = title {
+            *self.page_title.lock().unwrap() = Some(new_title);
+        }
+    }
+
+    /// Fetch a webpage and return the HTML content
+    pub async fn fetch_webpage(&mut self, url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let url_obj = Url::parse(url)?;
+
+        // Update current URL
+        *self.current_url.lock().unwrap() = Some(url_obj.clone());
+
+        // Load the HTML content
+        let content = self.load_html(url_obj).await?;
+        Ok(content)
     }
 }
 

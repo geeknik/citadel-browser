@@ -20,7 +20,7 @@ pub mod performance;
 pub use app::CitadelBrowser;
 
 // Re-export common types
-pub use engine::BrowserEngine;
+pub use engine::{CitadelEngine, LoadingError, WebPage};
 pub use resource_loader::ResourceLoader;
 pub use ui::{CitadelUI, UIMessage};
 pub use renderer::CitadelRenderer;

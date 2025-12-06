@@ -2,7 +2,7 @@
 //! 
 //! This module provides sophisticated visual rendering of HTML/CSS content using
 //! computed layout positions from Taffy and applying CSS styles to Iced widgets.
-//! This brings the DESIGN.md vision to life with proper web page rendering.
+//! This brings the docs/design/DESIGN.md vision to life with proper web page rendering.
 
 use std::sync::Arc;
 use iced::{

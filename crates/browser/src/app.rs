@@ -26,7 +26,7 @@ pub struct CitadelBrowser {
     /// Async runtime for network operations
     runtime: Arc<Runtime>,
     /// Browser engine for page loading and rendering
-    engine: Option<BrowserEngine>,
+    engine: Option<Box<dyn BrowserEngine>>,
     /// UI state and components
     ui: CitadelUI,
     /// HTML/CSS renderer
@@ -229,7 +229,7 @@ pub enum Message {
     /// Update privacy settings
     UpdatePrivacy(PrivacyLevel),
     /// Engine initialization completed
-    EngineInitialized(BrowserEngine),
+    EngineInitialized,
     /// Initialization error with detailed context
     InitializationError(String),
     /// Loading state update for user feedback
@@ -361,20 +361,40 @@ impl Application for CitadelBrowser {
             last_memory_cleanup: std::time::Instant::now(),
         };
         
-        // Initialize browser engine asynchronously with detailed error handling
-        let init_command = Command::perform(
-            BrowserEngine::new(runtime, network_config, security_context),
-            |result| match result {
-                Ok(engine) => {
-                    log::info!("✅ Browser engine initialized successfully");
-                    Message::EngineInitialized(engine)
-                }
-                Err(e) => {
-                    log::error!("❌ Engine initialization failed: {}", e);
-                    Message::InitializationError(format!("Failed to initialize engine: {}", e))
-                }
+        // Initialize browser engine directly since Message can't contain the engine
+        let init_result = runtime.block_on(async {
+            crate::engine::CitadelEngine::new().await
+        });
+
+        let (browser, init_command) = match init_result {
+            Ok(engine) => {
+                let mut browser_mut = browser;
+                let boxed_engine: Box<dyn BrowserEngine> = Box::new(engine);
+                browser_mut.engine = Some(boxed_engine);
+                log::info!("✅ Browser engine initialized successfully");
+                let init_command = Command::perform(
+                    async { true },
+                    |success| {
+                        if success {
+                            Message::EngineInitialized
+                        } else {
+                            Message::InitializationError("Engine initialization failed".to_string())
+                        }
+                    }
+                );
+                (browser_mut, init_command)
+            },
+            Err(e) => {
+                log::error!("❌ Engine initialization failed: {}", e);
+                let init_command = Command::perform(
+                    async move { e.to_string() },
+                    |error| {
+                        Message::InitializationError(format!("Failed to initialize engine: {}", error))
+                    }
+                );
+                (browser, init_command)
             }
-        );
+        };
         
         (browser, init_command)
     }
@@ -484,7 +504,7 @@ impl Application for CitadelBrowser {
                             let loading_content = PageContent::Loading { url: normalized_url.clone() };
                             
                             // Start the page loading process
-                            let engine = self.engine.clone().unwrap();
+                            let mut engine = self.engine.as_ref().unwrap().clone_engine();
                             return Command::batch([
                                 // Set loading state in tab
                                 Command::perform(
@@ -502,7 +522,31 @@ impl Application for CitadelBrowser {
                                 // Start loading the page
                                 Command::perform(
                                     async move {
-                                        engine.load_page_with_progress(url, tab_id).await
+                                        let url_str = url.to_string();
+                                        match engine.load_page(&url_str).await {
+                                            Ok(web_page) => {
+                                                // Convert WebPage to ParsedPageData
+                                                let content_len = web_page.content.len();
+                                                Ok(ParsedPageData {
+                                                    title: web_page.title,
+                                                    content: web_page.content.clone(),
+                                                    element_count: web_page.element_count,
+                                                    size_bytes: content_len,
+                                                    url: web_page.url,
+                                                    load_time_ms: 0, // TODO: track timing
+                                                    security_warnings: web_page.security_warnings,
+                                                    dom: web_page.dom,
+                                                    stylesheet: web_page.stylesheet,
+                                                })
+                                            },
+                                            Err(e) => Err(LoadingError {
+                                                error_type: ErrorType::Network,
+                                                message: e.to_string(),
+                                                url: url_str,
+                                                timestamp: std::time::SystemTime::now(),
+                                                retry_possible: true,
+                                            })
+                                        }
                                     },
                                     move |result| Message::PageLoaded(tab_id, result)
                                 ),
@@ -750,9 +794,10 @@ impl Application for CitadelBrowser {
                 Command::none()
             }
             
-            Message::EngineInitialized(engine) => {
+            Message::EngineInitialized => {
                 log::info!("🎉 Engine initialized successfully");
-                self.engine = Some(engine);
+                // The engine should already be stored in the browser state
+                log::info!("✅ Engine ready for use");
                 Command::none()
             }
             
@@ -871,15 +916,17 @@ impl Application for CitadelBrowser {
                 
                 // Process form submission through the engine
                 if let Some(engine) = &self.engine {
-                    let engine_clone = engine.clone();
+                    let mut engine_clone = engine.clone_engine();
                     return Command::perform(
                         async move {
                             engine_clone.submit_form(submission).await
                         },
                         |result| match result {
-                            Ok(response_url) => {
-                                log::info!("✅ Form submitted successfully, navigating to response");
-                                Message::Navigate(response_url)
+                            Ok(()) => {
+                                log::info!("✅ Form submitted successfully");
+                                // For now, just refresh the current page or navigate to a default
+                                // TODO: Implement proper form response handling
+                                Message::Navigate("about:blank".to_string())
                             }
                             Err(e) => {
                                 log::error!("❌ Form submission failed: {}", e);
