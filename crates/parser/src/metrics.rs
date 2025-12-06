@@ -63,6 +63,15 @@ impl ParserMetrics {
     pub fn parse_time_ms(&self) -> Option<u128> {
         self.parse_start.map(|start| start.elapsed().as_millis())
     }
+
+    /// Reset all metrics to zero
+    pub fn reset(&self) {
+        self.elements_parsed.store(0, Ordering::Relaxed);
+        self.attributes_parsed.store(0, Ordering::Relaxed);
+        self.security_violations.store(0, Ordering::Relaxed);
+        self.sanitization_actions.store(0, Ordering::Relaxed);
+        // Note: parse_start is not reset here as it's Option<Instant> and should be managed separately
+    }
 }
 
 /// Metrics specific to a single document

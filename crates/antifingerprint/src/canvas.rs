@@ -207,12 +207,13 @@ impl CanvasProtection {
         // Record this protection event
         self.record_protection(domain, false);
 
-        // Use deterministic RNG based on domain
+        // Use deterministic RNG based on domain AND color value for more variety
         let domain_seed = self.manager.domain_seed(domain);
-        let mut rng = ChaCha20Rng::seed_from_u64(domain_seed);
+        let color_seed = domain_seed.wrapping_add(color as u64);
+        let mut rng = ChaCha20Rng::seed_from_u64(color_seed);
 
-        // Add subtle color noise - use 50% chance of making small adjustment
-        if rng.gen::<f32>() < 0.5 {
+        // Add subtle color noise - ensure 75% chance of making small adjustment
+        if rng.gen::<f32>() < 0.75 {
             let adjustment = if rng.gen::<bool>() { 1 } else { -1 };
             (color as i16 + adjustment).clamp(0, 255) as u8
         } else {
@@ -308,12 +309,18 @@ mod tests {
     fn test_color_noise() {
         let protection = create_test_canvas_protection();
 
-        // Test multiple colors to ensure the noise function is working
+        // Test multiple colors and domains to ensure the noise function is working
         let test_cases = vec![
             (0, "example1.com"),
             (128, "example2.com"),
             (255, "example3.com"),
             (64, "example4.com"),
+            (32, "example1.com"),
+            (192, "example2.com"),
+            (16, "example3.com"),
+            (224, "example4.com"),
+            (8, "test.com"),
+            (240, "fingerprint.com"),
         ];
 
         let mut found_change = false;
