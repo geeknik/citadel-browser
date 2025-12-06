@@ -11,6 +11,15 @@ pub struct ResourceLoader {
     security_context: Arc<SecurityContext>,
 }
 
+impl std::fmt::Debug for ResourceLoader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResourceLoader")
+            .field("resource_manager", &"ResourceManager")
+            .field("security_context", &"SecurityContext")
+            .finish()
+    }
+}
+
 impl ResourceLoader {
     /// Create a new resource loader
     pub async fn new(security_context: Arc<SecurityContext>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {

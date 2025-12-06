@@ -620,8 +620,9 @@ impl CitadelRenderer {
                 // Create viewport-aware scrollable container
                 self.create_viewport_aware_container(rendered_content)
             }
-            (Some(dom), Some(_stylesheet), None) => {
+            (Some(dom), Some(stylesheet), None) => {
                 log::error!("❌ CRITICAL: Layout computation failed - this should not happen with proper ZKVM processing");
+                let _stylesheet_rules = stylesheet.rules.len();
                 
                 // Layout computation failed, show text content as fallback
                 log::error!("❌ Layout unavailable, falling back to text display");
@@ -1597,7 +1598,7 @@ impl CitadelRenderer {
     fn create_image_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
-        _computed_style: &ComputedStyle,
+        computed_style: &ComputedStyle,
     ) -> Element<'a, Message> {
         let alt_text = element.get_attribute("alt").unwrap_or_else(|| "Image".to_string());
         let src = element.get_attribute("src");
@@ -2102,6 +2103,15 @@ impl CitadelRenderer {
         computed_style: &ComputedStyle,
     ) -> Option<Element<'a, Message>> {
         let tag_name = element.local_name();
+        let font_size = computed_style
+            .font_size
+            .as_ref()
+            .and_then(|len| match len {
+                citadel_parser::css::LengthValue::Px(px) => Some(*px as u16),
+                citadel_parser::css::LengthValue::Em(em) => Some((em * 16.0) as u16),
+                _ => None,
+            })
+            .unwrap_or(14);
         
         match tag_name {
             "input" => {
@@ -2113,7 +2123,7 @@ impl CitadelRenderer {
                 
                 match input_type.as_str() {
                     "text" | "email" | "password" | "url" | "tel" => {
-                        self.create_text_input_widget(element, &id, &input_type)
+                        self.create_text_input_widget(element, &id, &input_type, font_size)
                     }
                     "number" => {
                         self.create_number_input_widget(element, &id)
@@ -2168,15 +2178,17 @@ impl CitadelRenderer {
     fn create_text_input_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
-        _element_id: &str,
+        element_id: &str,
         input_type: &str,
+        font_size: u16,
     ) -> Option<Element<'a, Message>> {
         let placeholder = element.get_attribute("placeholder").unwrap_or_default();
         let current_value = self.form_state.input_values.get(element_id).cloned().unwrap_or_default();
         
         let mut input = text_input(&placeholder, &current_value)
             .padding(8)
-            .width(Length::Fixed(200.0));
+            .width(Length::Fixed(200.0))
+            .size(font_size);
         
         // Handle password masking
         if input_type == "password" {

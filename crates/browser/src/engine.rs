@@ -6,6 +6,7 @@ use url::Url;
 use citadel_networking::{NetworkConfig, Request, Method, CitadelDnsResolver};
 use citadel_security::SecurityContext;
 use citadel_parser::{parse_html, parse_css, security::SecurityContext as ParserSecurityContext, Dom, CitadelStylesheet};
+use crate::resource_loader::ResourceLoader;
 
 // Import structured types from app.rs
 use crate::app::{ParsedPageData, LoadingError, ErrorType};
@@ -22,6 +23,8 @@ pub struct BrowserEngine {
     security_context: Arc<SecurityContext>,
     /// DNS resolver
     dns_resolver: Arc<CitadelDnsResolver>,
+    /// Resource loader for HTML/CSS/assets
+    resource_loader: Arc<ResourceLoader>,
 }
 
 impl BrowserEngine {
@@ -33,12 +36,14 @@ impl BrowserEngine {
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // Initialize DNS resolver based on configuration
         let dns_resolver = Arc::new(CitadelDnsResolver::new().await?);
+        let resource_loader = Arc::new(ResourceLoader::new(security_context.clone()).await?);
         
         Ok(Self {
             runtime,
             network_config,
             security_context,
             dns_resolver,
+            resource_loader,
         })
     }
     
@@ -147,13 +152,19 @@ impl BrowserEngine {
         log::debug!("📍 Using system DNS configuration via reqwest for host: {}", host);
         
         // Make HTTP request
-        let response = self.make_http_request(request).await.map_err(|e| LoadingError {
-            error_type: ErrorType::Network,
-            message: e,
-            url: final_url.to_string(),
-            timestamp: std::time::SystemTime::now(),
-            retry_possible: true,
-        })?;
+        let response = match self.resource_loader.load_html(final_url.clone()).await {
+            Ok(html) => html,
+            Err(load_err) => {
+                log::warn!("Resource loader failed for {} ({}), falling back to raw HTTP", final_url, load_err);
+                self.make_http_request(request).await.map_err(|e| LoadingError {
+                    error_type: ErrorType::Network,
+                    message: e,
+                    url: final_url.to_string(),
+                    timestamp: std::time::SystemTime::now(),
+                    retry_possible: true,
+                })?
+            }
+        };
         
         // Parse and sanitize the HTML content
         let (title, content, element_count, security_warnings, dom, stylesheet) = self.parse_html_content_enhanced(&response, final_url.as_str()).await.map_err(|e| LoadingError {
@@ -211,7 +222,13 @@ impl BrowserEngine {
         log::debug!("📍 Using system DNS configuration via reqwest");
         
         // Make HTTP request
-        let response = self.make_http_request(request).await?;
+        let response = match self.resource_loader.load_html(final_url.clone()).await {
+            Ok(html) => html,
+            Err(load_err) => {
+                log::warn!("Resource loader failed for {} ({}), falling back to raw HTTP", final_url, load_err);
+                self.make_http_request(request).await?
+            }
+        };
         
         // Parse and sanitize the HTML content
         let (title, content, element_count) = self.parse_html_content(&response, final_url.as_str()).await?;
