@@ -105,7 +105,7 @@ mod tests {
         
         // Verify that security analysis was performed
         if let Some(analysis) = &result.security_analysis {
-            assert!(analysis.threat_level != css_security::ThreatLevel::Safe, "Should detect threats");
+            assert!(analysis.threat_level != css_security::CssThreatLevel::Safe, "Should detect threats");
             assert!(analysis.violations_count > 0, "Should detect violations");
         }
         

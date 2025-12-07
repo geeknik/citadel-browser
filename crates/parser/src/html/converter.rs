@@ -107,7 +107,7 @@ fn convert_node_recursive(
                 _metrics,
             )?;
         }
-    } else {
+    } else if matches!(kuchiki_node.data(), KuchikiNodeData::Document(_)) {
         // For document nodes, just process children directly
         for child in kuchiki_node.children() {
             convert_node_recursive(
@@ -120,6 +120,9 @@ fn convert_node_recursive(
                 _metrics,
             )?;
         }
+    } else {
+        // Blocked element: drop entire subtree to avoid leaking script/style contents
+        tracing::debug!("🚫 Dropping blocked node and its children");
     }
 
     Ok(())
