@@ -9,6 +9,8 @@ use citadel_parser::{parse_html, parse_css_secure, security::SecurityContext as 
 use citadel_parser::config::ParserConfig;
 use citadel_parser::SecurityLevel;
 use citadel_parser::metrics::ParserMetrics;
+use citadel_parser::dom::{NodeData, NodeHandle};
+use std::collections::HashSet;
 
 // Re-export ResourceLoader for downstream use
 pub use crate::resource_loader::{ResourceLoader, LoadingError, ResourceLoadResult, WebRequestConfig};
@@ -264,8 +266,8 @@ impl CitadelEngine {
         // Count elements (using DOM's metrics for accuracy)
         let element_count = dom.get_metrics().elements_created.load(std::sync::atomic::Ordering::Relaxed);
 
-        // Extract CSS content from style tags
-        let extracted_css = self.extract_css_from_dom(&dom);
+        // Extract CSS content from style tags and linked stylesheets
+        let (extracted_css, mut css_warnings) = self.extract_css_from_dom(&dom, url).await;
 
         // Combine base CSS with extracted CSS
         let base_css = self.get_base_css();
@@ -285,7 +287,7 @@ impl CitadelEngine {
         info!("✅ Enhanced parsing completed: {} elements, {} bytes CSS, {} security warnings",
                    element_count, combined_css.len(), 0);
 
-        Ok((title, content, element_count, Vec::new(), Arc::new(dom), Arc::new(stylesheet)))
+        Ok((title, content, element_count, css_warnings, Arc::new(dom), Arc::new(stylesheet)))
     }
 
     /// Process CSS with maximum nation-state security protection
@@ -379,22 +381,101 @@ impl CitadelEngine {
         }
     }
 
-    /// Extract CSS content from DOM style tags
-    fn extract_css_from_dom(&self, dom: &Dom) -> String {
-        let mut extracted_css = String::new();
+    /// Extract CSS content from DOM style tags and linked stylesheets
+    async fn extract_css_from_dom(&self, dom: &Dom, base_url: &str) -> (String, Vec<String>) {
+        let mut inline_styles = Vec::new();
+        let mut external_links: HashSet<String> = HashSet::new();
+        let mut warnings = Vec::new();
 
-        // This would require DOM traversal to find <style> tags
-        // For now, return empty string - would be implemented with proper DOM API
-        // TODO: Implement proper CSS extraction from DOM style tags
+        // Collect inline <style> contents and external stylesheet links
+        self.collect_css_nodes(&dom.document_node_handle, &mut inline_styles, &mut external_links);
 
-        // Extract from <style> tags
-        // This is a simplified placeholder - real implementation would traverse DOM
-        if let Some(start) = dom.get_text_content().find("<style>") {
-            // Very basic extraction - would need proper DOM traversal
-            debug!("🔍 Found style tags in DOM");
+        let mut external_css_blocks = Vec::new();
+        let base = match Url::parse(base_url) {
+            Ok(url) => url,
+            Err(e) => {
+                warn!("⚠️  Unable to parse base URL for stylesheet resolution ({}): {}", base_url, e);
+                warnings.push(format!("Unable to resolve stylesheets for {}: {}", base_url, e));
+                return (inline_styles.join("\n"), warnings);
+            }
+        };
+
+        // Fetch external stylesheets securely
+        for href in external_links {
+            match base.join(&href) {
+                Ok(resolved) => match self.resource_loader.load_css(resolved.clone()).await {
+                    Ok(css_text) => {
+                        info!("🎨 Loaded external stylesheet: {}", resolved);
+                        external_css_blocks.push(css_text);
+                    }
+                    Err(err) => {
+                        warn!("⚠️  Failed to fetch stylesheet {}: {}", resolved, err);
+                        warnings.push(format!("Failed to fetch stylesheet {}: {}", resolved, err));
+                    }
+                },
+                Err(err) => {
+                    warn!("⚠️  Invalid stylesheet href '{}': {}", href, err);
+                    warnings.push(format!("Invalid stylesheet href '{}': {}", href, err));
+                }
+            }
         }
 
-        extracted_css
+        // Combine inline and external CSS blocks
+        let mut combined_css = String::new();
+        for css in inline_styles {
+            if !combined_css.is_empty() {
+                combined_css.push('\n');
+            }
+            combined_css.push_str(css.trim());
+            combined_css.push('\n');
+        }
+
+        for css in external_css_blocks {
+            if !combined_css.is_empty() {
+                combined_css.push('\n');
+            }
+            combined_css.push_str(css.trim());
+            combined_css.push('\n');
+        }
+
+        (combined_css, warnings)
+    }
+
+    /// Recursively collect inline <style> blocks and linked stylesheets
+    fn collect_css_nodes(&self, node_handle: &NodeHandle, inline_styles: &mut Vec<String>, external_links: &mut HashSet<String>) {
+        if let Ok(node) = node_handle.read() {
+            if let NodeData::Element(element) = &node.data {
+                let tag_name = element.local_name().to_ascii_lowercase();
+
+                if tag_name == "style" {
+                    let mut css_text = String::new();
+                    for child in node.children() {
+                        if let Ok(child_node) = child.read() {
+                            if let NodeData::Text(text) = &child_node.data {
+                                css_text.push_str(text);
+                            }
+                        }
+                    }
+
+                    let trimmed = css_text.trim();
+                    if !trimmed.is_empty() {
+                        inline_styles.push(trimmed.to_string());
+                    }
+                } else if tag_name == "link" {
+                    if let Some(rel) = element.get_attribute("rel") {
+                        if rel.to_ascii_lowercase().contains("stylesheet") {
+                            if let Some(href) = element.get_attribute("href") {
+                                external_links.insert(href);
+                            }
+                        }
+                    }
+                }
+            }
+
+            for child in node.children() {
+                self.collect_css_nodes(child, inline_styles, external_links);
+            }
+        }
     }
 
     /// Get base CSS for the browser
