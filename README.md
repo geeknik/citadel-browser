@@ -6,7 +6,7 @@ A from-scratch browser engine engineered to obliterate tracking, crush fingerpri
 
 ## ⚠️ ALPHA SOFTWARE DISCLAIMER ⚠️
 
-**Version: 0.0.2-alpha (Servo Integration Release)**
+**Version: 0.2.0-alpha (Servo Integration Release)**
 
 🚨 **THIS IS ALPHA SOFTWARE - USE AT YOUR OWN RISK** 🚨
 

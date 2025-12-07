@@ -1,6 +1,6 @@
 [package]
 name = "citadel-browser"
-version = "0.0.2-alpha"
+version = "0.2.0-alpha"
 edition = "2021"
 authors = ["Citadel Browser Team"]
 description = "Privacy-first web browser with ZKVM tab isolation"
