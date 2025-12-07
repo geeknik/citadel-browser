@@ -208,10 +208,10 @@ impl Viewport {
     }
 
     pub fn contains(&self, rect: &LayoutRect, margin: f32) -> bool {
-        rect.x + rect.width >= self.x - margin &&
-        rect.x <= self.x + self.width + margin &&
-        rect.y + rect.height >= self.y - margin &&
-        rect.y <= self.y + self.height + margin
+        rect.x >= self.x - margin &&
+        rect.x + rect.width <= self.x + self.width + margin &&
+        rect.y >= self.y - margin &&
+        rect.y + rect.height <= self.y + self.height + margin
     }
 
     pub fn intersects(&self, rect: &LayoutRect, margin: f32) -> bool {
