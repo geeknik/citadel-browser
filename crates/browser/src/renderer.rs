@@ -1132,6 +1132,11 @@ impl CitadelRenderer {
             NodeData::Element(element) => {
                 let tag_name = element.local_name();
                 log::info!("🏷️ Rendering element: <{}> with {} children", tag_name, node.children().len());
+
+                // Skip non-visual elements like <style> and metadata
+                if self.is_non_visual_element(tag_name) {
+                    return Space::with_height(0).into();
+                }
                 
                 // Debug: Check if this is body element
                 if tag_name == "body" {
@@ -1467,6 +1472,8 @@ impl CitadelRenderer {
         // First check if this node itself has direct text content
         match &node.data {
             NodeData::Text(text) => {
+                // Skip style/script contents when rendering text
+                // (handled at the element level to avoid leaking raw CSS/JS)
                 let trimmed = text.trim();
                 log::debug!("  📄 Direct text node found: '{}' ({} chars, {} trimmed)", text, text.len(), trimmed.len());
                 if !trimmed.is_empty() {
@@ -1489,15 +1496,21 @@ impl CitadelRenderer {
                         }
                     }
                     NodeData::Element(element) => {
-                        log::debug!("  🏷️ Child {}: Found element <{}> with {} children", i, element.local_name(), child_node.children().len());
+                        let child_tag = element.local_name();
+                        if self.is_non_visual_element(child_tag) || child_tag == "script" {
+                            log::debug!("  🛑 Child {}: Skipping non-visual element <{}>", i, child_tag);
+                            continue;
+                        }
+
+                        log::debug!("  🏷️ Child {}: Found element <{}> with {} children", i, child_tag, child_node.children().len());
                         // Recursively get text from element's children
                         let child_text = self.extract_text_content(&child_node, _dom);
                         if !child_text.is_empty() {
-                            log::debug!("    ✅ Element <{}> contributed text: '{}'", element.local_name(), child_text);
+                            log::debug!("    ✅ Element <{}> contributed text: '{}'", child_tag, child_text);
                             text_content.push_str(&child_text);
                             text_content.push(' ');
                         } else {
-                            log::debug!("    ⚠️ Element <{}> contributed no text", element.local_name());
+                            log::debug!("    ⚠️ Element <{}> contributed no text", child_tag);
                         }
                     }
                     _ => {
@@ -1596,6 +1609,11 @@ impl CitadelRenderer {
     /// Check if an element is dangerous and should be blocked
     fn is_dangerous_element(&self, tag_name: &str) -> bool {
         matches!(tag_name, "script" | "iframe" | "object" | "embed")
+    }
+
+    /// Elements that should not produce visual output
+    fn is_non_visual_element(&self, tag_name: &str) -> bool {
+        matches!(tag_name, "style" | "link" | "meta" | "head" | "title" | "noscript")
     }
     
     // ==================== ENHANCED VISUAL RENDERING METHODS ====================
