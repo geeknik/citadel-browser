@@ -1,24 +1,30 @@
 //! Anti-fingerprinting protections for Citadel Browser
 //!
-//! This crate provides tools and middleware to defeat browser fingerprinting techniques
-//! including those used by libraries like FingerprintJS.
+//! This crate provides comprehensive tools and middleware to defeat browser
+//! fingerprinting techniques including those used by libraries like FingerprintJS.
+//!
+//! Protection levels:
+//! - Basic: Minimal protection with low performance impact
+//! - Medium: Balanced protection for most users
+//! - Maximum: Nation-state level privacy protection
 
-mod canvas;
-mod navigator;
-mod webgl;
-mod audio;
-// These modules will be implemented later
-// mod screen;
-// mod fonts;
-// mod timezone;
-mod metrics;
-
+pub mod canvas;
+pub mod navigator;
+pub mod webgl;
+pub mod audio;
+pub mod font;
+pub mod hardware;
+pub mod behavioral;
+pub mod metrics;
 
 use citadel_security::context::{SecurityContext, FingerprintProtection};
 use crate::audio::AudioProtection;
 use crate::canvas::CanvasProtection;
 use crate::navigator::NavigatorProtection;
 use crate::webgl::WebGLProtection;
+use crate::font::FontProtection;
+use crate::hardware::HardwareProtection;
+use crate::behavioral::BehavioralProtection;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use rand::SeedableRng;
@@ -34,15 +40,24 @@ use metrics::{FingerprintMetrics, ProtectionType, DomainStats};
 pub enum FingerprintError {
     #[error("Failed to initialize fingerprint protection: {0}")]
     InitializationError(String),
-    
+
     #[error("Canvas operation error: {0}")]
     CanvasError(String),
-    
+
     #[error("WebGL protection error: {0}")]
     WebGLError(String),
-    
+
     #[error("Audio context protection error: {0}")]
     AudioError(String),
+
+    #[error("Font protection error: {0}")]
+    FontError(String),
+
+    #[error("Hardware protection error: {0}")]
+    HardwareError(String),
+
+    #[error("Behavioral protection error: {0}")]
+    BehavioralError(String),
 }
 
 /// Core manager for anti-fingerprinting protections
@@ -61,67 +76,67 @@ impl FingerprintManager {
     pub fn new(security_context: SecurityContext) -> Self {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         Self {
             security_context,
             session_seed: rng.gen(),
             consistent_within_session: true,
         }
     }
-    
+
     /// Get the current fingerprint protection configuration
     pub fn protection_config(&self) -> &FingerprintProtection {
         self.security_context.fingerprint_protection()
     }
-    
+
     /// Set whether fingerprints should be consistent within a session
     pub fn set_consistent_within_session(&mut self, consistent: bool) {
         self.consistent_within_session = consistent;
     }
-    
+
     /// Generate a domain-specific seed for deterministic randomization
     pub fn domain_seed(&self, domain: &str) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         domain.hash(&mut hasher);
         self.session_seed.hash(&mut hasher);
         hasher.finish()
     }
-    
+
     /// Apply a subtle random noise to a numeric value
-    pub fn apply_noise<T>(&self, value: T, noise_factor: f64, domain: &str) -> T 
-    where 
+    pub fn apply_noise<T>(&self, value: T, noise_factor: f64, domain: &str) -> T
+    where
         T: Into<f64> + From<f64>
     {
         let value_f64 = value.into();
         let domain_seed = self.domain_seed(domain);
-        
-        // Use ChaCha20Rng which is cryptographically secure instead of StdRng
+
+        // Use ChaCha20Rng which is cryptographically secure
         let mut rng = if self.consistent_within_session {
             ChaCha20Rng::seed_from_u64(domain_seed)
         } else {
             ChaCha20Rng::from_entropy()
         };
-        
+
         // Create a normal distribution centered on 0 with standard deviation based on noise factor
         let normal = Normal::new(0.0, noise_factor * value_f64.abs().max(0.001)).unwrap_or(Normal::new(0.0, 0.001).unwrap());
-        
+
         // Get a random value from the distribution
         let noise = normal.sample(&mut rng);
-        
+
         // Apply the noise to the original value
         T::from(value_f64 + noise)
     }
-    
+
     /// Apply noise specifically for f32 values (working around From<f64> limitation)
     pub fn apply_noise_f32(&self, value: f32, noise_factor: f64, domain: &str) -> f32 {
         let value_f64 = value as f64;
         let result_f64 = self.apply_noise(value_f64, noise_factor, domain);
         result_f64 as f32
     }
-    
+
     /// Log a fingerprinting attempt
     pub fn log_attempt(&self, category: &str, property: &str) {
         log::debug!("Fingerprinting attempt blocked: category={}, property={}", category, property);
@@ -132,7 +147,7 @@ impl FingerprintManager {
 pub fn user_agent_hash(user_agent: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     user_agent.hash(&mut hasher);
     hasher.finish()
@@ -149,46 +164,51 @@ pub struct FingerprintProtectionInfo {
     pub webgl_protection: bool,
     /// Whether audio fingerprinting protection is active
     pub audio_protection: bool,
-    /// Whether font enumeration protection is active
+    /// Whether font fingerprinting protection is active
     pub font_protection: bool,
+    /// Whether hardware fingerprinting protection is active
+    pub hardware_protection: bool,
+    /// Whether behavioral fingerprinting protection is active
+    pub behavioral_protection: bool,
 }
 
 impl FingerprintProtectionInfo {
     /// Create a new instance based on the current security context
     pub fn from_security_context(context: &SecurityContext) -> Self {
         let fp = context.fingerprint_protection();
-        
+
         Self {
             level: format!("{:?}", fp.level),
             canvas_protection: fp.canvas_noise,
             webgl_protection: fp.spoof_webgl,
             audio_protection: fp.audio_noise,
             font_protection: fp.normalize_fonts,
+            hardware_protection: true, // Always enabled at nation-state level
+            behavioral_protection: true, // Always enabled at nation-state level
         }
     }
 }
 
-/// Adds randomized noise to values to prevent fingerprinting
-/// while maintaining usability
+/// Adds randomized noise to values to prevent fingerprinting while maintaining usability
 pub fn apply_noise<T>(value: T, noise_factor: f64) -> T
 where
     T: Into<f64> + From<f64>,
 {
     let value_f64: f64 = value.into();
-    
+
     // Use cryptographically secure RNG
     let mut rng = ChaCha20Rng::from_entropy();
-    
+
     // Ensure noise_factor is positive
     let noise_factor = noise_factor.abs().max(0.001);
-    
+
     // Normal distribution with mean=0 and std_dev=noise_factor
     let normal = Normal::new(0.0, noise_factor).unwrap();
     let noise = normal.sample(&mut rng);
-    
+
     // Apply noise to the value
     let result = value_f64 + noise;
-    
+
     // Convert back to original type
     T::from(result)
 }
@@ -197,10 +217,10 @@ where
 pub fn apply_noise_f32(value: f32, noise_factor: f32) -> f32 {
     let mut rng = ChaCha20Rng::from_entropy();
     let noise_factor = noise_factor.abs().max(0.001);
-    
+
     let normal = Normal::new(0.0, noise_factor as f64).unwrap();
     let noise = normal.sample(&mut rng) as f32;
-    
+
     value + noise
 }
 
@@ -209,12 +229,51 @@ pub fn apply_noise_f32(value: f32, noise_factor: f32) -> f32 {
 pub struct AntiFingerprintConfig {
     /// Whether anti-fingerprinting is enabled
     pub enabled: bool,
-    
+
     /// Level of protection (higher = more protection but potentially more breakage)
     pub protection_level: ProtectionLevel,
-    
+
     /// Custom settings for specific features
     pub custom_settings: HashMap<String, bool>,
+
+    /// Nation-state level specific settings
+    pub nation_state_settings: NationStateSettings,
+}
+
+/// Nation-state level privacy settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NationStateSettings {
+    /// Enable maximum behavioral obfuscation
+    pub behavioral_obfuscation: bool,
+    /// Enable timing noise injection
+    pub timing_noise: bool,
+    /// Enable network request randomization
+    pub request_randomization: bool,
+    /// Enable font fingerprint spoofing
+    pub font_spoofing: bool,
+    /// Enable hardware profile randomization
+    pub hardware_randomization: bool,
+    /// Enable advanced WebGL noise
+    pub advanced_webgl_noise: bool,
+    /// Enable canvas fingerprint randomization
+    pub canvas_randomization: bool,
+    /// Enable audio context spoofing
+    pub audio_spoofing: bool,
+}
+
+impl Default for NationStateSettings {
+    fn default() -> Self {
+        Self {
+            behavioral_obfuscation: true,
+            timing_noise: true,
+            request_randomization: true,
+            font_spoofing: true,
+            hardware_randomization: true,
+            advanced_webgl_noise: true,
+            canvas_randomization: true,
+            audio_spoofing: true,
+        }
+    }
 }
 
 /// Level of protection against fingerprinting
@@ -222,12 +281,15 @@ pub struct AntiFingerprintConfig {
 pub enum ProtectionLevel {
     /// Basic protection that shouldn't break most sites
     Basic,
-    
+
     /// Medium protection that may break some sites
     Medium,
-    
+
     /// Maximum protection that may break many sites
     Maximum,
+
+    /// Nation-state level protection with maximum obfuscation
+    NationState,
 }
 
 impl Default for AntiFingerprintConfig {
@@ -236,6 +298,7 @@ impl Default for AntiFingerprintConfig {
             enabled: true,
             protection_level: ProtectionLevel::Medium,
             custom_settings: HashMap::new(),
+            nation_state_settings: NationStateSettings::default(),
         }
     }
 }
@@ -245,56 +308,56 @@ impl Default for AntiFingerprintConfig {
 pub struct AntiFingerprintManager {
     config: AntiFingerprintConfig,
     /// Metrics for tracking fingerprinting attempts
-    metrics: Arc<self::FingerprintMetrics>,
+    metrics: Arc<FingerprintMetrics>,
 }
 
 impl AntiFingerprintManager {
     /// Creates a new anti-fingerprinting manager with the given configuration
     pub fn new(config: AntiFingerprintConfig) -> Self {
-        Self { 
+        Self {
             config,
-            metrics: self::FingerprintMetrics::new(),
+            metrics: FingerprintMetrics::new(),
         }
     }
-    
+
     /// Returns the current configuration
     pub fn config(&self) -> &AntiFingerprintConfig {
         &self.config
     }
-    
+
     /// Returns the metrics tracker
-    pub fn metrics(&self) -> Arc<self::FingerprintMetrics> {
+    pub fn metrics(&self) -> Arc<FingerprintMetrics> {
         self.metrics.clone()
     }
-    
+
     /// Updates the configuration
     pub fn update_config(&mut self, config: AntiFingerprintConfig) {
-        info!("Updating anti-fingerprinting configuration");
+        info!("Updating anti-fingerprinting configuration to level: {:?}", config.protection_level);
         self.config = config;
     }
-    
+
     /// Records a blocked fingerprinting attempt
-    pub fn record_blocked(&self, protection_type: self::ProtectionType, domain: &str) {
+    pub fn record_blocked(&self, protection_type: ProtectionType, domain: &str) {
         self.metrics.record_blocked(protection_type, domain);
     }
-    
+
     /// Records a normalized fingerprinting attempt
-    pub fn record_normalized(&self, protection_type: self::ProtectionType, domain: &str) {
+    pub fn record_normalized(&self, protection_type: ProtectionType, domain: &str) {
         self.metrics.record_normalized(protection_type, domain);
     }
-    
+
     /// Determines if a feature should be protected based on configuration
     pub fn should_protect_feature(&self, feature_name: &str) -> bool {
         // Check if anti-fingerprinting is enabled at all
         if !self.config.enabled {
             return false;
         }
-        
+
         // Check for custom setting
         if let Some(setting) = self.config.custom_settings.get(feature_name) {
             return *setting;
         }
-        
+
         // Default based on protection level
         match self.config.protection_level {
             ProtectionLevel::Basic => {
@@ -304,49 +367,71 @@ impl AntiFingerprintManager {
                 // Medium protects most features except those that commonly break sites
                 !matches!(feature_name, "webgl_vendor" | "timezone_precise")
             }
-            ProtectionLevel::Maximum => true,
+            ProtectionLevel::Maximum | ProtectionLevel::NationState => {
+                // Maximum and nation-state protect everything
+                true
+            }
         }
     }
-    
+
     /// Creates a complete set of protection modules with metrics tracking
-    pub fn create_protection_modules(&self) -> (CanvasProtection, WebGLProtection, AudioProtection, NavigatorProtection) {
+    pub fn create_protection_modules(&self) -> (
+        CanvasProtection,
+        WebGLProtection,
+        AudioProtection,
+        NavigatorProtection,
+        FontProtection,
+        HardwareProtection,
+        BehavioralProtection
+    ) {
         let metrics = self.metrics();
-        let _sc = self.config.enabled;
-        
+
         // Create security context for fingerprint manager
         let security_context = SecurityContext::new(10);
         let fp_manager = FingerprintManager::new(security_context);
-        
+
         // Create all protection modules with metrics attached
         let canvas_protection = CanvasProtection::new(fp_manager.clone())
             .with_metrics(metrics.clone());
-            
+
         let webgl_protection = WebGLProtection::new(fp_manager.clone())
             .with_metrics(metrics.clone());
-            
+
         let audio_protection = AudioProtection::new(fp_manager.clone())
             .with_metrics(metrics.clone());
-            
-        let navigator_protection = NavigatorProtection::new(fp_manager);
-        
-        (canvas_protection, webgl_protection, audio_protection, navigator_protection)
+
+        let navigator_protection = NavigatorProtection::new(fp_manager.clone());
+
+        let font_protection = FontProtection::new(font::FontProtectionConfig::default());
+        let hardware_protection = HardwareProtection::new(hardware::HardwareProtectionConfig::default());
+        let behavioral_protection = BehavioralProtection::new(behavioral::BehavioralProtectionConfig::default());
+
+        (
+            canvas_protection,
+            webgl_protection,
+            audio_protection,
+            navigator_protection,
+            font_protection,
+            hardware_protection,
+            behavioral_protection,
+        )
     }
-    
+
     /// Get statistics about fingerprinting attempts
     pub fn get_fingerprinting_statistics(&self) -> Vec<(String, usize)> {
         self.metrics.top_fingerprinting_domains(10)
     }
-    
+
     /// Get detailed domain statistics
     pub fn get_domain_statistics(&self, domain: &str) -> Option<DomainStats> {
         self.metrics.domain_statistics(domain)
     }
-    
+
     /// Reset all fingerprinting metrics
     pub fn reset_metrics(&self) {
         self.metrics.reset();
     }
-    
+
     /// Export metrics for display in the browser UI
     pub fn export_metrics_summary(&self) -> FingerprintMetricsSummary {
         FingerprintMetricsSummary {
@@ -357,6 +442,9 @@ impl AntiFingerprintManager {
             webgl_protections: self.metrics.protection_count(ProtectionType::WebGL),
             audio_protections: self.metrics.protection_count(ProtectionType::Audio),
             navigator_protections: self.metrics.protection_count(ProtectionType::Navigator),
+            font_protections: self.metrics.protection_count(ProtectionType::Font),
+            hardware_protections: self.metrics.protection_count(ProtectionType::Hardware),
+            behavioral_protections: self.metrics.protection_count(ProtectionType::Behavioral),
             top_domains: self.metrics.top_fingerprinting_domains(5),
             since_first_attempt: self.metrics.time_since_first_attempt().map(|d| d.as_secs()),
         }
@@ -386,6 +474,12 @@ pub struct FingerprintMetricsSummary {
     pub audio_protections: usize,
     /// Navigator/platform protections
     pub navigator_protections: usize,
+    /// Font-related protections
+    pub font_protections: usize,
+    /// Hardware-related protections
+    pub hardware_protections: usize,
+    /// Behavioral protections
+    pub behavioral_protections: usize,
     /// Top domains attempting fingerprinting
     pub top_domains: Vec<(String, usize)>,
     /// Seconds since first fingerprinting attempt
@@ -395,22 +489,22 @@ pub struct FingerprintMetricsSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_apply_noise() {
         // Test basic noise application
         let original: f32 = 100.0;
         let noise_factor: f32 = 5.0;
-        
+
         // Apply noise multiple times and check that results vary
         let results: Vec<f32> = (0..10)
             .map(|_| apply_noise_f32(original, noise_factor))
             .collect();
-        
+
         // Values should be different (with very high probability)
         let mut unique_values = 0;
         let mut seen_values: Vec<f32> = Vec::new();
-        
+
         for &value in &results {
             // Check if this exact value has been seen before
             let mut is_new = true;
@@ -420,62 +514,86 @@ mod tests {
                     break;
                 }
             }
-            
+
             if is_new {
                 seen_values.push(value);
                 unique_values += 1;
             }
         }
-        
+
         // With enough noise, we should get multiple unique values
         assert!(unique_values > 1);
-        
+
         // Values should be roughly within range
         for value in results {
             assert!((value - original).abs() < noise_factor * 3.0);
         }
     }
-    
+
     #[test]
     fn test_protection_levels() {
         let basic_config = AntiFingerprintConfig {
             enabled: true,
             protection_level: ProtectionLevel::Basic,
             custom_settings: HashMap::new(),
+            nation_state_settings: NationStateSettings::default(),
         };
-        
-        let max_config = AntiFingerprintConfig {
+
+        let nation_state_config = AntiFingerprintConfig {
             enabled: true,
-            protection_level: ProtectionLevel::Maximum,
+            protection_level: ProtectionLevel::NationState,
             custom_settings: HashMap::new(),
+            nation_state_settings: NationStateSettings::default(),
         };
-        
+
         let basic_manager = AntiFingerprintManager::new(basic_config);
-        let max_manager = AntiFingerprintManager::new(max_config);
-        
+        let nation_state_manager = AntiFingerprintManager::new(nation_state_config);
+
         // Basic should protect user_agent but not screen_resolution
         assert!(basic_manager.should_protect_feature("user_agent"));
         assert!(!basic_manager.should_protect_feature("screen_resolution"));
-        
-        // Maximum should protect everything
-        assert!(max_manager.should_protect_feature("user_agent"));
-        assert!(max_manager.should_protect_feature("screen_resolution"));
+
+        // Nation-state should protect everything
+        assert!(nation_state_manager.should_protect_feature("user_agent"));
+        assert!(nation_state_manager.should_protect_feature("screen_resolution"));
+        assert!(nation_state_manager.should_protect_feature("webgl_vendor"));
+        assert!(nation_state_manager.should_protect_feature("timezone_precise"));
     }
-    
+
     #[test]
     fn test_custom_settings() {
         let mut custom_settings = HashMap::new();
         custom_settings.insert("screen_resolution".to_string(), true);
-        
+
         let config = AntiFingerprintConfig {
             enabled: true,
             protection_level: ProtectionLevel::Basic, // Would normally not protect screen_resolution
             custom_settings,
+            nation_state_settings: NationStateSettings::default(),
         };
-        
+
         let manager = AntiFingerprintManager::new(config);
-        
+
         // Custom setting overrides the protection level
         assert!(manager.should_protect_feature("screen_resolution"));
+    }
+
+    #[test]
+    fn test_nation_state_settings() {
+        let config = AntiFingerprintConfig {
+            enabled: true,
+            protection_level: ProtectionLevel::NationState,
+            custom_settings: HashMap::new(),
+            nation_state_settings: NationStateSettings::default(),
+        };
+
+        assert!(config.nation_state_settings.behavioral_obfuscation);
+        assert!(config.nation_state_settings.timing_noise);
+        assert!(config.nation_state_settings.request_randomization);
+        assert!(config.nation_state_settings.font_spoofing);
+        assert!(config.nation_state_settings.hardware_randomization);
+        assert!(config.nation_state_settings.advanced_webgl_noise);
+        assert!(config.nation_state_settings.canvas_randomization);
+        assert!(config.nation_state_settings.audio_spoofing);
     }
 }

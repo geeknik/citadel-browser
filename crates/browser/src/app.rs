@@ -267,6 +267,50 @@ pub enum Message {
     ScrollTo { x: f32, y: f32 },
     ViewportResized { width: f32, height: f32 },
     MouseWheel { delta_x: f32, delta_y: f32 },
+    // Navigation
+    Back,
+    Forward,
+    Reload,
+    ToggleSettings,
+    /// Settings related messages
+    Settings(SettingsMessage),
+}
+
+/// Messages for settings configuration
+#[derive(Debug, Clone)]
+pub enum SettingsMessage {
+    SelectCategory(crate::settings_panel::SettingsCategory),
+    ToggleBlockTrackers(bool),
+    ToggleAntiFingerprinting(bool),
+    ToggleBlockThirdPartyCookies(bool),
+    ToggleClearCookiesOnExit(bool),
+    TogglePrivateDns(bool),
+    SetPrivacyLevel(PrivacyLevel),
+    SetDnsProvider(citadel_networking::DnsProvider),
+    ToggleMalwareProtection(bool),
+    TogglePhishingProtection(bool),
+    ToggleSafeBrowsing(bool),
+    ToggleCertificateChecking(bool),
+    ToggleMixedContentBlocking(bool),
+    SetFontSize(u16),
+    ToggleBookmarksBar(bool),
+    ToggleDownloadsBar(bool),
+    ToggleCompactMode(bool),
+    ToggleAnimations(bool),
+    SetTheme(crate::theme::CitadelTheme),
+    SetDefaultZoom(f32),
+    ToggleRestoreSession(bool),
+    ToggleAutoFill(bool),
+    TogglePasswordManager(bool),
+    SetSearchEngine(crate::settings_panel::SearchEngine),
+    SetHomepageType(crate::settings_panel::HomepageType),
+    SetCustomHomepage(String),
+    ToggleDeveloperMode(bool),
+    ToggleExperimentalFeatures(bool),
+    ToggleHardwareAcceleration(bool),
+    ToggleMemorySaver(bool),
+    ToggleBackgroundSync(bool),
+    SetLogLevel(crate::settings_panel::LogLevel),
 }
 
 /// Detailed loading error information
@@ -327,6 +371,7 @@ impl Application for CitadelBrowser {
             enforce_https: true,
             randomize_user_agent: true,
             strip_tracking_params: true,
+            security_config: citadel_networking::NetworkSecurityConfig::default(),
         };
         
         // Initialize tab manager with ZKVM isolation
@@ -1119,6 +1164,33 @@ impl Application for CitadelBrowser {
                     log::debug!("🖱️ Mouse wheel scroll: delta=({}, {}), pos=({}, {})", 
                                delta_x, delta_y, scroll_state.x, scroll_state.y);
                 }
+                Command::none()
+            }
+
+            Message::Back => {
+                log::info!("Navigating back");
+                // TODO: Implement back navigation
+                Command::none()
+            }
+
+            Message::Forward => {
+                log::info!("Navigating forward");
+                // TODO: Implement forward navigation
+                Command::none()
+            }
+
+            Message::Reload => {
+                self.update(Message::RefreshTab)
+            }
+
+            Message::ToggleSettings => {
+                // TODO: Toggle settings visibility
+                Command::none()
+            }
+            
+            Message::Settings(settings_msg) => {
+                log::info!("⚙️ Settings update: {:?}", settings_msg);
+                // TODO: Implement settings handling
                 Command::none()
             }
         }

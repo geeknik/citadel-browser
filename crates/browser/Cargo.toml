@@ -14,6 +14,7 @@ env_logger = "0.11"
 
 # Async runtime for network operations
 reqwest = { version = "0.12", features = ["json", "stream"] }
+futures = "0.3"
 
 # JSON parsing (for API responses)
 serde = { version = "1.0", features = ["derive"] }
@@ -29,11 +30,17 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 # UI framework
 iced = { version = "0.12", features = ["image", "svg", "canvas", "tokio", "advanced"] }
 
+# Layout engine
+taffy = "0.3"
+
 # Async trait support
 async-trait = "0.1"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
+
+# File system utilities
+dirs = "5.0"
 
 # Internal crates
 citadel-networking = { path = "../networking" }
@@ -41,10 +48,6 @@ citadel-parser = { path = "../parser" }
 citadel-security = { path = "../security" }
 citadel-tabs = { path = "../tabs" }
 citadel-zkvm = { path = "../zkvm" }
-
-# Cryptography (if needed for secure operations)
-# ring = "0.16"
-# rand = "0.8"
 
 [dev-dependencies]
 tokio-test = "0.4"

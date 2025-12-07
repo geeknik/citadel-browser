@@ -1,31 +1,28 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use iced::{Application, Settings};
+use iced::{Application, Settings, Size};
 
-mod app;
-mod ui;
-mod engine;
-mod resource_loader;
-mod renderer;
-mod zkvm_receiver;
-
-use app::CitadelBrowser;
+use citadel_browser::CitadelBrowser;
 
 fn main() -> iced::Result {
     // Initialize logging
     env_logger::init();
-    
+
     log::info!("Starting Citadel Browser v{} - Privacy-First Web Browser", env!("CARGO_PKG_VERSION"));
     log::warn!("⚠️  ALPHA SOFTWARE - USE AT YOUR OWN RISK ⚠️");
     log::warn!("This is experimental software not intended for production use");
     log::info!("Homepage: https://citadelbrowser.com");
     log::info!("Author: Deep Fork Cyber - https://deepforkcyber.com");
-    
+
     // Create the Tokio runtime for async operations
     let rt = Arc::new(Runtime::new().expect("Failed to create Tokio runtime"));
-    
+
     // Configure the application window
-    let settings = Settings::with_flags(rt);
-    
+    let mut settings = Settings::with_flags(rt);
+
+    // Set window icon and other properties
+    settings.window.size = Size::new(1200.0, 800.0);
+    settings.window.min_size = Some(Size::new(800.0, 600.0));
+
     CitadelBrowser::run(settings)
 }

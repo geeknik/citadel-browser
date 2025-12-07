@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;
+use serde::{Serialize, Deserialize};
 use log;
 
 /// Memory usage tracking for different browser components
@@ -231,7 +232,7 @@ impl PerformanceMetrics {
 }
 
 /// Performance summary for reporting
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceSummary {
     pub average_page_load_ms: f64,
     pub average_layout_ms: f64,

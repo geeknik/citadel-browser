@@ -11,9 +11,15 @@ pub mod cache;
 pub mod advanced_loader;
 pub mod integrity;
 pub mod performance;
+pub mod network_security;
+
+// Performance optimization module
+pub mod network_optimizer;
+
+use serde::{Serialize, Deserialize};
 
 /// Re-export common types for easier usage
-pub use dns::{DnsMode, CitadelDnsResolver};
+pub use dns::{DnsMode, CitadelDnsResolver, DnsProvider};
 pub use request::{Request, Method};
 pub use response::Response;
 pub use connection::Connection;
@@ -25,9 +31,15 @@ pub use cache::{ResourceCache, CacheEntry, CacheConfig};
 pub use error::NetworkError;
 pub use advanced_loader::{AdvancedResourceLoader, LoadingStrategy, Priority, NetworkCondition, BandwidthTracker};
 pub use integrity::{IntegrityValidator, HashAlgorithm, IntegrityResult, CSPViolation};
+pub use network_security::{
+    NetworkSecurityConfig, SecurityEventType, CertificatePin, NetworkSecurityManager
+};
+
+// Re-export network optimization types
+pub use network_optimizer::{NetworkOptimizer, RequestPriority, NetworkOptimizationConfig, PreloadPrediction, NetworkStats};
 
 /// Types of privacy level configurations for the networking layer
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrivacyLevel {
     /// Maximum privacy: randomize all possible fingerprinting vectors
     Maximum,
@@ -40,7 +52,7 @@ pub enum PrivacyLevel {
 }
 
 /// Central networking configuration
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkConfig {
     /// Current privacy level for network requests
     pub privacy_level: PrivacyLevel,
@@ -52,6 +64,8 @@ pub struct NetworkConfig {
     pub randomize_user_agent: bool,
     /// Whether to strip tracking parameters from URLs
     pub strip_tracking_params: bool,
+    /// Network security configuration
+    pub security_config: NetworkSecurityConfig,
 }
 
 impl Default for NetworkConfig {
@@ -62,6 +76,7 @@ impl Default for NetworkConfig {
             enforce_https: true,
             randomize_user_agent: true,
             strip_tracking_params: true,
+            security_config: NetworkSecurityConfig::default(),
         }
     }
-} 
+}

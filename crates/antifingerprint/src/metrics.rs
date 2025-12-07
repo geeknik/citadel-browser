@@ -26,6 +26,10 @@ pub enum ProtectionType {
     Screen,
     /// Timezone/locale fingerprinting protection
     Locale,
+    /// Hardware fingerprinting protection
+    Hardware,
+    /// Behavioral fingerprinting protection
+    Behavioral,
 }
 
 impl ProtectionType {
@@ -39,6 +43,8 @@ impl ProtectionType {
             ProtectionType::Font => "font",
             ProtectionType::Screen => "screen",
             ProtectionType::Locale => "locale",
+            ProtectionType::Hardware => "hardware",
+            ProtectionType::Behavioral => "behavioral",
         }
     }
 }

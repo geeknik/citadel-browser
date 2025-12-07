@@ -35,6 +35,10 @@ pub enum NetworkError {
     #[error("Privacy violation: {0}")]
     PrivacyViolationError(String),
 
+    /// Security violation error - blocked by security policies
+    #[error("Security violation: {0}")]
+    SecurityViolation(String),
+
     /// Resource loading errors
     #[error("Resource loading error: {0}")]
     ResourceError(String),
@@ -61,6 +65,11 @@ impl NetworkError {
         )
     }
 
+    /// Returns true if the error is related to security protection
+    pub fn is_security_related(&self) -> bool {
+        matches!(self, NetworkError::SecurityViolation(_))
+    }
+
     /// Returns true if the error is likely temporary and the request could be retried
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -70,4 +79,4 @@ impl NetworkError {
             NetworkError::DnsError(_)
         )
     }
-} 
+}

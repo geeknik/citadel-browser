@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use serde::{Serialize, Deserialize};
 
 use hickory_resolver::{
     TokioResolver,
@@ -10,7 +11,7 @@ use hickory_resolver::{
 use crate::error::NetworkError;
 
 /// DNS resolution modes available in Citadel
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DnsMode {
     /// Local cache with system resolver as fallback (DEFAULT)
     /// This is the privacy-preserving default that doesn't rely on third-party services
@@ -24,6 +25,30 @@ pub enum DnsMode {
     
     /// Custom resolver configuration (advanced users only)
     Custom,
+}
+
+/// DNS providers for DoH/DoT
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DnsProvider {
+    Cloudflare,
+    Google,
+    OpenDNS,
+    Quad9,
+    System,
+    Custom(String),
+}
+
+impl std::fmt::Display for DnsProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DnsProvider::Cloudflare => write!(f, "Cloudflare (1.1.1.1)"),
+            DnsProvider::Google => write!(f, "Google (8.8.8.8)"),
+            DnsProvider::OpenDNS => write!(f, "OpenDNS (208.67.222.222)"),
+            DnsProvider::Quad9 => write!(f, "Quad9 (9.9.9.9)"),
+            DnsProvider::System => write!(f, "System Default"),
+            DnsProvider::Custom(url) => write!(f, "Custom ({})", url),
+        }
+    }
 }
 
 /// A DNS resolution entry with time-based expiration

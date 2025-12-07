@@ -688,6 +688,7 @@ name = "citadel-antifingerprint"
 version = "0.0.1-alpha"
 dependencies = [
  "anyhow",
+ "base64 0.21.7",
  "citadel-security",
  "futures",
  "lazy_static",
@@ -718,12 +719,15 @@ dependencies = [
  "citadel-security",
  "citadel-tabs",
  "citadel-zkvm",
+ "dirs",
  "env_logger 0.11.8",
+ "futures",
  "iced",
  "log",
  "reqwest 0.12.19",
  "serde",
  "serde_json",
+ "taffy 0.3.19",
  "tokio",
  "tokio-test",
  "url",
@@ -753,13 +757,16 @@ version = "0.0.1-alpha"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "chrono",
  "env_logger 0.10.2",
  "futures",
  "hickory-resolver",
  "hyper 0.14.32",
  "hyper-rustls 0.24.2",
  "log",
+ "parking_lot 0.12.4",
  "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "regex",
  "reqwest 0.11.27",
  "rustls 0.21.12",
@@ -770,6 +777,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -795,7 +803,7 @@ dependencies = [
  "serde",
  "serde_json",
  "string_cache",
- "taffy",
+ "taffy 0.5.2",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
@@ -807,7 +815,13 @@ dependencies = [
 name = "citadel-security"
 version = "0.0.1-alpha"
 dependencies = [
+ "base64 0.21.7",
+ "chrono",
  "log",
+ "parking_lot 0.12.4",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1353,6 +1367,27 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+]
+
+[[package]]
+name = "dirs"
+version = "5.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "520f05a5cbd335fae5a99ff7a6ab8627577660ee5cfd6a94a6a929b52ff0321c"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -2024,6 +2059,12 @@ checksum = "6bf0b36e6f090b7e1d8a4b49c0cb81c1f8376f72198c65dd3ad9ff3556b8b78c"
 dependencies = [
  "bitflags 2.9.1",
 ]
+
+[[package]]
+name = "grid"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eec1c01eb1de97451ee0d60de7d81cf1e72aabefb021616027f3d1c3ec1c723c"
 
 [[package]]
 name = "grid"
@@ -3753,6 +3794,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
 name = "orbclient"
 version = "0.3.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4492,6 +4539,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "928fca9cf2aa042393a8325b9ead81d2f0df4cb12e1e24cef072922ccd99c5af"
 dependencies = [
  "bitflags 2.9.1",
+]
+
+[[package]]
+name = "redox_users"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+dependencies = [
+ "getrandom 0.2.16",
+ "libredox",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5509,12 +5567,24 @@ dependencies = [
 
 [[package]]
 name = "taffy"
+version = "0.3.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1315457ccd9c3def787a18fae91914e623e4dcff019b64ce39f5268ded53d3d"
+dependencies = [
+ "arrayvec",
+ "grid 0.10.0",
+ "num-traits",
+ "slotmap",
+]
+
+[[package]]
+name = "taffy"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cb893bff0f80ae17d3a57e030622a967b8dbc90e38284d9b4b1442e23873c94"
 dependencies = [
  "arrayvec",
- "grid",
+ "grid 0.14.0",
  "num-traits",
  "serde",
  "slotmap",
