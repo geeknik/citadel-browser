@@ -1068,6 +1068,16 @@ impl CitadelRenderer {
                 .into();
         }
 
+        // Skip non-visual elements that should never produce visible output.
+        // <style> CSS rules, <script> code, <head> metadata, <meta>, <link>,
+        // <noscript>, and <template> are not rendered by any browser.
+        if matches!(tag_name,
+            "style" | "script" | "head" | "meta" | "link" |
+            "noscript" | "template" | "title" | "base"
+        ) {
+            return Space::with_height(0).into();
+        }
+
         // Render children first
         let mut children_widgets = Vec::new();
         for child_handle in node.children() {
@@ -1351,7 +1361,15 @@ impl CitadelRenderer {
                         }
                     }
                     NodeData::Element(element) => {
-                        log::debug!("  🏷️ Child {}: Found element <{}> with {} children", i, element.local_name(), child_node.children().len());
+                        let child_tag = element.local_name();
+                        // Skip non-visual elements
+                        if matches!(child_tag,
+                            "style" | "script" | "head" | "meta" | "link" |
+                            "noscript" | "template" | "title" | "base"
+                        ) {
+                            continue;
+                        }
+                        log::debug!("  Child {}: Found element <{}> with {} children", i, child_tag, child_node.children().len());
                         // Recursively get text from element's children
                         let child_text = self.extract_text_content(&child_node, _dom);
                         if !child_text.is_empty() {
