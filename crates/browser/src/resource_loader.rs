@@ -4,15 +4,18 @@ use citadel_networking::{ResourceManager, resource::ResourceType};
 use citadel_security::SecurityContext;
 
 /// Resource loader for fetching web resources (HTML, CSS, JS, images, etc.)
+#[allow(dead_code)] // Will be used when implementing resource loading
 pub struct ResourceLoader {
     /// Resource manager for caching and policy enforcement
     resource_manager: Arc<ResourceManager>,
     /// Security context for validation
+    #[allow(dead_code)] // Will be used when implementing security validation
     security_context: Arc<SecurityContext>,
 }
 
 impl ResourceLoader {
     /// Create a new resource loader
+    #[allow(dead_code)] // Will be used when implementing resource loading
     pub async fn new(security_context: Arc<SecurityContext>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let resource_manager = Arc::new(ResourceManager::new().await?);
         

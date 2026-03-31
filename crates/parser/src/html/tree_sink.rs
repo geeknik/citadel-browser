@@ -47,6 +47,7 @@ pub struct HtmlTreeSink {
     /// Map of node handles to their element names (CRITICAL for html5ever)
     element_names: HashMap<usize, QualName>,
     /// Next ID for handles (using pointer addresses as unique IDs)
+    #[allow(dead_code)] // Will be used when implementing unique node ID generation
     next_id: usize,
 }
 

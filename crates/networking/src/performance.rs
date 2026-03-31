@@ -250,11 +250,13 @@ pub struct RequestBatcher {
 struct PendingRequest {
     url: Url,
     priority: RequestPriority,
+    #[allow(dead_code)] // Will be used when implementing request aging and timeouts
     timestamp: Instant,
 }
 
 impl PendingRequest {
     /// Create a new pending request
+    #[allow(dead_code)] // Will be used when implementing request batching
     fn new(url: Url, priority: RequestPriority) -> Self {
         Self {
             url,
@@ -264,11 +266,13 @@ impl PendingRequest {
     }
     
     /// Get the age of this request in milliseconds
+    #[allow(dead_code)] // Will be used when implementing request aging
     fn age_ms(&self) -> u64 {
         self.timestamp.elapsed().as_millis() as u64
     }
     
     /// Check if this request has been pending too long
+    #[allow(dead_code)] // Will be used when implementing request timeout handling
     fn is_stale(&self, timeout_ms: u64) -> bool {
         self.age_ms() > timeout_ms
     }

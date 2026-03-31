@@ -14,6 +14,7 @@ mod audio;
 mod metrics;
 
 use citadel_security::context::{SecurityContext, FingerprintProtection};
+use citadel_security::privacy::{PrivacyEvent, PrivacyEventSender};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use rand::SeedableRng;
@@ -22,7 +23,7 @@ use rand_distr::{Normal, Distribution};
 use std::collections::HashMap;
 use std::sync::Arc;
 use log::info;
-use metrics::{FingerprintMetrics, ProtectionType, DomainStats};
+use metrics::FingerprintMetrics;
 
 /// Errors that can occur during anti-fingerprinting operations
 #[derive(Error, Debug)]
@@ -49,6 +50,8 @@ pub struct FingerprintManager {
     session_seed: u64,
     /// Whether this browser session should have consistent fingerprints
     consistent_within_session: bool,
+    /// Optional privacy event sender for the scoreboard
+    privacy_sender: Option<PrivacyEventSender>,
 }
 
 impl FingerprintManager {
@@ -56,11 +59,27 @@ impl FingerprintManager {
     pub fn new(security_context: SecurityContext) -> Self {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         Self {
             security_context,
             session_seed: rng.gen(),
             consistent_within_session: true,
+            privacy_sender: None,
+        }
+    }
+
+    /// Set the privacy event sender for scoreboard integration
+    pub fn set_privacy_sender(&mut self, sender: PrivacyEventSender) {
+        self.privacy_sender = Some(sender);
+    }
+
+    /// Emit a FingerprintNeutralized privacy event
+    pub fn emit_neutralized(&self, api_name: &str, action_taken: &str) {
+        if let Some(sender) = &self.privacy_sender {
+            sender.emit(PrivacyEvent::FingerprintNeutralized {
+                api_name: api_name.to_string(),
+                action_taken: action_taken.to_string(),
+            });
         }
     }
     
@@ -86,26 +105,39 @@ impl FingerprintManager {
     }
     
     /// Apply a subtle random noise to a numeric value
-    pub fn apply_noise<T>(&self, value: T, noise_factor: f64, domain: &str) -> T 
-    where 
+    pub fn apply_noise<T>(&self, value: T, noise_factor: f64, domain: &str) -> T
+    where
         T: Into<f64> + From<f64>
     {
         let value_f64 = value.into();
         let domain_seed = self.domain_seed(domain);
-        
+
         // Use ChaCha20Rng which is cryptographically secure instead of StdRng
         let mut rng = if self.consistent_within_session {
             ChaCha20Rng::seed_from_u64(domain_seed)
         } else {
             ChaCha20Rng::from_entropy()
         };
-        
+
         // Create a normal distribution centered on 0 with standard deviation based on noise factor
-        let normal = Normal::new(0.0, noise_factor * value_f64.abs().max(0.001)).unwrap_or(Normal::new(0.0, 0.001).unwrap());
-        
+        let std_dev = noise_factor * value_f64.abs().max(0.001);
+        let normal = Normal::new(0.0, std_dev).unwrap_or(Normal::new(0.0, 0.001).unwrap());
+
         // Get a random value from the distribution
         let noise = normal.sample(&mut rng);
-        
+
+        // Clamp noise to within 3 standard deviations for bounded behavior
+        let max_deviation = std_dev * 2.99;
+        let noise = noise.clamp(-max_deviation, max_deviation);
+
+        // Ensure non-zero noise so protection always modifies the value
+        let min_noise = std_dev * 0.1_f64.max(1e-10);
+        let noise = if noise.abs() < min_noise {
+            if domain_seed % 2 == 0 { min_noise } else { -min_noise }
+        } else {
+            noise
+        };
+
         // Apply the noise to the original value
         T::from(value_f64 + noise)
     }
@@ -170,20 +202,24 @@ where
     T: Into<f64> + From<f64>,
 {
     let value_f64: f64 = value.into();
-    
+
     // Use cryptographically secure RNG
     let mut rng = ChaCha20Rng::from_entropy();
-    
+
     // Ensure noise_factor is positive
     let noise_factor = noise_factor.abs().max(0.001);
-    
+
     // Normal distribution with mean=0 and std_dev=noise_factor
     let normal = Normal::new(0.0, noise_factor).unwrap();
     let noise = normal.sample(&mut rng);
-    
+
+    // Clamp noise to within 3 standard deviations for bounded behavior
+    let max_deviation = noise_factor * 2.99;
+    let clamped_noise = noise.clamp(-max_deviation, max_deviation);
+
     // Apply noise to the value
-    let result = value_f64 + noise;
-    
+    let result = value_f64 + clamped_noise;
+
     // Convert back to original type
     T::from(result)
 }
@@ -192,11 +228,15 @@ where
 pub fn apply_noise_f32(value: f32, noise_factor: f32) -> f32 {
     let mut rng = ChaCha20Rng::from_entropy();
     let noise_factor = noise_factor.abs().max(0.001);
-    
+
     let normal = Normal::new(0.0, noise_factor as f64).unwrap();
     let noise = normal.sample(&mut rng) as f32;
-    
-    value + noise
+
+    // Clamp noise to within 3 standard deviations for bounded behavior
+    let max_deviation = noise_factor * 2.99;
+    let clamped_noise = noise.clamp(-max_deviation, max_deviation);
+
+    value + clamped_noise
 }
 
 /// Anti-fingerprinting configuration
@@ -277,12 +317,12 @@ impl AntiFingerprintManager {
     }
     
     /// Records a blocked fingerprinting attempt
-    pub fn record_blocked(&self, protection_type: self::ProtectionType, domain: &str) {
+    pub fn record_blocked(&self, protection_type: metrics::ProtectionType, domain: &str) {
         self.metrics.record_blocked(protection_type, domain);
     }
     
     /// Records a normalized fingerprinting attempt
-    pub fn record_normalized(&self, protection_type: self::ProtectionType, domain: &str) {
+    pub fn record_normalized(&self, protection_type: metrics::ProtectionType, domain: &str) {
         self.metrics.record_normalized(protection_type, domain);
     }
     
@@ -341,7 +381,7 @@ impl AntiFingerprintManager {
     }
     
     /// Get detailed domain statistics
-    pub fn get_domain_statistics(&self, domain: &str) -> Option<DomainStats> {
+    pub fn get_domain_statistics(&self, domain: &str) -> Option<metrics::DomainStats> {
         self.metrics.domain_statistics(domain)
     }
     
@@ -356,10 +396,10 @@ impl AntiFingerprintManager {
             total_attempts: self.metrics.total_attempts(),
             blocked_attempts: self.metrics.blocked_attempts.load(std::sync::atomic::Ordering::Relaxed),
             normalized_attempts: self.metrics.normalized_attempts.load(std::sync::atomic::Ordering::Relaxed),
-            canvas_protections: self.metrics.protection_count(ProtectionType::Canvas),
-            webgl_protections: self.metrics.protection_count(ProtectionType::WebGL),
-            audio_protections: self.metrics.protection_count(ProtectionType::Audio),
-            navigator_protections: self.metrics.protection_count(ProtectionType::Navigator),
+            canvas_protections: self.metrics.protection_count(metrics::ProtectionType::Canvas),
+            webgl_protections: self.metrics.protection_count(metrics::ProtectionType::WebGL),
+            audio_protections: self.metrics.protection_count(metrics::ProtectionType::Audio),
+            navigator_protections: self.metrics.protection_count(metrics::ProtectionType::Navigator),
             top_domains: self.metrics.top_fingerprinting_domains(5),
             since_first_attempt: self.metrics.time_since_first_attempt().map(|d| d.as_secs()),
         }
@@ -479,6 +519,7 @@ mod tests {
 
 // Re-export important types from modules
 pub use audio::{AudioProtection, AudioParamValues};
-pub use canvas::CanvasProtection;
+pub use canvas::{CanvasProtection, CanvasOperation, CanvasProtectionConfig};
 pub use webgl::{WebGLProtection, WebGLInfo, WebGLParameter};
-pub use navigator::{NavigatorProtection, NavigatorInfo}; 
+pub use navigator::{NavigatorProtection, NavigatorInfo, BrowserCategory};
+pub use metrics::{ProtectionType, DomainStats}; 

@@ -45,14 +45,6 @@ uuid                = { version = "1.7.0", features = ["v4", "serde"] }
 sha2                = "0.10.8"
 base64              = "0.21.7"
 
-# macOS specific dependencies
-core-foundation     = "0.9.4"
-core-graphics       = "0.23.1"
-objc                = "0.2.7"
-cocoa               = "0.25.0"
-metal               = "0.25.0"
-objc-foundation     = "0.1.1"
-
 # UI dependencies
 iced                = { version = "0.12", features = ["canvas", "image", "svg", "tokio"] }
 

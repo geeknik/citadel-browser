@@ -134,14 +134,15 @@ impl<R: UrlResolver> Tokenizer<R> {
     /// Advance the position by one character
     fn advance(&mut self) {
         if self.position < self.input.len() {
-            let c = self.input[self.position..].chars().next().unwrap();
-            self.position += c.len_utf8();
-            
-            if c == '\n' {
-                self.line += 1;
-                self.column = 1;
-            } else {
-                self.column += 1;
+            if let Some(c) = self.input[self.position..].chars().next() {
+                self.position += c.len_utf8();
+                
+                if c == '\n' {
+                    self.line += 1;
+                    self.column = 1;
+                } else {
+                    self.column += 1;
+                }
             }
         }
     }
@@ -149,11 +150,14 @@ impl<R: UrlResolver> Tokenizer<R> {
     /// Skip whitespace characters
     fn skip_whitespace(&mut self) {
         while self.position < self.input.len() {
-            let c = self.input[self.position..].chars().next().unwrap();
-            if !c.is_whitespace() {
+            if let Some(c) = self.input[self.position..].chars().next() {
+                if !c.is_whitespace() {
+                    break;
+                }
+                self.advance();
+            } else {
                 break;
             }
-            self.advance();
         }
     }
     
@@ -561,7 +565,7 @@ mod tests {
         let context = ParseContext::new(config, resolver, None);
         let mut tokenizer = Tokenizer::new(context, html.to_string());
         
-        let tokens = tokenizer.tokenize().unwrap();
+        let tokens = tokenizer.tokenize().expect("Tokenization should succeed for valid HTML");
         
         assert_eq!(tokens.len(), 6);
         assert_eq!(tokens[0], Token::StartTag { name: "html".to_string(), attributes: vec![], self_closing: false });
@@ -580,7 +584,7 @@ mod tests {
         let context = ParseContext::new(config, resolver, None);
         let mut tokenizer = Tokenizer::new(context, html.to_string());
         
-        let tokens = tokenizer.tokenize().unwrap();
+        let tokens = tokenizer.tokenize().expect("Tokenization should succeed for valid HTML");
         
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens[0], Token::StartTag {
@@ -604,7 +608,7 @@ mod tests {
         let context = ParseContext::new(config, resolver, None);
         let mut tokenizer = Tokenizer::new(context, html.to_string());
         
-        let tokens = tokenizer.tokenize().unwrap();
+        let tokens = tokenizer.tokenize().expect("Tokenization should succeed for valid HTML");
         
         assert_eq!(tokens.len(), 5);
         assert_eq!(tokens[0], Token::Comment { data: " This is a comment ".to_string() });
@@ -622,7 +626,7 @@ mod tests {
         let context = ParseContext::new(config, resolver, None);
         let mut tokenizer = Tokenizer::new(context, html.to_string());
         
-        let tokens = tokenizer.tokenize().unwrap();
+        let tokens = tokenizer.tokenize().expect("Tokenization should succeed for valid HTML");
         
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens[0], Token::Doctype {

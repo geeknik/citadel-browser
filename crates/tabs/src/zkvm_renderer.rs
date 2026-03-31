@@ -121,7 +121,7 @@ impl ZkVmRenderer {
         log::info!("🔒 ZKVM renderer starting in isolated environment");
         
         loop {
-            let channel = self.channel.write().await;
+            let mut channel = self.channel.write().await;
             
             // Receive messages from the host through secure channel
             match channel.receive().await {
@@ -222,7 +222,7 @@ impl ZkVmRenderer {
                 log::info!("✅ ZKVM: Content processed securely - {} dangerous elements blocked", blocked_count);
                 
                 // STEP 4: Send secure content back through isolation boundary
-                let mut channel = self.channel.write().await;
+                let channel = self.channel.write().await;
                 let response = ChannelMessage::Control {
                     command: "rendered_content".to_string(),
                     params: serde_json::to_string(&rendered).unwrap_or_else(|_| "{}".to_string()),

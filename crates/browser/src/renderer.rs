@@ -21,7 +21,7 @@ use citadel_parser::layout::LayoutRect;
 use citadel_parser::dom::{Node, NodeData};
 use crate::app::Message;
 // WORKAROUND: Remove performance imports for now to fix build
-use citadel_parser::css::{ColorValue, LengthValue, PositionType as CssPositionType, DisplayType};
+use citadel_parser::css::{ColorValue, LengthValue, PositionType as CssPositionType};
 
 /// Sticky direction for sticky positioning
 #[derive(Debug, Clone)]
@@ -560,7 +560,13 @@ impl CitadelRenderer {
                 
                 // Debug: Log DOM structure
                 let root_handle = dom.root();
-                let root_node = root_handle.read().unwrap();
+                let root_node = match root_handle.read() {
+                    Ok(node) => node,
+                    Err(_) => {
+                        log::error!("Failed to acquire read lock on DOM root");
+                        return container(text("Error: Failed to acquire DOM lock")).into();
+                    }
+                };
                 log::info!("🌳 DOM root has {} children", root_node.children().len());
                 
                 // Debug: Check if we have actual content
@@ -574,12 +580,24 @@ impl CitadelRenderer {
                 let root_handle = dom.root();
                 
                 // The root is the document node - we need to find the HTML element
-                let root_node = root_handle.read().unwrap();
+                let root_node = match root_handle.read() {
+                    Ok(node) => node,
+                    Err(_) => {
+                        log::error!("Failed to acquire read lock on DOM root");
+                        return container(text("Error: Failed to acquire DOM lock")).into();
+                    }
+                };
                 let mut html_element = None;
                 
                 // Find the <html> element among the document's children
                 for child in root_node.children() {
-                    let child_node = child.read().unwrap();
+                    let child_node = match child.read() {
+                        Ok(node) => node,
+                        Err(_) => {
+                            log::warn!("Failed to read child node");
+                            continue;
+                        }
+                    };
                     if let NodeData::Element(elem) = &child_node.data {
                         if elem.local_name() == "html" {
                             html_element = Some(child.clone());
@@ -591,12 +609,24 @@ impl CitadelRenderer {
                 // Render from the HTML element if found, otherwise from root
                 let rendered_content = if let Some(html_handle) = html_element {
                     log::info!("🎯 Found HTML element, rendering from there");
-                    let html_node = html_handle.read().unwrap();
+                    let html_node = match html_handle.read() {
+                        Ok(node) => node,
+                        Err(_) => {
+                            log::error!("Failed to read HTML element");
+                            return container(text("Error: Failed to read HTML element")).into();
+                        }
+                    };
                     log::info!("📊 HTML element has {} direct children", html_node.children().len());
                     
                     // Log the structure of HTML element's children
                     for (i, child) in html_node.children().iter().enumerate() {
-                        let child_node = child.read().unwrap();
+                        let child_node = match child.read() {
+                            Ok(node) => node,
+                            Err(_) => {
+                                log::warn!("Failed to read HTML child node {}", i);
+                                continue;
+                            }
+                        };
                         match &child_node.data {
                             NodeData::Element(e) => {
                                 log::info!("  HTML child {}: <{}> with {} children", i, e.local_name(), child_node.children().len());
@@ -620,7 +650,7 @@ impl CitadelRenderer {
                 // Create viewport-aware scrollable container
                 self.create_viewport_aware_container(rendered_content)
             }
-            (Some(dom), Some(stylesheet), None) => {
+            (Some(dom), Some(_stylesheet), None) => {
                 log::error!("❌ CRITICAL: Layout computation failed - this should not happen with proper ZKVM processing");
                 
                 // Layout computation failed, show text content as fallback
@@ -735,7 +765,13 @@ impl CitadelRenderer {
         layout_result: &'a LayoutResult,
         positioned_elements: &mut Vec<(PositionContext, Element<'a, Message>)>,
     ) {
-        let node = node_handle.read().unwrap();
+        let node = match node_handle.read() {
+            Ok(node) => node,
+            Err(_) => {
+                log::error!("Failed to read node for layout calculation");
+                return; // Return unit type for void function
+            }
+        };
         
         // Get layout for this node
         if let Some(layout) = layout_result.node_layouts.get(&node.id()) {
@@ -871,7 +907,7 @@ impl CitadelRenderer {
             let font_size = self.get_comprehensive_font_size(tag_name, computed_style);
             let text_color = self.get_comprehensive_text_color(tag_name, computed_style);
             let font_weight = self.get_font_weight_from_style(computed_style);
-            let text_decoration = self.get_text_decoration_from_style(computed_style);
+            let _text_decoration = self.get_text_decoration_from_style(computed_style);
             
             log::info!("📝 Creating enhanced text widget for {}: '{}' (size: {}, weight: {:?})", 
                 tag_name, text_content, font_size, font_weight);
@@ -948,7 +984,13 @@ impl CitadelRenderer {
         stylesheet: &'a CitadelStylesheet,
         layout_result: &'a LayoutResult,
     ) -> Element<'a, Message> {
-        let node = node_handle.read().unwrap();
+        let node = match node_handle.read() {
+            Ok(node) => node,
+            Err(_) => {
+                log::error!("Failed to read node for layout calculation");
+                return text("Error: Failed to read node").into();
+            }
+        };
         match &node.data {
             NodeData::Element(element) => {
                 let tag_name = element.local_name();
@@ -958,7 +1000,13 @@ impl CitadelRenderer {
                 if tag_name == "body" {
                     log::info!("🎯 Found body element! Has {} children", node.children().len());
                     for (i, child) in node.children().iter().enumerate() {
-                        let child_node = child.read().unwrap();
+                        let child_node = match child.read() {
+                            Ok(node) => node,
+                            Err(_) => {
+                                log::warn!("Failed to read child node {}", i);
+                                continue;
+                            }
+                        };
                         match &child_node.data {
                             NodeData::Element(e) => log::info!("  Body child {}: <{}> with {} children", i, e.local_name(), child_node.children().len()),
                             NodeData::Text(t) => log::info!("  Body child {}: Text '{}' ({} chars)", i, t.trim(), t.len()),
@@ -983,10 +1031,8 @@ impl CitadelRenderer {
             NodeData::Text(text_content) => {
                 // Don't trim the text content itself, only check if it's worth rendering
                 if !text_content.trim().is_empty() {
-                    log::info!("📄 Rendering text node: '{}' ({} chars)", 
-                        if text_content.len() > 50 { &format!("{}...", &text_content[..50]) } else { text_content },
-                        text_content.len()
-                    );
+                    let preview = if text_content.len() > 50 { format!("{}...", &text_content[..50]) } else { text_content.clone() };
+                    log::info!("Rendering text node: '{}' ({} chars)", preview, text_content.len());
                     text(text_content.as_str())
                         .size(14)
                         .into()
@@ -1160,7 +1206,7 @@ impl CitadelRenderer {
                 if children_widgets.is_empty() {
                     Space::with_height(0).into()
                 } else {
-                    let form_id = element.get_attribute("id").unwrap_or_else(|| format!("form_{}", self.form_element_counter));
+                    let _form_id = element.get_attribute("id").unwrap_or_else(|| format!("form_{}", self.form_element_counter));
                     
                     let enhanced_style = self.create_enhanced_container_style(&computed_style, tag_name);
                     let padding = self.get_comprehensive_padding(tag_name, &computed_style);
@@ -2094,7 +2140,7 @@ impl CitadelRenderer {
     fn create_form_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
-        computed_style: &ComputedStyle,
+        _computed_style: &ComputedStyle,
     ) -> Option<Element<'a, Message>> {
         let tag_name = element.local_name();
         
@@ -2229,7 +2275,7 @@ impl CitadelRenderer {
     fn create_radio_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
-        element_id: &str,
+        _element_id: &str,
     ) -> Option<Element<'a, Message>> {
         let value = element.get_attribute("value").unwrap_or_default();
         let group_name = element.get_attribute("name").unwrap_or_else(|| "radio_group".to_string());
@@ -2420,7 +2466,7 @@ impl CitadelRenderer {
         // Update cache hit/miss ratio
         let total_cache_requests = self.render_metrics.widget_cache_hits + self.render_metrics.widget_cache_misses;
         if total_cache_requests > 0 {
-            let hit_ratio = self.render_metrics.widget_cache_hits as f64 / total_cache_requests as f64;
+            let _hit_ratio = self.render_metrics.widget_cache_hits as f64 / total_cache_requests as f64;
             
             // TODO: Re-enable performance monitoring
             // if let Some(monitor) = &self.performance_monitor {

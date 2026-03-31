@@ -25,6 +25,7 @@ pub enum TabManagerCommand {
         tab_id: Uuid,
         response: oneshot::Sender<TabResult<()>>,
     },
+    #[allow(dead_code)] // Will be used when implementing tab state synchronization
     GetTabStates {
         response: oneshot::Sender<Vec<TabState>>,
     },

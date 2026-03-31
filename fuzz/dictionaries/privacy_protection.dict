@@ -1,0 +1,354 @@
+# Privacy Protection Testing Dictionary
+# Attack vectors for testing privacy protection mechanisms
+
+# Tracking Parameters
+"utm_source="
+"utm_medium="
+"utm_campaign="
+"utm_term="
+"utm_content="
+"fbclid="
+"gclid="
+"msclkid="
+"ref="
+"source="
+"campaign_id="
+"affiliate_id="
+"tracking_id="
+"session_id="
+
+# Google Analytics Parameters
+"ga_source="
+"ga_medium="
+"ga_campaign="
+"ga_term="
+"ga_content="
+"_ga="
+"_gid="
+"_gat="
+
+# Facebook Tracking
+"fbclid="
+"fb_action_ids="
+"fb_action_types="
+"fb_ref="
+"fb_source="
+
+# Adobe Analytics
+"sc_cid="
+"sc_lid="
+"sc_uid="
+
+# Amazon Tracking
+"tag="
+"linkCode="
+"creativeASIN="
+"linkId="
+
+# Cookie Tracking Attempts
+"document.cookie"
+"localStorage.getItem"
+"sessionStorage.getItem"
+"indexedDB.open"
+
+# Fingerprinting Scripts
+"screen.width"
+"screen.height"
+"screen.colorDepth"
+"screen.pixelDepth"
+"window.devicePixelRatio"
+"navigator.userAgent"
+"navigator.platform"
+"navigator.language"
+"navigator.languages"
+"navigator.hardwareConcurrency"
+"navigator.deviceMemory"
+"navigator.maxTouchPoints"
+
+# Canvas Fingerprinting
+"canvas.getContext('2d')"
+"canvas.toDataURL()"
+"canvas.toBlob()"
+"ctx.fillText("
+"ctx.measureText("
+"ctx.getImageData("
+"ctx.isPointInPath("
+"ctx.isPointInStroke("
+
+# WebGL Fingerprinting
+"getContext('webgl')"
+"getContext('webgl2')"
+"gl.getParameter("
+"gl.getExtension("
+"gl.getSupportedExtensions()"
+"WEBGL_debug_renderer_info"
+"gl.VENDOR"
+"gl.RENDERER"
+"gl.VERSION"
+"gl.SHADING_LANGUAGE_VERSION"
+
+# Audio Fingerprinting
+"AudioContext"
+"webkitAudioContext"
+"createOscillator()"
+"createAnalyser()"
+"getFloatFrequencyData("
+"getByteFrequencyData("
+"sampleRate"
+"baseLatency"
+"outputLatency"
+
+# Font Fingerprinting
+"document.fonts"
+"document.fonts.check("
+"FontFace("
+"getComputedStyle("
+"offsetWidth"
+"offsetHeight"
+"getBoundingClientRect("
+
+# WebRTC Fingerprinting
+"RTCPeerConnection"
+"getUserMedia"
+"enumerateDevices"
+"getSupportedConstraints"
+
+# Battery API
+"navigator.getBattery()"
+"battery.level"
+"battery.charging"
+"battery.chargingTime"
+"battery.dischargingTime"
+
+# Geolocation
+"navigator.geolocation"
+"getCurrentPosition"
+"watchPosition"
+
+# Performance Fingerprinting
+"performance.now()"
+"performance.timing"
+"performance.navigation"
+"performance.memory"
+
+# Network Information
+"navigator.connection"
+"connection.effectiveType"
+"connection.downlink"
+"connection.rtt"
+
+# Media Devices
+"navigator.mediaDevices"
+"enumerateDevices()"
+
+# Timezone Detection
+"new Date().getTimezoneOffset()"
+"Intl.DateTimeFormat().resolvedOptions().timeZone"
+"new Date().toString()"
+
+# Storage Fingerprinting
+"localStorage"
+"sessionStorage"
+"indexedDB"
+"openDatabase"
+"webkitStorageInfo"
+
+# CPU Fingerprinting
+"navigator.hardwareConcurrency"
+"performance.memory.usedJSHeapSize"
+
+# Language Fingerprinting
+"navigator.language"
+"navigator.languages"
+"Intl.Collator().resolvedOptions()"
+"Intl.DateTimeFormat().resolvedOptions()"
+"Intl.NumberFormat().resolvedOptions()"
+
+# Plugins/Extensions Detection
+"navigator.plugins"
+"navigator.mimeTypes"
+
+# DNT Header
+"navigator.doNotTrack"
+
+# Referrer Tracking
+"document.referrer"
+
+# Cross-Origin Tracking
+"postMessage"
+"addEventListener('message'"
+"window.name"
+"location.hash"
+
+# CSS-based Tracking
+":visited"
+"@media"
+"@supports"
+
+# SVG-based Tracking
+"<svg>"
+"getBBox()"
+"getComputedTextLength()"
+
+# Iframe Tracking
+"<iframe>"
+"contentWindow"
+"contentDocument"
+
+# Meta Refresh Tracking
+"<meta http-equiv=\"refresh\""
+
+# Beacon Tracking
+"navigator.sendBeacon"
+
+# Service Worker Tracking
+"navigator.serviceWorker"
+"serviceWorker.register"
+
+# Web Worker Tracking
+"new Worker("
+"new SharedWorker("
+
+# Notification Tracking
+"Notification.permission"
+"Notification.requestPermission"
+
+# Clipboard Tracking
+"navigator.clipboard"
+"document.execCommand('copy')"
+
+# Mouse/Touch Tracking
+"onmousemove"
+"ontouchmove"
+"onscroll"
+
+# Keyboard Tracking
+"onkeydown"
+"onkeyup"
+"onkeypress"
+
+# Focus Tracking
+"onfocus"
+"onblur"
+"document.hasFocus()"
+
+# Visibility Tracking
+"document.visibilityState"
+"document.hidden"
+
+# Idle Detection
+"requestIdleCallback"
+
+# Page Lifecycle
+"onbeforeunload"
+"onunload"
+"onpagehide"
+"onpageshow"
+
+# History Tracking
+"history.length"
+"history.pushState"
+"history.replaceState"
+
+# Error Tracking
+"window.onerror"
+"addEventListener('error'"
+"addEventListener('unhandledrejection'"
+
+# Resource Timing
+"performance.getEntries()"
+"performance.getEntriesByType('resource')"
+
+# Navigation Timing
+"performance.getEntriesByType('navigation')"
+
+# User Timing
+"performance.mark("
+"performance.measure("
+
+# Long Task Timing
+"PerformanceObserver"
+"observe({entryTypes: ['longtask']}"
+
+# Paint Timing
+"performance.getEntriesByType('paint')"
+
+# Intersection Observer
+"IntersectionObserver"
+
+# Mutation Observer
+"MutationObserver"
+
+# Resize Observer
+"ResizeObserver"
+
+# Broadcast Channel
+"BroadcastChannel"
+
+# SharedArrayBuffer
+"SharedArrayBuffer"
+
+# Web Locks
+"navigator.locks"
+
+# Wake Lock
+"navigator.wakeLock"
+
+# Gamepad API
+"navigator.getGamepads()"
+
+# Ambient Light
+"ondevicelight"
+
+# Proximity
+"onuserproximity"
+
+# Device Orientation
+"ondeviceorientation"
+"ondevicemotion"
+
+# Fullscreen
+"document.fullscreenElement"
+"requestFullscreen"
+
+# Picture-in-Picture
+"requestPictureInPicture"
+
+# Permissions
+"navigator.permissions"
+"permissions.query"
+
+# Credential Management
+"navigator.credentials"
+
+# Payment Request
+"PaymentRequest"
+
+# Web Authentication
+"navigator.authentication"
+"credentials.create"
+
+# USB API
+"navigator.usb"
+
+# Bluetooth API
+"navigator.bluetooth"
+
+# NFC API
+"navigator.nfc"
+
+# File System Access
+"showOpenFilePicker"
+"showSaveFilePicker"
+
+# Contact Picker
+"navigator.contacts"
+
+# Background Sync
+"serviceWorker.sync"
+
+# Background Fetch
+"serviceWorker.backgroundFetch"
+
+# Push Notifications
+"serviceWorker.pushManager"

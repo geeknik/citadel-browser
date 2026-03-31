@@ -4,6 +4,7 @@
 //! allowed schemes) applied during parsing and resource loading.
 
 use crate::error::SecurityError;
+use crate::privacy::{PrivacyEvent, PrivacyEventSender};
 use std::collections::{HashSet, HashMap};
 use std::sync::RwLock;
 use std::net::IpAddr;
@@ -355,28 +356,31 @@ pub struct SecurityContext {
     max_resource_timeout: u64,
     /// Enable detailed security logging
     detailed_logging: bool,
+    /// Optional privacy event sender for the scoreboard
+    privacy_sender: Option<PrivacyEventSender>,
 }
 
 impl Clone for SecurityContext {
     fn clone(&self) -> Self {
         Self {
-            blocked_elements: RwLock::new(self.blocked_elements.read().unwrap().clone()),
-            blocked_attributes: RwLock::new(self.blocked_attributes.read().unwrap().clone()),
+            blocked_elements: RwLock::new(self.blocked_elements.read().map(|r| r.clone()).unwrap_or_default()),
+            blocked_attributes: RwLock::new(self.blocked_attributes.read().map(|r| r.clone()).unwrap_or_default()),
             fingerprint_protection: self.fingerprint_protection.clone(),
-            allow_scripts: RwLock::new(*self.allow_scripts.read().unwrap()),
-            allow_external_resources: RwLock::new(*self.allow_external_resources.read().unwrap()),
+            allow_scripts: RwLock::new(self.allow_scripts.read().map(|r| *r).unwrap_or(false)),
+            allow_external_resources: RwLock::new(self.allow_external_resources.read().map(|r| *r).unwrap_or(false)),
             max_nesting_depth: self.max_nesting_depth,
-            csp: RwLock::new(self.csp.read().unwrap().clone()),
+            csp: RwLock::new(self.csp.read().map(|r| r.clone()).unwrap_or_default()),
             advanced_config: self.advanced_config.clone(),
-            metrics: RwLock::new(self.metrics.read().unwrap().clone()),
-            violations: RwLock::new(self.violations.read().unwrap().clone()),
-            allowed_schemes: RwLock::new(self.allowed_schemes.read().unwrap().clone()),
-            blocked_ips: RwLock::new(self.blocked_ips.read().unwrap().clone()),
-            trusted_domains: RwLock::new(self.trusted_domains.read().unwrap().clone()),
+            metrics: RwLock::new(self.metrics.read().map(|r| r.clone()).unwrap_or_default()),
+            violations: RwLock::new(self.violations.read().map(|r| r.clone()).unwrap_or_default()),
+            allowed_schemes: RwLock::new(self.allowed_schemes.read().map(|r| r.clone()).unwrap_or_default()),
+            blocked_ips: RwLock::new(self.blocked_ips.read().map(|r| r.clone()).unwrap_or_default()),
+            trusted_domains: RwLock::new(self.trusted_domains.read().map(|r| r.clone()).unwrap_or_default()),
             strict_mode: self.strict_mode,
             max_memory_usage: self.max_memory_usage,
             max_resource_timeout: self.max_resource_timeout,
             detailed_logging: self.detailed_logging,
+            privacy_sender: self.privacy_sender.clone(),
         }
     }
 }
@@ -429,6 +433,7 @@ impl SecurityContext {
             max_memory_usage: 256 * 1024 * 1024, // 256MB default
             max_resource_timeout: 30000, // 30 seconds
             detailed_logging: true,
+            privacy_sender: None,
         }
     }
     
@@ -437,12 +442,17 @@ impl SecurityContext {
         Self::new(10)
     }
 
+    /// Set the privacy event sender for scoreboard integration
+    pub fn set_privacy_sender(&mut self, sender: PrivacyEventSender) {
+        self.privacy_sender = Some(sender);
+    }
+
     /// Check if an element is blocked
     pub fn is_element_blocked(&self, element_name: &str) -> bool {
         self.blocked_elements
             .read()
-            .unwrap()
-            .contains(&element_name.to_lowercase())
+            .map(|elements| elements.contains(&element_name.to_lowercase()))
+            .unwrap_or(false)
     }
 
     /// Check if an element is allowed (not blocked)
@@ -454,40 +464,36 @@ impl SecurityContext {
     pub fn is_attribute_allowed(&self, attribute_name: &str) -> bool {
         !self.blocked_attributes
             .read()
-            .unwrap()
-            .contains(&attribute_name.to_lowercase())
+            .map(|attrs| attrs.contains(&attribute_name.to_lowercase()))
+            .unwrap_or(false)
     }
 
     /// Block an element
     pub fn block_element(&mut self, element_name: &str) {
-        self.blocked_elements
-            .write()
-            .unwrap()
-            .insert(element_name.to_lowercase());
+        if let Ok(mut elements) = self.blocked_elements.write() {
+            elements.insert(element_name.to_lowercase());
+        }
     }
 
     /// Allow an element
     pub fn allow_element(&mut self, element_name: &str) {
-        self.blocked_elements
-            .write()
-            .unwrap()
-            .remove(&element_name.to_lowercase());
+        if let Ok(mut elements) = self.blocked_elements.write() {
+            elements.remove(&element_name.to_lowercase());
+        }
     }
 
     /// Block an attribute
     pub fn block_attribute(&mut self, attribute_name: &str) {
-        self.blocked_attributes
-            .write()
-            .unwrap()
-            .insert(attribute_name.to_lowercase());
+        if let Ok(mut attrs) = self.blocked_attributes.write() {
+            attrs.insert(attribute_name.to_lowercase());
+        }
     }
 
     /// Allow an attribute
     pub fn allow_attribute(&mut self, attribute_name: &str) {
-        self.blocked_attributes
-            .write()
-            .unwrap()
-            .remove(&attribute_name.to_lowercase());
+        if let Ok(mut attrs) = self.blocked_attributes.write() {
+            attrs.remove(&attribute_name.to_lowercase());
+        }
     }
 
     /// Get the current fingerprint protection configuration
@@ -507,32 +513,40 @@ impl SecurityContext {
     
     /// Check if scripts are allowed
     pub fn allows_scripts(&self) -> bool {
-        *self.allow_scripts.read().unwrap()
+        self.allow_scripts.read().map(|v| *v).unwrap_or(false)
     }
     
     /// Enable script execution
     pub fn enable_scripts(&mut self) {
-        *self.allow_scripts.write().unwrap() = true;
+        if let Ok(mut scripts) = self.allow_scripts.write() {
+            *scripts = true;
+        }
     }
     
     /// Disable script execution
     pub fn disable_scripts(&mut self) {
-        *self.allow_scripts.write().unwrap() = false;
+        if let Ok(mut scripts) = self.allow_scripts.write() {
+            *scripts = false;
+        }
     }
     
     /// Check if external resources are allowed
     pub fn allows_external_resources(&self) -> bool {
-        *self.allow_external_resources.read().unwrap()
+        self.allow_external_resources.read().map(|v| *v).unwrap_or(false)
     }
     
     /// Enable external resource loading
     pub fn enable_external_resources(&mut self) {
-        *self.allow_external_resources.write().unwrap() = true;
+        if let Ok(mut resources) = self.allow_external_resources.write() {
+            *resources = true;
+        }
     }
     
     /// Disable external resource loading
     pub fn disable_external_resources(&mut self) {
-        *self.allow_external_resources.write().unwrap() = false;
+        if let Ok(mut resources) = self.allow_external_resources.write() {
+            *resources = false;
+        }
     }
     
     /// Get the maximum nesting depth
@@ -547,12 +561,14 @@ impl SecurityContext {
     
     /// Get the current CSP configuration
     pub fn get_csp(&self) -> ContentSecurityPolicy {
-        self.csp.read().unwrap().clone()
+        self.csp.read().map(|csp| csp.clone()).unwrap_or_default()
     }
     
     /// Set the CSP configuration
     pub fn set_csp(&mut self, csp: ContentSecurityPolicy) {
-        *self.csp.write().unwrap() = csp;
+        if let Ok(mut current_csp) = self.csp.write() {
+            *current_csp = csp;
+        }
     }
     
     /// Parse and apply CSP header
@@ -658,7 +674,9 @@ impl SecurityContext {
     
     /// Validate URL against CSP directive
     pub fn validate_csp_url(&self, url: &str, directive: CspDirective) -> Result<(), SecurityError> {
-        let csp = self.csp.read().unwrap();
+        let csp = self.csp.read().map_err(|_| SecurityError::CspViolation { 
+            directive: format!("Failed to read CSP for directive {:?}", directive) 
+        })?;
         
         // Get sources for the directive, fall back to default-src if not found
         let sources = csp.directives.get(&directive)
@@ -736,9 +754,25 @@ impl SecurityContext {
     
     /// Record a security violation
     pub fn record_violation(&self, violation: SecurityViolation) {
-        let mut violations = self.violations.write().unwrap();
-        let mut metrics = self.metrics.write().unwrap();
-        
+        // Emit privacy event for CSP violations before acquiring locks
+        if let SecurityViolation::CspViolation { ref violated_directive, ref blocked_uri, .. } = violation {
+            if let Some(sender) = &self.privacy_sender {
+                sender.emit(PrivacyEvent::CspViolation {
+                    directive: violated_directive.clone(),
+                    blocked_uri: blocked_uri.clone(),
+                });
+            }
+        }
+
+        let Ok(mut violations) = self.violations.write() else {
+            eprintln!("[Security] Failed to acquire violations lock to record violation");
+            return;
+        };
+        let Ok(mut metrics) = self.metrics.write() else {
+            eprintln!("[Security] Failed to acquire metrics lock to record violation");
+            return;
+        };
+
         match &violation {
             SecurityViolation::CspViolation { .. } => metrics.csp_violations += 1,
             SecurityViolation::BlockedElement { .. } => metrics.blocked_elements += 1,
@@ -747,10 +781,10 @@ impl SecurityContext {
             SecurityViolation::MemoryExhaustion { .. } => metrics.memory_exhaustion_attempts += 1,
             SecurityViolation::NetworkSecurity { .. } => metrics.network_security_blocks += 1,
         }
-        
+
         metrics.total_security_events += 1;
         violations.push(violation);
-        
+
         // Keep only recent violations (last 1000)
         let violations_len = violations.len();
         if violations_len > 1000 {
@@ -760,49 +794,60 @@ impl SecurityContext {
     
     /// Get security metrics
     pub fn get_metrics(&self) -> SecurityMetrics {
-        self.metrics.read().unwrap().clone()
+        self.metrics.read().map(|m| m.clone()).unwrap_or_default()
     }
     
     /// Get recent security violations
     pub fn get_recent_violations(&self, limit: usize) -> Vec<SecurityViolation> {
-        let violations = self.violations.read().unwrap();
-        let start_idx = if violations.len() > limit {
-            violations.len() - limit
-        } else {
-            0
-        };
-        violations[start_idx..].to_vec()
+        self.violations.read().map(|violations| {
+            let start_idx = if violations.len() > limit {
+                violations.len() - limit
+            } else {
+                0
+            };
+            violations[start_idx..].to_vec()
+        }).unwrap_or_default()
     }
     
     /// Clear security metrics and violations
     pub fn clear_security_data(&mut self) {
-        *self.metrics.write().unwrap() = SecurityMetrics::default();
-        self.violations.write().unwrap().clear();
+        if let Ok(mut metrics) = self.metrics.write() {
+            *metrics = SecurityMetrics::default();
+        }
+        if let Ok(mut violations) = self.violations.write() {
+            violations.clear();
+        }
     }
     
     /// Add trusted domain
     pub fn add_trusted_domain(&mut self, domain: &str) {
-        self.trusted_domains.write().unwrap().insert(domain.to_lowercase());
+        if let Ok(mut domains) = self.trusted_domains.write() {
+            domains.insert(domain.to_lowercase());
+        }
     }
     
     /// Remove trusted domain
     pub fn remove_trusted_domain(&mut self, domain: &str) {
-        self.trusted_domains.write().unwrap().remove(&domain.to_lowercase());
+        if let Ok(mut domains) = self.trusted_domains.write() {
+            domains.remove(&domain.to_lowercase());
+        }
     }
     
     /// Check if domain is trusted
     pub fn is_domain_trusted(&self, domain: &str) -> bool {
-        self.trusted_domains.read().unwrap().contains(&domain.to_lowercase())
+        self.trusted_domains.read().map(|domains| domains.contains(&domain.to_lowercase())).unwrap_or(false)
     }
     
     /// Block IP address
     pub fn block_ip(&mut self, ip: IpAddr) {
-        self.blocked_ips.write().unwrap().insert(ip);
+        if let Ok(mut ips) = self.blocked_ips.write() {
+            ips.insert(ip);
+        }
     }
     
     /// Check if IP is blocked
     pub fn is_ip_blocked(&self, ip: &IpAddr) -> bool {
-        self.blocked_ips.read().unwrap().contains(ip)
+        self.blocked_ips.read().map(|ips| ips.contains(ip)).unwrap_or(false)
     }
     
     /// Validate URL scheme
@@ -811,7 +856,9 @@ impl SecurityContext {
             let scheme = parsed_url.scheme();
             let url_scheme = UrlScheme::parse(scheme)?;
             
-            let allowed_schemes = self.allowed_schemes.read().unwrap();
+            let allowed_schemes = self.allowed_schemes.read().map_err(|_| SecurityError::InvalidScheme { 
+                scheme: scheme.to_string() 
+            })?;
             if allowed_schemes.contains(&url_scheme) {
                 Ok(())
             } else {
@@ -907,15 +954,16 @@ impl SecurityContext {
         }
         
         // Content Security Policy
-        let csp = self.csp.read().unwrap();
-        let csp_header = self.generate_csp_header(&csp);
-        if !csp_header.is_empty() {
+        if let Ok(csp) = self.csp.read() {
+            let csp_header = self.generate_csp_header(&csp);
+            if !csp_header.is_empty() {
             let header_name = if csp.report_only {
                 "Content-Security-Policy-Report-Only"
             } else {
                 "Content-Security-Policy"
             };
             headers.insert(header_name.to_string(), csp_header);
+            }
         }
         
         headers
@@ -1135,6 +1183,7 @@ impl SecurityContextBuilder {
             max_memory_usage: 256 * 1024 * 1024, // 256MB default
             max_resource_timeout: 30000, // 30 seconds
             detailed_logging: true,
+            privacy_sender: None,
         })
     }
 } 

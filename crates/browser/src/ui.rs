@@ -1,13 +1,14 @@
 use std::sync::Arc;
 use iced::{
-    widget::{button, container, text, text_input, scrollable, Space, Column, Row, horizontal_rule, vertical_rule},
-    Element, Length, Color, Alignment, theme, Background, Padding,
+    widget::{button, container, text, text_input, scrollable, Space, Column, Row},
+    Element, Length, Color, Alignment, theme, Background,
     widget::container::{Appearance, StyleSheet},
 };
 use citadel_tabs::{SendSafeTabManager as TabManager};
 use crate::app::{Message, ViewportInfo, ScrollState, ZoomLevel};
 use crate::renderer::CitadelRenderer;
 use citadel_networking::{NetworkConfig, PrivacyLevel};
+use citadel_security::{PrivacyStats, PrivacyEvent};
 
 /// Custom style for the info bar
 #[derive(Clone, Copy, Debug)]
@@ -23,6 +24,46 @@ impl StyleSheet for InfoBarStyle {
                 color: Color::from_rgb(0.2, 0.2, 0.3),
                 width: 1.0,
                 radius: 0.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+/// Custom style for the privacy scoreboard panel
+#[derive(Clone, Copy, Debug)]
+struct PrivacyPanelStyle;
+
+impl StyleSheet for PrivacyPanelStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> Appearance {
+        Appearance {
+            background: Some(Background::Color(Color::from_rgb(0.06, 0.08, 0.12))),
+            border: iced::Border {
+                color: Color::from_rgb(0.0, 0.4, 0.3),
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+/// Custom style for privacy stat rows
+#[derive(Clone, Copy, Debug)]
+struct PrivacyStatRowStyle;
+
+impl StyleSheet for PrivacyStatRowStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> Appearance {
+        Appearance {
+            background: Some(Background::Color(Color::from_rgb(0.08, 0.10, 0.15))),
+            border: iced::Border {
+                color: Color::from_rgb(0.15, 0.15, 0.22),
+                width: 1.0,
+                radius: 3.0.into(),
             },
             ..Default::default()
         }
@@ -46,12 +87,16 @@ pub enum UIMessage {
     /// Address bar submitted (Enter pressed)
     AddressBarSubmitted,
     /// Address bar focused
+    #[allow(dead_code)] // Will be used when implementing address bar focus handling
     AddressBarFocused,
     /// Address bar unfocused
+    #[allow(dead_code)] // Will be used when implementing address bar focus handling
     AddressBarUnfocused,
     /// Zoom level changed from UI
+    #[allow(dead_code)] // Will be used when implementing zoom controls
     ZoomChanged(ZoomLevel),
     /// Scroll position changed from UI
+    #[allow(dead_code)] // Will be used when implementing scroll controls
     ScrollChanged { x: f32, y: f32 },
 }
 
@@ -110,12 +155,31 @@ impl CitadelUI {
         renderer: &'a CitadelRenderer,
         viewport_info: &ViewportInfo,
         scroll_state: Option<&ScrollState>,
+        privacy_stats: &PrivacyStats,
+        privacy_panel_expanded: bool,
     ) -> Element<'a, Message> {
-        let content = Column::new()
-            .push(self.create_toolbar(tab_manager, network_config, viewport_info))
-            .push(self.create_content_area(tab_manager, renderer, viewport_info, scroll_state))
+        let toolbar = self.create_toolbar(tab_manager, network_config, viewport_info);
+        let main_content = self.create_content_area(tab_manager, renderer, viewport_info, scroll_state);
+        let privacy_panel = Self::privacy_scoreboard_view(privacy_stats, privacy_panel_expanded);
+
+        let body = Row::new()
+            .push(
+                container(main_content)
+                    .width(Length::FillPortion(4))
+                    .height(Length::Fill),
+            )
+            .push(
+                container(privacy_panel)
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill),
+            )
             .spacing(0);
-        
+
+        let content = Column::new()
+            .push(toolbar)
+            .push(body)
+            .spacing(0);
+
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -281,7 +345,7 @@ impl CitadelUI {
                         .into()
                 }
                 citadel_tabs::PageContent::Loaded { 
-                    url, 
+                    url: _, 
                     title: _,
                     content: _,
                     element_count,
@@ -546,6 +610,7 @@ impl CitadelUI {
     }
     
     /// Create keyboard navigation hints
+    #[allow(dead_code)] // Will be used when implementing navigation hints
     fn create_navigation_hints(&self) -> Element<Message> {
         let hints_text = "⌨️ Ctrl+/- Zoom • ↑↓←→ Scroll • PgUp/PgDn • Home/End";
         
@@ -561,6 +626,7 @@ impl CitadelUI {
     }
     
     /// Create responsive viewport info display
+    #[allow(dead_code)] // Will be used when implementing viewport info display
     fn create_viewport_info(&self, viewport_info: &ViewportInfo) -> Element<Message> {
         let viewport_text = format!(
             "📐 {}x{} @ {}% (DPR: {:.1})",
@@ -577,6 +643,214 @@ impl CitadelUI {
         )
         .padding([2, 8])
         .into()
+    }
+
+    // ── Privacy Scoreboard ────────────────────────────────────────────
+
+    /// Render the privacy scoreboard side panel.
+    ///
+    /// Shows live counters for trackers blocked, fingerprints neutralized,
+    /// local DNS queries, and other privacy actions.  An expandable section
+    /// lists the most recent events.
+    fn privacy_scoreboard_view(
+        stats: &PrivacyStats,
+        expanded: bool,
+    ) -> Element<'static, Message> {
+        // ── Header ──────────────────────────────────────────────────
+        let total = stats.total_actions();
+        let header = Row::new()
+            .push(
+                text("Privacy Shield")
+                    .size(14)
+                    .style(Color::from_rgb(0.0, 0.75, 0.55)),
+            )
+            .push(Space::with_width(Length::Fill))
+            .push(
+                text(format!("{}", total))
+                    .size(14)
+                    .style(Color::from_rgb(0.9, 0.9, 0.9)),
+            )
+            .align_items(Alignment::Center);
+
+        // ── Stat rows ───────────────────────────────────────────────
+        let stat_row = |label: &str, count: u64, color: Color| -> Element<'static, Message> {
+            container(
+                Row::new()
+                    .push(text(label).size(12).style(Color::from_rgb(0.7, 0.7, 0.7)))
+                    .push(Space::with_width(Length::Fill))
+                    .push(text(format!("{}", count)).size(12).style(color))
+                    .align_items(Alignment::Center)
+                    .padding([4, 6]),
+            )
+            .style(theme::Container::Custom(Box::new(PrivacyStatRowStyle)))
+            .width(Length::Fill)
+            .into()
+        };
+
+        let trackers_row = stat_row(
+            "Trackers Blocked",
+            stats.trackers_blocked,
+            Color::from_rgb(1.0, 0.35, 0.35),
+        );
+        let fingerprints_row = stat_row(
+            "Fingerprints Neutralized",
+            stats.fingerprints_neutralized,
+            Color::from_rgb(0.95, 0.65, 0.1),
+        );
+        let dns_row = stat_row(
+            "DNS Queries Local",
+            stats.dns_queries_local,
+            Color::from_rgb(0.2, 0.7, 0.95),
+        );
+        let api_row = stat_row(
+            "APIs Blocked",
+            stats.apis_not_implemented,
+            Color::from_rgb(0.6, 0.5, 0.9),
+        );
+        let csp_row = stat_row(
+            "CSP Violations",
+            stats.csp_violations,
+            Color::from_rgb(0.9, 0.4, 0.6),
+        );
+
+        let mut panel = Column::new()
+            .push(header)
+            .push(Space::with_height(8))
+            .push(trackers_row)
+            .push(Space::with_height(4))
+            .push(fingerprints_row)
+            .push(Space::with_height(4))
+            .push(dns_row)
+            .push(Space::with_height(4))
+            .push(api_row)
+            .push(Space::with_height(4))
+            .push(csp_row)
+            .spacing(0);
+
+        // ── Dropped events warning ──────────────────────────────────
+        if stats.events_dropped > 0 {
+            panel = panel
+                .push(Space::with_height(6))
+                .push(
+                    text(format!("Warning: {} events dropped", stats.events_dropped))
+                        .size(10)
+                        .style(Color::from_rgb(1.0, 0.6, 0.0)),
+                );
+        }
+
+        // ── Toggle button for recent events ─────────────────────────
+        let toggle_label = if expanded {
+            "Hide Recent Events"
+        } else {
+            "Show Recent Events"
+        };
+
+        panel = panel
+            .push(Space::with_height(8))
+            .push(
+                button(text(toggle_label).size(11))
+                    .padding([4, 8])
+                    .on_press(Message::TogglePrivacyPanel)
+                    .style(theme::Button::Secondary),
+            );
+
+        // ── Recent events list ──────────────────────────────────────
+        if expanded && !stats.recent_events.is_empty() {
+            // Show the most recent 20 events in reverse order
+            let visible_count = stats.recent_events.len().min(20);
+            let start = stats.recent_events.len().saturating_sub(visible_count);
+
+            let mut events_col = Column::new().spacing(2);
+            for event in stats.recent_events[start..].iter().rev() {
+                let (icon, summary, color) = Self::format_privacy_event(event);
+                events_col = events_col.push(
+                    container(
+                        Row::new()
+                            .push(text(icon).size(10))
+                            .push(Space::with_width(4))
+                            .push(text(summary).size(10).style(color))
+                            .align_items(Alignment::Center),
+                    )
+                    .padding([2, 4])
+                    .width(Length::Fill),
+                );
+            }
+
+            panel = panel
+                .push(Space::with_height(6))
+                .push(
+                    scrollable(events_col)
+                        .height(Length::Fill),
+                );
+        }
+
+        container(panel)
+            .padding(10)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::Container::Custom(Box::new(PrivacyPanelStyle)))
+            .into()
+    }
+
+    /// Format a single privacy event into (icon, summary_text, color).
+    fn format_privacy_event(event: &PrivacyEvent) -> (&'static str, String, Color) {
+        match event {
+            PrivacyEvent::TrackerBlocked { url, category, .. } => {
+                // Truncate the URL to keep the panel tidy
+                let short_url = if url.len() > 40 {
+                    format!("{}...", &url[..37])
+                } else {
+                    url.clone()
+                };
+                (
+                    "X",
+                    format!("{} ({})", short_url, category),
+                    Color::from_rgb(1.0, 0.35, 0.35),
+                )
+            }
+            PrivacyEvent::FingerprintNeutralized { api_name, action_taken } => (
+                "~",
+                format!("{}: {}", api_name, action_taken),
+                Color::from_rgb(0.95, 0.65, 0.1),
+            ),
+            PrivacyEvent::DnsQueryLocal { domain, cached } => {
+                let cache_str = if *cached { "cached" } else { "resolved" };
+                (
+                    "D",
+                    format!("{} ({})", domain, cache_str),
+                    Color::from_rgb(0.2, 0.7, 0.95),
+                )
+            }
+            PrivacyEvent::ApiNotImplemented { api_name, caller_origin } => {
+                let short_origin = if caller_origin.len() > 25 {
+                    format!("{}...", &caller_origin[..22])
+                } else {
+                    caller_origin.clone()
+                };
+                (
+                    "!",
+                    format!("{} from {}", api_name, short_origin),
+                    Color::from_rgb(0.6, 0.5, 0.9),
+                )
+            }
+            PrivacyEvent::CspViolation { directive, blocked_uri } => {
+                let short_uri = if blocked_uri.len() > 30 {
+                    format!("{}...", &blocked_uri[..27])
+                } else {
+                    blocked_uri.clone()
+                };
+                (
+                    "C",
+                    format!("{}: {}", directive, short_uri),
+                    Color::from_rgb(0.9, 0.4, 0.6),
+                )
+            }
+            PrivacyEvent::EventsDropped { count } => (
+                "?",
+                format!("{} dropped", count),
+                Color::from_rgb(1.0, 0.6, 0.0),
+            ),
+        }
     }
 }
 

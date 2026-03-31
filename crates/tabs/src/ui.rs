@@ -161,6 +161,7 @@ mod theme {
     use iced::widget::container;
     use iced::{Background, Color};
     
+    #[allow(dead_code)] // Will be used when implementing custom UI themes
     pub enum Container {
         Default,
         Primary,

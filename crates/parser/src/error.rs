@@ -23,6 +23,8 @@ pub enum ParserError {
     JsError(String),
     /// Layout error
     LayoutError(String),
+    /// Resource limit exceeded
+    ResourceLimitExceeded(String),
     /// Unknown error
     Unknown(String),
 }
@@ -39,6 +41,7 @@ impl fmt::Display for ParserError {
             ParserError::IoError(msg) => write!(f, "IO Error: {}", msg),
             ParserError::JsError(msg) => write!(f, "JavaScript error: {}", msg),
             ParserError::LayoutError(msg) => write!(f, "Layout error: {}", msg),
+            ParserError::ResourceLimitExceeded(msg) => write!(f, "Resource limit exceeded: {}", msg),
             ParserError::Unknown(msg) => write!(f, "Unknown error: {}", msg),
         }
     }
@@ -53,10 +56,10 @@ impl Error for ParserError {
     }
 }
 
-// Conversion from rquickjs::Error to ParserError
-impl From<rquickjs::Error> for ParserError {
-    fn from(err: rquickjs::Error) -> Self {
-        ParserError::JsError(format!("QuickJS error: {}", err))
+// Conversion from boa_engine::JsError to ParserError
+impl From<boa_engine::JsError> for ParserError {
+    fn from(err: boa_engine::JsError) -> Self {
+        ParserError::JsError(format!("Boa JS error: {}", err))
     }
 }
 

@@ -1,0 +1,22 @@
+# Citadel Browser Rendering Targets
+# Locked before Phase 2 (rendering reality check)
+# These sites MUST NOT change after Phase 2 begins
+
+# Tier 1 (simple/static HTML)
+https://example.com
+https://motherfuckingwebsite.com
+https://lite.cnn.com
+
+# Tier 2 (moderate, server-rendered)
+https://news.ycombinator.com
+https://en.wikipedia.org/wiki/Rust_(programming_language)
+https://github.com/nicehash/NiceHashQuickMiner/blob/main/README.md
+
+# Tier 3 (complex, JS-heavy)
+https://www.nytimes.com
+https://old.reddit.com
+https://www.google.com/search?q=citadel+browser
+
+# Tier 4 (adversarial, fingerprinting)
+https://coveryourtracks.eff.org
+https://browserleaks.com

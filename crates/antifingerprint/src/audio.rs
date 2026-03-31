@@ -5,6 +5,7 @@
 //! subtle noise to audio operations.
 
 use crate::{FingerprintManager, FingerprintError, metrics::ProtectionType};
+use rand::SeedableRng;
 use std::sync::Arc;
 
 /// Audio fingerprinting protection implementation
@@ -62,15 +63,18 @@ impl AudioProtection {
         if !self.enabled {
             return Ok(());
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
+
+        // Emit privacy event
+        self.manager.emit_neutralized("AudioContext.getChannelData", "noise injection");
+
         // Add very subtle noise to audio samples
         for sample in buffer.iter_mut() {
             *sample = self.manager.apply_noise_f32(*sample, self.noise_factor as f64, domain);
         }
-        
+
         Ok(())
     }
     
@@ -79,17 +83,32 @@ impl AudioProtection {
         if !self.enabled {
             return Ok(());
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
-        // Add slight noise to frequency data
+
+        // Generate deterministic noise for this domain
+        let domain_seed = self.manager.domain_seed(domain);
+        let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(domain_seed);
+
+        // Apply noise directly in the u8 range for frequency data
+        // Use a std_dev that produces subtle but visible changes (approx 1 level)
+        let std_dev = (self.noise_factor * 255.0).max(0.8) as f64;
+        let normal = rand_distr::Normal::new(0.0, std_dev).unwrap_or(rand_distr::Normal::new(0.0, 0.8).unwrap());
+
         for value in data.iter_mut() {
-            let float_val = *value as f32 / 255.0;
-            let noisy_val = self.manager.apply_noise_f32(float_val, self.noise_factor as f64, domain);
-            *value = (noisy_val * 255.0).clamp(0.0, 255.0) as u8;
+            let raw_noise = rand_distr::Distribution::sample(&normal, &mut rng);
+            // Clamp to keep changes subtle (within +/- 2 levels)
+            let clamped = raw_noise.clamp(-2.49, 2.49).round() as i16;
+            // Ensure non-zero noise so protection is always active
+            let noise = if clamped == 0 {
+                if domain_seed % 2 == 0 { 1 } else { -1 }
+            } else {
+                clamped
+            };
+            *value = (*value as i16 + noise).clamp(0, 255) as u8;
         }
-        
+
         Ok(())
     }
     
@@ -98,10 +117,13 @@ impl AudioProtection {
         if !self.enabled {
             return AudioParamValues::default();
         }
-        
+
         // Record this protection event
         self.record_protection(origin, false);
-        
+
+        // Emit privacy event
+        self.manager.emit_neutralized("AudioContext.sampleRate", "fixed value returned");
+
         // Calculate a deterministic seed for the domain
         let _domain_seed = self.manager.domain_seed(origin);
         

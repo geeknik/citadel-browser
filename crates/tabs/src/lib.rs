@@ -56,7 +56,7 @@ pub enum TabType {
 }
 
 /// Page content state for tabs
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PageContent {
     /// Page is loading
     Loading { url: String },
@@ -385,36 +385,27 @@ impl TabManager {
     }
     
     /// Get the number of open tabs
-    pub fn tab_count(&self) -> usize {
-        if let Ok(tabs) = self.tabs.read() {
-            tabs.len()
-        } else {
-            0
-        }
+    pub async fn tab_count(&self) -> usize {
+        let tabs = self.tabs.read().await;
+        tabs.len()
     }
     
     /// Get the currently active tab ID
-    pub fn get_active_tab_id(&self) -> Option<Uuid> {
-        if let Ok(active_tab) = self.active_tab.read() {
-            *active_tab
-        } else {
-            None
-        }
+    pub async fn get_active_tab_id(&self) -> Option<Uuid> {
+        let active_tab = self.active_tab.read().await;
+        *active_tab
     }
     
     /// Set the active tab
-    pub fn set_active_tab(&self, tab_id: Option<Uuid>) -> bool {
-        if let Ok(mut active_tab) = self.active_tab.write() {
-            *active_tab = tab_id;
-            true
-        } else {
-            false
-        }
+    pub async fn set_active_tab(&self, tab_id: Option<Uuid>) -> bool {
+        let mut active_tab = self.active_tab.write().await;
+        *active_tab = tab_id;
+        true
     }
     
     /// Check if there are any tabs open
-    pub fn has_tabs(&self) -> bool {
-        self.tab_count() > 0
+    pub async fn has_tabs(&self) -> bool {
+        self.tab_count().await > 0
     }
 }
 

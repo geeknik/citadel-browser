@@ -15,10 +15,12 @@ use crate::renderer::FormSubmission;
 #[derive(Debug, Clone)]
 pub struct BrowserEngine {
     /// Async runtime for network operations
+    #[allow(dead_code)] // Will be used when implementing async operations
     runtime: Arc<Runtime>,
     /// Network configuration
     network_config: NetworkConfig,
     /// Security context for parsing
+    #[allow(dead_code)] // Will be used when implementing security policy enforcement
     security_context: Arc<SecurityContext>,
     /// DNS resolver
     dns_resolver: Arc<CitadelDnsResolver>,
@@ -309,12 +311,24 @@ impl BrowserEngine {
         
         // Debug: Check DOM structure
         let root = dom.root();
-        let root_node = root.read().unwrap();
+        let root_node = match root.read() {
+            Ok(node) => node,
+            Err(_) => {
+                log::error!("Failed to acquire read lock on DOM root node");
+                return Err("Failed to acquire read lock on DOM root node".to_string());
+            }
+        };
         log::info!("🌳 DOM root type: {:?}, children: {}", root_node.data, root_node.children().len());
         
         // Walk through first level of DOM to debug
         for (i, child_handle) in root_node.children().iter().enumerate() {
-            let child = child_handle.read().unwrap();
+            let child = match child_handle.read() {
+                Ok(node) => node,
+                Err(_) => {
+                    log::warn!("Failed to read child node {}", i);
+                    continue;
+                }
+            };
             match &child.data {
                 citadel_parser::dom::NodeData::Element(element) => {
                     log::info!("  └─ Child {}: <{}> with {} children", i, element.local_name(), child.children().len());
@@ -322,7 +336,13 @@ impl BrowserEngine {
                     if element.local_name() == "html" {
                         log::info!("    🎯 Found HTML element! Walking its children...");
                         for (j, html_child) in child.children().iter().enumerate() {
-                            let html_child_node = html_child.read().unwrap();
+                            let html_child_node = match html_child.read() {
+                                Ok(node) => node,
+                                Err(_) => {
+                                    log::warn!("Failed to read HTML child node {}", j);
+                                    continue;
+                                }
+                            };
                             match &html_child_node.data {
                                 citadel_parser::dom::NodeData::Element(he) => {
                                     log::info!("      HTML child {}: <{}> with {} children", j, he.local_name(), html_child_node.children().len());
@@ -330,7 +350,13 @@ impl BrowserEngine {
                                     if he.local_name() == "body" {
                                         log::info!("        🎯 Found BODY element! Sample of its children:");
                                         for (k, body_child) in html_child_node.children().iter().take(5).enumerate() {
-                                            let body_child_node = body_child.read().unwrap();
+                                            let body_child_node = match body_child.read() {
+                                                Ok(node) => node,
+                                                Err(_) => {
+                                                    log::warn!("Failed to read body child node {}", k);
+                                                    continue;
+                                                }
+                                            };
                                             match &body_child_node.data {
                                                 citadel_parser::dom::NodeData::Element(be) => {
                                                     log::info!("          Body child {}: <{}> with {} children", k, be.local_name(), body_child_node.children().len());
@@ -476,6 +502,7 @@ impl BrowserEngine {
     }
     
     /// Extract title from HTML content
+    #[allow(dead_code)] // Will be used when implementing HTML title extraction
     fn extract_title(&self, html: &str) -> Option<String> {
         // Simple regex-based title extraction
         if let Some(start) = html.find("<title>") {
@@ -488,6 +515,7 @@ impl BrowserEngine {
     }
     
     /// Extract text content from HTML for basic display (legacy method)
+    #[allow(dead_code)] // Will be used when implementing content extraction
     fn extract_content(&self, html: &str) -> String {
         let mut content = String::new();
         let mut in_tag = false;
@@ -538,6 +566,7 @@ impl BrowserEngine {
     }
     
     /// Enhanced text content extraction with better filtering
+    #[allow(dead_code)] // Will be used when implementing enhanced content extraction
     fn extract_content_enhanced(&self, html: &str) -> String {
         let mut content = String::new();
         let mut in_tag = false;
@@ -680,14 +709,14 @@ impl BrowserEngine {
         let mut count = 0;
         let mut in_tag = false;
         let mut is_closing_tag = false;
-        let mut is_self_closing = false;
+        let mut _is_self_closing = false;
         
         for ch in html.chars() {
             match ch {
                 '<' => {
                     in_tag = true;
                     is_closing_tag = false;
-                    is_self_closing = false;
+                    _is_self_closing = false;
                 }
                 '>' => {
                     if in_tag && !is_closing_tag {
@@ -746,10 +775,13 @@ impl BrowserEngine {
             "POST" => {
                 // Encode form data as application/x-www-form-urlencoded
                 let form_data = self.encode_form_data(&submission.data);
-                request = request
+                #[allow(unused_assignments)] // Intentional request reassignment for POST data
+                {
+                    request = request
                     .with_body(form_data.as_bytes())
                     .with_header("Content-Type", "application/x-www-form-urlencoded")
                     .with_header("Content-Length", &form_data.len().to_string());
+                }
                 
                 log::info!("📦 POST form data: {} bytes", form_data.len());
             }
@@ -760,14 +792,21 @@ impl BrowserEngine {
                 
                 if !query_string.is_empty() {
                     if url_with_query.query().is_some() {
-                        url_with_query.set_query(Some(&format!("{}?{}", url_with_query.query().unwrap(), query_string)));
+                        if let Some(existing_query) = url_with_query.query() {
+                            url_with_query.set_query(Some(&format!("{}?{}", existing_query, query_string)));
+                        } else {
+                            url_with_query.set_query(Some(&query_string));
+                        }
                     } else {
                         url_with_query.set_query(Some(&query_string));
                     }
                 }
                 
-                request = Request::new(Method::GET, url_with_query.as_str())
-                    .map_err(|e| format!("Failed to create GET request: {}", e))?;
+                #[allow(unused_assignments)] // Intentional request reassignment for GET with query
+                {
+                    request = Request::new(Method::GET, url_with_query.as_str())
+                        .map_err(|e| format!("Failed to create GET request: {}", e))?;
+                }
                 log::info!("🔗 GET form submission with query: {} bytes", query_string.len());
             }
             _ => {
@@ -813,11 +852,11 @@ mod tests {
 
     #[test]
     fn test_engine_creation() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Runtime::new().expect("Runtime creation should succeed in tests");
         
         let result = rt.block_on(async {
             // Create a separate runtime for the BrowserEngine to own
-            let engine_rt = tokio::runtime::Runtime::new().unwrap();
+            let engine_rt = tokio::runtime::Runtime::new().expect("Engine runtime creation should succeed");
             let runtime = Arc::new(engine_rt);
             let network_config = NetworkConfig::default();
             let security_context = Arc::new(SecurityContext::new(10));
@@ -830,11 +869,11 @@ mod tests {
 
     #[test]
     fn test_url_validation() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Runtime::new().expect("Runtime creation should succeed in tests");
         
         let result = rt.block_on(async {
             // Create a separate runtime for the BrowserEngine to own
-            let engine_rt = tokio::runtime::Runtime::new().unwrap();
+            let engine_rt = tokio::runtime::Runtime::new().expect("Engine runtime creation should succeed");
             let runtime = Arc::new(engine_rt);
             let network_config = NetworkConfig::default();
             let security_context = Arc::new(SecurityContext::new(10));
@@ -842,14 +881,14 @@ mod tests {
             let engine = BrowserEngine::new(runtime, network_config, security_context).await?;
             
             // Test invalid URL scheme
-            let invalid_url = Url::parse("ftp://example.com").unwrap();
+            let invalid_url = Url::parse("ftp://example.com").expect("URL parsing should succeed");
             let load_result = engine.load_page_with_progress(invalid_url, uuid::Uuid::new_v4()).await;
             
             // Return both engine and load_result so we can drop engine outside the async context
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>((engine, load_result))
         });
         
-        let (engine, load_result) = result.unwrap();
+        let (engine, load_result) = result.expect("Engine creation should succeed");
         drop(engine); // Explicitly drop the engine (and its runtime) outside the async context
         
         assert!(load_result.is_err());

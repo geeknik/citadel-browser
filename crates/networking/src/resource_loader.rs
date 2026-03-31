@@ -342,7 +342,14 @@ impl ResourceLoader {
             
             async move {
                 // Acquire semaphore permit
-                let _permit = semaphore.acquire().await.unwrap();
+                let _permit = match semaphore.acquire().await {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        log::error!("Failed to acquire semaphore permit for resource loading");
+                        let error = NetworkError::ResourceError("Failed to acquire semaphore permit".to_string());
+                        return (resource_ref.url.clone(), Err(error));
+                    }
+                };
                 
                 // Load the resource
                 let result = Self::load_single_resource(
@@ -354,7 +361,14 @@ impl ResourceLoader {
                 
                 // Update progress
                 {
-                    let mut prog = progress_arc.lock().unwrap();
+                    let mut prog = match progress_arc.lock() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            log::warn!("Failed to acquire progress lock");
+                            // Still return the result even if progress update fails
+                            return (resource_ref.url.clone(), result);
+                        }
+                    };
                     match &result {
                         Ok(response) => {
                             if response.from_cache() {
@@ -431,7 +445,13 @@ impl ResourceLoader {
         
         // Get final progress
         let final_progress = {
-            let prog = progress_arc.lock().unwrap();
+            let prog = match progress_arc.lock() {
+                Ok(p) => p,
+                Err(_) => {
+                    log::error!("Failed to acquire final progress lock");
+                    return Err(NetworkError::ResourceError("Failed to acquire progress lock".to_string()));
+                }
+            };
             prog.clone()
         };
         
@@ -639,10 +659,10 @@ mod tests {
     #[tokio::test]
     async fn test_empty_resource_loading() {
         let config = NetworkConfig::default();
-        let loader = ResourceLoader::new(config).await.unwrap();
+        let loader = ResourceLoader::new(config).await.expect("ResourceLoader creation should succeed in tests");
         
         let progress = LoadProgress::new(0);
-        let result = loader.load_resources(vec![], progress).await.unwrap();
+        let result = loader.load_resources(vec![], progress).await.expect("Empty resource loading should succeed");
         
         assert_eq!(result.responses.len(), 0);
         assert_eq!(result.errors.len(), 0);

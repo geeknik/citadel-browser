@@ -11,10 +11,16 @@ citadel-networking = { path = "../crates/networking" }
 citadel-parser = { path = "../crates/parser" }
 citadel-security = { path = "../crates/security" }
 citadel-tabs = { path = "../crates/tabs" }
+citadel-antifingerprint = { path = "../crates/antifingerprint" }
 tokio = { version = "1.36.0", features = ["rt", "macros"] }
 url = "2.5.4"
 rand = "0.8.5"
+rand_chacha = "0.3"
+rand_distr = "0.4"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.114"
+log = "0.4"
+thiserror = "1.0"
 
 [build-dependencies]
 arbitrary = { version = "1", features = ["derive"] }

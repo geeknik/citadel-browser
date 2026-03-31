@@ -11,6 +11,7 @@ use crate::request::{Method, Request};
 use crate::response::Response;
 use crate::NetworkConfig;
 use crate::PrivacyLevel;
+use crate::tracker_blocking::TrackerBlockingEngine;
 
 /// Resource loading policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +112,9 @@ pub struct ResourceManager {
     /// Known tracker domains
     tracker_domains: Arc<RwLock<HashMap<String, OriginType>>>,
     
+    /// Integrated tracker blocking engine
+    tracker_blocker: Option<Arc<TrackerBlockingEngine>>,
+    
     /// Resource load stats for the current session
     load_stats: Arc<Mutex<ResourceStats>>,
     
@@ -148,6 +152,14 @@ impl ResourceManager {
     
     /// Create a new ResourceManager with custom configuration
     pub async fn with_config(config: ResourceManagerConfig) -> Result<Self, NetworkError> {
+        Self::with_config_and_tracker_blocking(config, None).await
+    }
+    
+    /// Create a new ResourceManager with custom configuration and tracker blocking
+    pub async fn with_config_and_tracker_blocking(
+        config: ResourceManagerConfig, 
+        _tracker_blocker: Option<Arc<TrackerBlockingEngine>>
+    ) -> Result<Self, NetworkError> {
         // Create the resource fetcher
         let resource = Arc::new(
             Resource::new(config.network_config.clone()).await?
@@ -180,6 +192,7 @@ impl ResourceManager {
             tracker_domains: Arc::new(RwLock::new(tracker_domains)),
             load_stats: Arc::new(Mutex::new(ResourceStats::default())),
             main_frame_url: Arc::new(RwLock::new(None)),
+            tracker_blocker: _tracker_blocker,
         })
     }
     
@@ -190,8 +203,23 @@ impl ResourceManager {
         }
     }
     
-    /// Check if a resource should be blocked based on policy
-    fn should_block_resource(&self, url: &Url, resource_type: ResourceType) -> Option<String> {
+    /// Check if a resource should be blocked based on policy (async version with tracker blocking)
+    async fn should_block_resource_advanced(&self, url: &Url, resource_type: ResourceType) -> Option<String> {
+        // Use advanced tracker blocking engine if available
+        if let Some(ref blocker) = self.tracker_blocker {
+            if let Some(blocked) = blocker.should_block_url(url.as_str(), Some(resource_type)).await {
+                // Record the blocked request
+                blocker.record_blocked_request(blocked.clone()).await;
+                return Some(blocked.reason);
+            }
+        }
+        
+        // Fall back to basic policy checking
+        self.should_block_resource_basic(url, resource_type)
+    }
+    
+    /// Check if a resource should be blocked based on policy (basic version)
+    fn should_block_resource_basic(&self, url: &Url, resource_type: ResourceType) -> Option<String> {
         // Get main frame URL for comparison
         let main_frame = if let Ok(main_frame) = self.main_frame_url.read() {
             main_frame.clone()
@@ -430,8 +458,8 @@ impl ResourceManager {
         // Determine resource type if not specified
         let resource_type = resource_type.unwrap_or(ResourceType::Other);
         
-        // Check policy before loading
-        if let Some(block_reason) = self.should_block_resource(&url, resource_type) {
+        // Check policy before loading (async)
+        if let Some(block_reason) = self.should_block_resource_advanced(&url, resource_type).await {
             // Update blocked stats
             if let Ok(mut stats) = self.load_stats.try_lock() {
                 let counter = stats.blocked.entry(block_reason.clone()).or_insert(0);
@@ -615,6 +643,33 @@ impl ResourceManager {
         }
         
         false
+    }
+    
+    /// Set the tracker blocking engine
+    pub fn set_tracker_blocker(&mut self, tracker_blocker: Arc<TrackerBlockingEngine>) {
+        self.tracker_blocker = Some(tracker_blocker);
+        log::info!("🛡️ Tracker blocking engine integrated with resource manager");
+    }
+    
+    /// Create a ResourceManager with integrated tracker blocking
+    pub async fn with_tracker_blocking(config: ResourceManagerConfig) -> Result<Self, NetworkError> {
+        // Create tracker blocking engine from network config
+        let tracker_config = config.network_config.tracker_blocking.clone();
+        let tracker_blocker = Arc::new(TrackerBlockingEngine::with_config(tracker_config).await?);
+        
+        Self::with_config_and_tracker_blocking(config, Some(tracker_blocker)).await
+    }
+    
+    /// Get comprehensive blocking statistics
+    pub async fn get_comprehensive_stats(&self) -> (ResourceStats, Option<crate::tracker_blocking::TrackerBlockingStats>) {
+        let resource_stats = self.get_stats().await;
+        let tracker_stats = if let Some(ref blocker) = self.tracker_blocker {
+            Some(blocker.get_stats().await)
+        } else {
+            None
+        };
+        
+        (resource_stats, tracker_stats)
     }
     
     /// Update the resource manager configuration

@@ -1,0 +1,388 @@
+# JavaScript Sandbox Escape Dictionary
+# Attack vectors for breaking out of JavaScript sandboxes
+
+# Global Object Access
+"window"
+"global"
+"self"
+"top"
+"parent"
+"frames"
+"globalThis"
+"this"
+
+# Constructor Property Access
+".constructor"
+".constructor.constructor"
+"({}).__proto__.constructor"
+"[].__proto__.constructor"
+"''.__proto__.constructor"
+"(0).__proto__.constructor"
+"(/./).__proto__.constructor"
+"(function(){}).__proto__.constructor"
+
+# Function Constructor Variations
+"Function"
+"new Function"
+"Function('return this')()"
+"(function(){}).constructor"
+"(()=>{}).constructor"
+"(async function(){}).constructor"
+"(function*(){}).constructor"
+
+# Eval Access Methods
+"eval"
+"(1,eval)"
+"window.eval"
+"global.eval"
+"this.eval"
+"eval.call"
+"eval.apply"
+
+# Indirect Function Creation
+"setTimeout"
+"setInterval"
+"setImmediate"
+"requestAnimationFrame"
+"requestIdleCallback"
+
+# String to Code Execution
+"setTimeout('code', 0)"
+"setInterval('code', 0)"
+"new Function('code')"
+"eval('code')"
+"(1,eval)('code')"
+
+# Prototype Chain Traversal
+"__proto__"
+"prototype"
+"constructor.prototype"
+"__proto__.constructor"
+"prototype.constructor"
+
+# Object Property Access
+"Object.getPrototypeOf"
+"Object.getOwnPropertyDescriptor"
+"Object.getOwnPropertyNames"
+"Object.getOwnPropertySymbols"
+"Object.keys"
+"Object.values"
+"Object.entries"
+
+# Reflection APIs
+"Reflect.get"
+"Reflect.set"
+"Reflect.has"
+"Reflect.deleteProperty"
+"Reflect.ownKeys"
+"Reflect.getPrototypeOf"
+"Reflect.setPrototypeOf"
+"Reflect.construct"
+"Reflect.apply"
+
+# Proxy Object Exploitation
+"new Proxy"
+"Proxy.revocable"
+"handler.get"
+"handler.set"
+"handler.has"
+"handler.deleteProperty"
+"handler.ownKeys"
+"handler.construct"
+"handler.apply"
+
+# Error Object Stack Manipulation
+"Error().stack"
+"new Error().stack"
+"TypeError().stack"
+"ReferenceError().stack"
+"SyntaxError().stack"
+"Error.captureStackTrace"
+"Error.prepareStackTrace"
+
+# Arguments Object Access
+"arguments"
+"arguments.callee"
+"arguments.caller"
+"arguments.callee.caller"
+"arguments.callee.constructor"
+
+# Function Properties
+"caller"
+"callee"
+"name"
+"length"
+"toString"
+"valueOf"
+"call"
+"apply"
+"bind"
+
+# Symbol Manipulation
+"Symbol"
+"Symbol.for"
+"Symbol.keyFor"
+"Symbol.iterator"
+"Symbol.asyncIterator"
+"Symbol.hasInstance"
+"Symbol.isConcatSpreadable"
+"Symbol.species"
+"Symbol.toPrimitive"
+"Symbol.toStringTag"
+"Symbol.unscopables"
+
+# Generator/Iterator Exploitation
+"function*"
+"async function*"
+"yield"
+"yield*"
+"next"
+"return"
+"throw"
+"Symbol.iterator"
+"Symbol.asyncIterator"
+
+# WeakMap/WeakSet/WeakRef
+"WeakMap"
+"WeakSet"
+"WeakRef"
+"FinalizationRegistry"
+
+# Array Methods for Code Execution
+"Array.prototype.map"
+"Array.prototype.forEach"
+"Array.prototype.filter"
+"Array.prototype.reduce"
+"Array.prototype.find"
+"Array.prototype.some"
+"Array.prototype.every"
+
+# String Methods for Obfuscation
+"String.fromCharCode"
+"String.fromCodePoint"
+"String.raw"
+"atob"
+"btoa"
+"escape"
+"unescape"
+"encodeURI"
+"decodeURI"
+"encodeURIComponent"
+"decodeURIComponent"
+
+# JSON Parsing for Code Injection
+"JSON.parse"
+"JSON.stringify"
+
+# Template Literals
+"`${code}`"
+"`${eval('code')}`"
+"`${Function('code')()}`"
+
+# Regular Expression Constructor
+"RegExp"
+"new RegExp"
+"/pattern/flags"
+
+# Date Object Manipulation
+"Date"
+"new Date"
+"Date.now"
+"Date.parse"
+"Date.UTC"
+
+# Math Object Access
+"Math"
+"Math.random"
+"Math.floor"
+"Math.ceil"
+"Math.round"
+
+# Number Constructor
+"Number"
+"new Number"
+"parseInt"
+"parseFloat"
+"isNaN"
+"isFinite"
+
+# Boolean Constructor
+"Boolean"
+"new Boolean"
+
+# ArrayBuffer and Typed Arrays
+"ArrayBuffer"
+"SharedArrayBuffer"
+"Uint8Array"
+"Uint16Array"
+"Uint32Array"
+"Int8Array"
+"Int16Array"
+"Int32Array"
+"Float32Array"
+"Float64Array"
+"DataView"
+
+# DOM Access Attempts
+"document"
+"window.document"
+"document.createElement"
+"document.getElementById"
+"document.querySelector"
+"document.querySelectorAll"
+"document.body"
+"document.head"
+"document.documentElement"
+
+# Event System Access
+"addEventListener"
+"removeEventListener"
+"dispatchEvent"
+"createEvent"
+
+# Navigation and Location
+"location"
+"location.href"
+"location.protocol"
+"location.host"
+"location.pathname"
+"location.search"
+"location.hash"
+"history"
+"history.pushState"
+"history.replaceState"
+
+# Storage APIs
+"localStorage"
+"sessionStorage"
+"indexedDB"
+
+# Network APIs
+"fetch"
+"XMLHttpRequest"
+"WebSocket"
+"EventSource"
+"navigator.sendBeacon"
+
+# Worker APIs
+"Worker"
+"SharedWorker"
+"ServiceWorker"
+"navigator.serviceWorker"
+
+# Obfuscation Techniques
+"String.fromCharCode(97,108,101,114,116)"
+"[]['filter']['constructor']"
+"[]['map']['constructor']"
+"+[![]]+[+[]]"
+"(!![]+[])[+[]]"
+"(![]+[])[+!+[]]"
+"({}+[])"
+"[]+{}"
+
+# Bracket Notation Access
+"this['constructor']"
+"window['Function']"
+"global['eval']"
+"self['setTimeout']"
+
+# Computed Property Access
+"this[String.fromCharCode(99,111,110,115,116,114,117,99,116,111,114)]"
+"this['const'+'ructor']"
+"this['con'+'str'+'uctor']"
+
+# Unicode Escape Sequences
+"\\u0063\\u006f\\u006e\\u0073\\u0074\\u0072\\u0075\\u0063\\u0074\\u006f\\u0072"
+"\\x63\\x6f\\x6e\\x73\\x74\\x72\\x75\\x63\\x74\\x6f\\x72"
+
+# Octal Escape Sequences
+"\\143\\157\\156\\163\\164\\162\\165\\143\\164\\157\\162"
+
+# Base64 Encoded Payloads
+"YWxlcnQ="
+"ZXZhbA=="
+"RnVuY3Rpb24="
+
+# Hex Encoded Payloads
+"616c657274"
+"6576616c"
+"46756e6374696f6e"
+
+# URL Encoded Payloads
+"%61%6c%65%72%74"
+"%65%76%61%6c"
+"%46%75%6e%63%74%69%6f%6e"
+
+# Double/Triple Encoding
+"%2561%256c%2565%2572%2574"
+"%25%36%31%25%36%63%25%36%35%25%37%32%25%37%34"
+
+# Null Byte Injection
+"eval\\x00"
+"Function\\x00"
+"constructor\\x00"
+
+# Comment Injection
+"eval/**/("
+"Function/*comment*/("
+"construct/**/or"
+
+# Whitespace Variations
+"eval\\t("
+"eval\\n("
+"eval\\r("
+"eval\\f("
+"eval\\v("
+
+# Case Variations
+"EVAL"
+"Eval"
+"eVaL"
+"EvAl"
+
+# Property Descriptor Manipulation
+"Object.defineProperty"
+"Object.defineProperties"
+"Object.getOwnPropertyDescriptor"
+
+# Getter/Setter Exploitation
+"get constructor"
+"set constructor"
+"__defineGetter__"
+"__defineSetter__"
+"__lookupGetter__"
+"__lookupSetter__"
+
+# With Statement Abuse
+"with(window)"
+"with(global)"
+"with(this)"
+"with(document)"
+
+# For-in Loop Property Enumeration
+"for(let p in window)"
+"for(let p in global)"
+"for(let p in this)"
+
+# Try-Catch Error Information
+"try{undefined()}catch(e){e.constructor}"
+"try{[].x.x}catch(e){e.constructor.constructor}"
+
+# Performance/Timing APIs
+"performance"
+"performance.now"
+"Date.now"
+"console.time"
+"console.timeEnd"
+
+# Import/Export (Modules)
+"import()"
+"import.meta"
+"export"
+
+# Async/Await Exploitation
+"async function"
+"await"
+"Promise"
+"Promise.resolve"
+"Promise.reject"

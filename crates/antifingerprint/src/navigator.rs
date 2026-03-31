@@ -5,6 +5,7 @@
 //! that can be used to identify browsers.
 
 use crate::FingerprintManager;
+use citadel_security::context::FingerprintProtectionLevel;
 use serde::{Deserialize, Serialize};
 
 /// Normalized browser categories for platform consistency
@@ -125,9 +126,13 @@ impl NavigatorProtection {
         if !self.enabled {
             return;
         }
-        
+
         let browser_category = BrowserCategory::from_user_agent(&real_navigator.user_agent);
         self.normalized_info = Some(self.normalize_navigator(real_navigator, browser_category));
+
+        // Emit privacy event for navigator normalization
+        self.manager.emit_neutralized("navigator.hardwareConcurrency", "normalized value");
+        self.manager.emit_neutralized("navigator.platform", "normalized value");
     }
     
     /// Get the normalized navigator information
@@ -147,7 +152,13 @@ impl NavigatorProtection {
         if !self.enabled {
             return real;
         }
-        
+
+        let protection_level = self.manager.protection_config().level;
+        let hw_concurrency = self.normalize_hardware_concurrency_for_level(
+            real.hardware_concurrency,
+            protection_level,
+        );
+
         // Keep the real browser category but normalize fingerprinting factors
         let normalized = match category {
             BrowserCategory::Chrome => NavigatorInfo {
@@ -156,7 +167,7 @@ impl NavigatorProtection {
                 platform: self.normalize_platform(&real.platform),
                 vendor: "Google Inc.".to_string(),
                 languages: real.languages,
-                hardware_concurrency: self.normalize_hardware_concurrency(real.hardware_concurrency),
+                hardware_concurrency: hw_concurrency,
                 device_memory: Some(8.0), // Standardize to 8GB
                 max_touch_points: if real.max_touch_points > 0 { 5 } else { 0 },
                 plugins_enabled: false, // Disable plugins for privacy
@@ -167,7 +178,7 @@ impl NavigatorProtection {
                 platform: self.normalize_platform(&real.platform),
                 vendor: "".to_string(), // Firefox typically has empty vendor
                 languages: real.languages,
-                hardware_concurrency: self.normalize_hardware_concurrency(real.hardware_concurrency),
+                hardware_concurrency: hw_concurrency,
                 device_memory: None, // Firefox doesn't support device_memory
                 max_touch_points: if real.max_touch_points > 0 { 5 } else { 0 },
                 plugins_enabled: false,
@@ -178,7 +189,7 @@ impl NavigatorProtection {
                 platform: self.normalize_platform(&real.platform),
                 vendor: "Apple Computer, Inc.".to_string(),
                 languages: real.languages,
-                hardware_concurrency: self.normalize_hardware_concurrency(real.hardware_concurrency),
+                hardware_concurrency: hw_concurrency,
                 device_memory: None, // Safari doesn't support device_memory
                 max_touch_points: if real.max_touch_points > 0 { 5 } else { 0 },
                 plugins_enabled: false,
@@ -191,7 +202,7 @@ impl NavigatorProtection {
                     platform: self.normalize_platform(&real.platform),
                     vendor: real.vendor,
                     languages: real.languages,
-                    hardware_concurrency: self.normalize_hardware_concurrency(real.hardware_concurrency),
+                    hardware_concurrency: hw_concurrency,
                     device_memory: Some(8.0),
                     max_touch_points: if real.max_touch_points > 0 { 5 } else { 0 },
                     plugins_enabled: false,
@@ -199,7 +210,7 @@ impl NavigatorProtection {
                 }
             }
         };
-        
+
         normalized
     }
     
@@ -229,6 +240,33 @@ impl NavigatorProtection {
             8
         } else {
             16
+        }
+    }
+
+    /// Normalize hardware concurrency based on the protection level
+    /// At Maximum protection, use stricter bucket boundaries to further reduce entropy
+    fn normalize_hardware_concurrency_for_level(
+        &self,
+        real_cores: u32,
+        level: FingerprintProtectionLevel,
+    ) -> u32 {
+        match level {
+            FingerprintProtectionLevel::Maximum => {
+                // At maximum protection, use tighter buckets:
+                // values on the upper boundary get pushed to the next tier
+                // to increase the anonymity set of the higher bucket
+                if real_cores <= 2 {
+                    2
+                } else if real_cores <= 4 {
+                    4
+                } else if real_cores < 8 {
+                    8
+                } else {
+                    // 8 and above all report 16
+                    16
+                }
+            }
+            _ => self.normalize_hardware_concurrency(real_cores),
         }
     }
     

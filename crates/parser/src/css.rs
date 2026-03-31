@@ -435,11 +435,11 @@ impl CitadelCssParser {
         while !parser.is_exhausted() {
             // Skip whitespace and comments
             parser.skip_whitespace();
-            
+
             if parser.is_exhausted() {
                 break;
             }
-            
+
             match self.parse_rule(&mut parser) {
                 Ok(rule) => {
                     rules.push(rule);
@@ -451,13 +451,19 @@ impl CitadelCssParser {
             }
         }
 
+        // If the cssparser-based approach returned no rules but input is non-empty,
+        // fall back to the simple string-splitting parser which handles basic CSS reliably.
+        if rules.is_empty() && !content.trim().is_empty() {
+            rules = self.parse_css_simple(content).unwrap_or_default();
+        }
+
         Ok(CitadelStylesheet {
             rules,
             security_context: self.security_context.clone(),
         })
     }
-    
-    /// Simple CSS parser for basic rules
+
+    /// Simple CSS parser for basic rules — fallback when cssparser returns empty
     fn parse_css_simple(&self, content: &str) -> ParserResult<Vec<StyleRule>> {
         let mut rules = Vec::new();
         
@@ -504,6 +510,7 @@ impl CitadelCssParser {
     }
     
     /// Simple declaration parser
+    #[allow(dead_code)] // Will be used when implementing fallback CSS parsing
     fn parse_declarations_simple(&self, declarations_str: &str) -> ParserResult<Vec<Declaration>> {
         let mut declarations = Vec::new();
         
@@ -569,8 +576,21 @@ impl CitadelCssParser {
                         ));
                     }
                     
-                    let declarations = parser.parse_nested_block(|parser| {
-                        Ok(self.parse_declarations(parser).unwrap_or_default())
+                    // Extract declaration text from the block and parse with the reliable simple parser.
+                    // The cssparser API's parse_nested_block + expect_ident approach fails to
+                    // find properties in many valid CSS blocks.
+                    let declarations = parser.parse_nested_block(|block_parser| {
+                        // Collect all tokens as a CSS string
+                        let mut decl_text = String::new();
+                        while !block_parser.is_exhausted() {
+                            match block_parser.next() {
+                                Ok(token) => {
+                                    decl_text.push_str(&token.to_css_string());
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                        Ok(self.parse_declarations_simple(&decl_text).unwrap_or_default())
                     }).map_err(|e: cssparser::ParseError<()>| ParserError::CssError(format!("Error parsing declarations: {:?}", e)))?;
                     
                     let specificity = self.calculate_specificity(&selectors);
@@ -1622,7 +1642,7 @@ mod tests {
         "#;
 
         let result = parser.parse_stylesheet(css).unwrap();
-        assert_eq!(result.rules().len(), 3);
+        assert_eq!(result.rules.len(), 3);
         
         // Test that rules were parsed correctly
         let body_rule = &result.rules()[0];

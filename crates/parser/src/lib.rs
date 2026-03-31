@@ -16,6 +16,7 @@ pub mod config;
 pub mod js;
 pub mod layout_simple;
 pub mod layout;
+pub mod memory_limits;
 // Use the full Taffy layout engine for proper CSS layout support
 pub use layout::{CitadelLayoutEngine, LayoutResult, LayoutMetrics, LayoutRect, LayoutSize};
 
@@ -30,6 +31,7 @@ pub use css::{CitadelCssParser as CssParser, CitadelStylesheet, ComputedStyle, S
 // Re-export layout types from the full Taffy engine
 pub use metrics::{ParserMetrics, DocumentMetrics, ParseTimer};
 pub use config::ParserConfig;
+pub use memory_limits::{ParserMemoryLimits, ParserResourceTracker, ParserResourceUsage, ParserUtilization, ParserAttackDetector};
 
 /// Security level for the parser
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,7 +212,7 @@ pub fn create_js_engine() -> ParserResult<js::CitadelJSEngine> {
 
 /// Execute JavaScript code and return the result as a string
 pub fn execute_js_simple(code: &str) -> ParserResult<String> {
-    let engine = create_js_engine()?;
+    let mut engine = create_js_engine()?;
     engine.execute_simple(code)
 }
 
@@ -284,14 +286,14 @@ mod tests {
         
         // Test depth tracking
         assert_eq!(context.current_depth, 0);
-        context.increment_depth().unwrap();
+        context.increment_depth().expect("Context depth increment should succeed");
         assert_eq!(context.current_depth, 1);
         context.decrement_depth();
         assert_eq!(context.current_depth, 0);
         
         // Test token counting
         assert_eq!(context.tokens_processed, 0);
-        context.count_token().unwrap();
+        context.count_token().expect("Token counting should succeed");
         assert_eq!(context.tokens_processed, 1);
         context.reset_token_count();
         assert_eq!(context.tokens_processed, 0);
@@ -324,7 +326,7 @@ mod tests {
         assert!(result.is_ok());
         
         // Since we don't have Dom methods yet, just verify it parsed
-        let _dom = result.unwrap();
+        let _dom = result.expect("Basic HTML parsing should succeed");
     }
 
     #[test]
@@ -377,7 +379,7 @@ mod tests {
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
         
-        let dom = result.unwrap();
+        let dom = result.expect("HTML parsing should succeed");
         let content = dom.get_text_content();
         
         // Script content should be removed/sanitized
@@ -394,7 +396,7 @@ mod tests {
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
         
-        let dom = result.unwrap();
+        let dom = result.expect("HTML parsing should succeed");
         assert!(dom.get_text_content().is_empty() || dom.get_text_content().trim().is_empty());
     }
 
@@ -408,7 +410,7 @@ mod tests {
         // HTML5 parser should handle malformed HTML gracefully
         assert!(result.is_ok());
         
-        let dom = result.unwrap();
+        let dom = result.expect("HTML parsing should succeed");
         assert!(dom.get_title().contains("Test"));
     }
 
@@ -429,7 +431,7 @@ mod tests {
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
         
-        let dom = result.unwrap();
+        let dom = result.expect("HTML parsing should succeed");
         let title = dom.get_title();
         let content = dom.get_text_content();
         
@@ -486,7 +488,7 @@ mod tests {
         let result = parse_html(html, security_context);
         assert!(result.is_ok());
         
-        let dom = result.unwrap();
+        let dom = result.expect("HTML parsing should succeed");
         let content = dom.get_text_content();
         
         // Comments should not appear in text content
@@ -538,7 +540,7 @@ body {
         let result = parse_css(css, security_context);
         assert!(result.is_ok());
         
-        let stylesheet = result.unwrap();
+        let stylesheet = result.expect("CSS parsing should succeed");
         assert!(stylesheet.rules.len() > 0);
     }
 
@@ -590,7 +592,7 @@ body {
         }).collect();
 
         for handle in handles {
-            let result = handle.join().unwrap();
+            let result = handle.join().expect("Thread join should succeed");
             assert!(result.is_ok());
         }
     }
@@ -718,22 +720,22 @@ body {
     #[test]
     fn test_js_engine_integration() {
         // Test basic JavaScript execution
-        let result = execute_js_simple("5 + 3").unwrap();
+        let result = execute_js_simple("5 + 3").expect("JS execution should succeed");
         assert_eq!(result, "8");
         
         // Test with string operations
-        let result = execute_js_simple("'Hello ' + 'World'").unwrap();
+        let result = execute_js_simple("'Hello ' + 'World'").expect("JS string operation should succeed");
         assert_eq!(result, "Hello World");
         
         // Test boolean operations
-        let result = execute_js_simple("true && false").unwrap();
+        let result = execute_js_simple("true && false").expect("JS boolean operation should succeed");
         assert_eq!(result, "false");
         
         // Test null and undefined
-        let result = execute_js_simple("null").unwrap();
+        let result = execute_js_simple("null").expect("JS null evaluation should succeed");
         assert_eq!(result, "null");
         
-        let result = execute_js_simple("undefined").unwrap();
+        let result = execute_js_simple("undefined").expect("JS undefined evaluation should succeed");
         assert_eq!(result, "undefined");
     }
     
@@ -751,15 +753,15 @@ body {
         "#;
         
         // Test simple arithmetic (DOM doesn't affect basic math)
-        let result = execute_js_with_dom("10 * 2", html).unwrap();
+        let result = execute_js_with_dom("10 * 2", html).expect("JS arithmetic with DOM should succeed");
         assert_eq!(result, "20");
         
         // Test string operations with DOM context
-        let result = execute_js_with_dom("'Citadel' + ' Browser'", html).unwrap();
+        let result = execute_js_with_dom("'Citadel' + ' Browser'", html).expect("JS string operation with DOM should succeed");
         assert_eq!(result, "Citadel Browser");
         
         // Test math operations
-        let result = execute_js_with_dom("Math.max(5, 10)", html).unwrap();
+        let result = execute_js_with_dom("Math.max(5, 10)", html).expect("JS Math operation with DOM should succeed");
         assert_eq!(result, "10");
     }
     
@@ -775,7 +777,7 @@ body {
         let xhr_code = "new XMLHttpRequest()";
         let result = execute_js_simple(xhr_code);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("XMLHttpRequest"));
+        assert!(result.unwrap_err().to_string().to_lowercase().contains("xmlhttprequest"));
     }
 }
 

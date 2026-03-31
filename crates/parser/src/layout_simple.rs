@@ -70,6 +70,7 @@ impl Default for LayoutMetrics {
 /// Simple layout engine for basic positioning
 pub struct CitadelLayoutEngine {
     /// Security context
+    #[allow(dead_code)] // Will be used when implementing security-aware layout constraints
     security_context: Arc<SecurityContext>,
 }
 

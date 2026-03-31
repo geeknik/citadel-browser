@@ -22,6 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enforce_https: true,
         randomize_user_agent: true,
         strip_tracking_params: true,
+        tracker_blocking: citadel_networking::BlocklistConfig::default(),
     };
     
     // Configure resource loading with reasonable limits

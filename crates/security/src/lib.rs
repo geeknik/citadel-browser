@@ -5,6 +5,8 @@
 
 pub mod context;
 pub mod error;
+pub mod memory;
+pub mod privacy;
 // pub mod policy; // Potential future module
 
 pub use context::{
@@ -13,4 +15,13 @@ pub use context::{
     FingerprintProtection, FingerprintProtectionLevel,
     SecurityViolation, SecurityMetrics, AdvancedSecurityConfig
 };
-pub use error::{SecurityError, SecuritySeverity, SecurityResult}; 
+pub use error::{SecurityError, SecuritySeverity, SecurityResult};
+pub use privacy::{
+    PrivacyEvent, PrivacyEventSender, PrivacyEventReceiver, PrivacyStats,
+    TrackerCategory, create_privacy_channel, create_privacy_channel_with_capacity,
+};
+pub use memory::{
+    MemoryProtectionSystem, MemoryProtectionBuilder, MemoryProtectionConfig,
+    ResourceType, ResourcePoolConfig, MemoryProtectionError, MemoryProtectionResult,
+    AttackPattern, ResourcePoolStats
+}; 

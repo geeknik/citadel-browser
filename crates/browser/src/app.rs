@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 use iced::{Application, Command, Element, Subscription, Theme};
-use iced::event;
 use iced::keyboard::Key;
 use url::Url;
 
@@ -18,13 +17,14 @@ use crate::zkvm_receiver;
 // WORKAROUND: Use explicit paths to break circular import
 // Import performance types directly to avoid circular dependency with lib.rs re-exports
 use citadel_tabs::{SendSafeTabManager as TabManager, TabType, PageContent};
-use citadel_networking::{NetworkConfig, PrivacyLevel};
-use citadel_security::SecurityContext;
+use citadel_networking::{NetworkConfig, PrivacyLevel, DnsMode};
+use citadel_security::{SecurityContext, PrivacyEvent, PrivacyStats, PrivacyEventSender, PrivacyEventReceiver};
 use citadel_parser::{Dom, CitadelStylesheet};
 
 /// Main Citadel Browser application
 pub struct CitadelBrowser {
     /// Async runtime for network operations
+    #[allow(dead_code)] // Will be used when implementing async operations
     runtime: Arc<Runtime>,
     /// Browser engine for page loading and rendering
     engine: Option<BrowserEngine>,
@@ -37,13 +37,16 @@ pub struct CitadelBrowser {
     /// Network configuration for privacy
     network_config: NetworkConfig,
     /// Security context for all operations
+    #[allow(dead_code)] // Will be used when implementing security policy enforcement
     security_context: Arc<SecurityContext>,
     /// Error states for better user feedback
     error_states: HashMap<uuid::Uuid, String>,
     /// Loading states for tab operations
     loading_states: HashMap<uuid::Uuid, LoadingState>,
     /// Channel for receiving ZKVM output
+    #[allow(dead_code)] // Will be used when implementing ZKVM communication
     zkvm_output_sender: tokio::sync::mpsc::UnboundedSender<zkvm_receiver::ZkVmOutput>,
+    #[allow(dead_code)] // Will be used when implementing ZKVM communication
     zkvm_output_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<zkvm_receiver::ZkVmOutput>>,
     /// Store DOM and stylesheet per tab for renderer state
     tab_render_data: HashMap<uuid::Uuid, (Arc<Dom>, Arc<CitadelStylesheet>)>,
@@ -57,6 +60,14 @@ pub struct CitadelBrowser {
     tab_scroll_states: HashMap<uuid::Uuid, ScrollState>,
     /// Zoom level per tab
     tab_zoom_levels: HashMap<uuid::Uuid, ZoomLevel>,
+    /// Aggregated privacy statistics for the scoreboard
+    privacy_stats: PrivacyStats,
+    /// Receiver for privacy events from the engine
+    privacy_receiver: Option<PrivacyEventReceiver>,
+    /// Sender for privacy events (passed to subsystems)
+    privacy_sender: PrivacyEventSender,
+    /// Whether the privacy panel is expanded to show recent events
+    privacy_panel_expanded: bool,
 }
 
 /// Detailed loading states for better user feedback
@@ -69,12 +80,16 @@ pub enum LoadingState {
     /// Establishing connection
     Connecting { url: String },
     /// Loading page content
+    #[allow(dead_code)] // Will be used when implementing progress tracking
     LoadingContent { progress: f32 },
     /// Parsing HTML content
+    #[allow(dead_code)] // Will be used when implementing detailed loading states
     ParsingContent,
     /// Applying security policies
+    #[allow(dead_code)] // Will be used when implementing security policy stages
     ApplyingSecurity,
     /// Finalizing page render
+    #[allow(dead_code)] // Will be used when implementing render finalization
     Finalizing,
 }
 
@@ -140,6 +155,7 @@ impl ZoomLevel {
 pub struct ViewportInfo {
     pub width: f32,
     pub height: f32,
+    #[allow(dead_code)] // Will be used when implementing high-DPI support
     pub device_pixel_ratio: f32,
     pub zoom_level: ZoomLevel,
 }
@@ -167,18 +183,22 @@ pub struct ScrollState {
 }
 
 impl ScrollState {
+    #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_up(&self) -> bool {
         self.y > 0.0
     }
     
+    #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_down(&self) -> bool {
         self.y < self.max_y
     }
     
+    #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_left(&self) -> bool {
         self.x > 0.0
     }
     
+    #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_right(&self) -> bool {
         self.x < self.max_x
     }
@@ -268,15 +288,24 @@ pub enum Message {
     ScrollTo { x: f32, y: f32 },
     ViewportResized { width: f32, height: f32 },
     MouseWheel { delta_x: f32, delta_y: f32 },
+    /// A privacy event was received from the engine
+    PrivacyTick(PrivacyEvent),
+    /// Drain pending privacy events from the channel
+    DrainPrivacyEvents,
+    /// Toggle the privacy panel expanded/collapsed state
+    TogglePrivacyPanel,
 }
 
 /// Detailed loading error information
 #[derive(Debug, Clone)]
 pub struct LoadingError {
+    #[allow(dead_code)] // Will be used when implementing error categorization
     pub error_type: ErrorType,
     pub message: String,
     pub url: String,
+    #[allow(dead_code)] // Will be used when implementing error timestamps
     pub timestamp: std::time::SystemTime,
+    #[allow(dead_code)] // Will be used when implementing retry functionality
     pub retry_possible: bool,
 }
 
@@ -290,8 +319,10 @@ pub enum ErrorType {
     /// Invalid or malformed content
     Content,
     /// Resource exhaustion or limits exceeded
+    #[allow(dead_code)] // Will be used when implementing resource limit errors
     Resource,
     /// Internal browser errors
+    #[allow(dead_code)] // Will be used when implementing internal error handling
     Internal,
 }
 
@@ -303,7 +334,9 @@ pub struct ParsedPageData {
     pub element_count: usize,
     pub size_bytes: usize,
     pub url: String,
+    #[allow(dead_code)] // Will be used when implementing performance metrics
     pub load_time_ms: u64,
+    #[allow(dead_code)] // Will be used when implementing security warning display
     pub security_warnings: Vec<String>,
     pub dom: Option<std::sync::Arc<citadel_parser::Dom>>,
     pub stylesheet: Option<std::sync::Arc<citadel_parser::CitadelStylesheet>>,
@@ -324,10 +357,11 @@ impl Application for CitadelBrowser {
         // Initialize network configuration with privacy-first settings
         let network_config = NetworkConfig {
             privacy_level: PrivacyLevel::High,
-            dns_mode: citadel_networking::DnsMode::LocalCache,
+            dns_mode: DnsMode::LocalCache,
             enforce_https: true,
             randomize_user_agent: true,
             strip_tracking_params: true,
+            tracker_blocking: citadel_networking::BlocklistConfig::default(),
         };
         
         // Initialize tab manager with ZKVM isolation
@@ -341,6 +375,9 @@ impl Application for CitadelBrowser {
         
         // Create ZKVM output channel
         let (zkvm_output_sender, zkvm_output_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        // Create privacy event channel for the scoreboard
+        let (privacy_sender, privacy_receiver) = citadel_security::create_privacy_channel();
         
         let browser = Self {
             runtime: runtime.clone(),
@@ -358,6 +395,10 @@ impl Application for CitadelBrowser {
             viewport_info: ViewportInfo::default(),
             tab_scroll_states: HashMap::new(),
             tab_zoom_levels: HashMap::new(),
+            privacy_stats: PrivacyStats::default(),
+            privacy_receiver: Some(privacy_receiver),
+            privacy_sender,
+            privacy_panel_expanded: false,
             // performance_monitor,
             last_memory_cleanup: std::time::Instant::now(),
         };
@@ -485,7 +526,10 @@ impl Application for CitadelBrowser {
                             let loading_content = PageContent::Loading { url: normalized_url.clone() };
                             
                             // Start the page loading process
-                            let engine = self.engine.clone().unwrap();
+                            let Some(engine) = self.engine.clone() else {
+                                eprintln!("[App] Browser engine not available for page loading");
+                                return Command::none();
+                            };
                             return Command::batch([
                                 // Set loading state in tab
                                 Command::perform(
@@ -562,7 +606,7 @@ impl Application for CitadelBrowser {
                             
                             // Send to ZKVM channel for isolated processing
                             match citadel_zkvm::Channel::new() {
-                                Ok((mut vm_channel, mut _host_channel)) => {
+                                Ok((mut vm_channel, _host_channel)) => {
                                     // Send rendering command to ZKVM
                                     let message = citadel_zkvm::ChannelMessage::Control {
                                         command: "render_content".to_string(),
@@ -570,7 +614,7 @@ impl Application for CitadelBrowser {
                                     };
                                     
                                     // Process in isolated environment
-                                    let render_result = tokio::spawn(async move {
+                                    let _render_result = tokio::spawn(async move {
                                         if let Err(e) = vm_channel.send(message).await {
                                             log::error!("Failed to send to ZKVM: {}", e);
                                             return Err(e.to_string());
@@ -810,7 +854,7 @@ impl Application for CitadelBrowser {
                 use zkvm_receiver::ZkVmOutput;
                 
                 match output {
-                    ZkVmOutput::RenderedContent { tab_id, content } => {
+                    ZkVmOutput::RenderedContent { tab_id, content: _ } => {
                         log::info!("📦 Received rendered content from ZKVM for tab {}", tab_id);
                         
                         // Update the renderer with the sanitized content
@@ -1063,28 +1107,61 @@ impl Application for CitadelBrowser {
             Message::MouseWheel { delta_x, delta_y } => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
-                    
+
                     // Apply mouse wheel sensitivity
                     let sensitivity = 3.0;
                     scroll_state.scroll_by(delta_x * sensitivity, delta_y * sensitivity);
                     self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
-                    
-                    log::debug!("🖱️ Mouse wheel scroll: delta=({}, {}), pos=({}, {})", 
+
+                    log::debug!("🖱️ Mouse wheel scroll: delta=({}, {}), pos=({}, {})",
                                delta_x, delta_y, scroll_state.x, scroll_state.y);
                 }
+                Command::none()
+            }
+
+            Message::PrivacyTick(event) => {
+                self.privacy_stats.record(event);
+                Command::none()
+            }
+
+            Message::DrainPrivacyEvents => {
+                // Non-blocking drain: pull all pending events from the channel
+                if let Some(ref mut receiver) = self.privacy_receiver {
+                    // Drain up to 64 events per tick to bound work per frame
+                    for _ in 0..64 {
+                        match receiver.try_recv() {
+                            Ok(event) => self.privacy_stats.record(event),
+                            Err(_) => break,
+                        }
+                    }
+                }
+                Command::none()
+            }
+
+            Message::TogglePrivacyPanel => {
+                self.privacy_panel_expanded = !self.privacy_panel_expanded;
                 Command::none()
             }
         }
     }
 
     fn view(&self) -> Element<Message> {
-        self.ui.view(&self.tab_manager, &self.network_config, &self.renderer, &self.viewport_info, self.get_active_scroll_state())
+        self.ui.view(
+            &self.tab_manager,
+            &self.network_config,
+            &self.renderer,
+            &self.viewport_info,
+            self.get_active_scroll_state(),
+            &self.privacy_stats,
+            self.privacy_panel_expanded,
+        )
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        // Subscribe to keyboard events for scrolling and zoom
-        // For now, return a simple subscription - keyboard handling will be done through events
-        Subscription::none()
+        // Use a time subscription to periodically drain the privacy event channel.
+        // Iced 0.12 supports iced::time::every for periodic ticks.
+        iced::time::every(std::time::Duration::from_millis(250))
+            .map(|_| Message::DrainPrivacyEvents)
     }
 
     fn theme(&self) -> Theme {
@@ -1130,6 +1207,12 @@ impl CitadelBrowser {
         true
     }
     
+    /// Get a clone of the privacy event sender for passing to subsystems.
+    #[allow(dead_code)] // Will be used when wiring engine to privacy channel
+    pub fn privacy_sender(&self) -> PrivacyEventSender {
+        self.privacy_sender.clone()
+    }
+
     /// Get the active tab ID
     fn get_active_tab_id(&self) -> Option<uuid::Uuid> {
         self.tab_manager.get_tab_states()
@@ -1202,6 +1285,7 @@ impl CitadelBrowser {
     }
     
     /// Handle keyboard shortcuts for scrolling and zoom
+    #[allow(dead_code)] // Will be used when implementing keyboard navigation
     pub fn handle_keyboard_event(&mut self, key: &iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) -> Command<Message> {
         match (key.as_ref(), modifiers.control()) {
             // Zoom shortcuts
@@ -1276,6 +1360,7 @@ impl CitadelBrowser {
     }
     
     /// Clean up old tab render data
+    #[allow(dead_code)] // Will be used when implementing memory management
     fn cleanup_old_tab_data(&mut self) {
         let active_tabs: std::collections::HashSet<uuid::Uuid> = 
             self.tab_manager.get_tab_states().iter().map(|tab| tab.id).collect();
@@ -1291,6 +1376,8 @@ impl CitadelBrowser {
     }
     
     /// Emergency memory cleanup for critical memory pressure
+    #[allow(dead_code)] // Will be used when implementing memory pressure handling
+    #[allow(dead_code)] // Will be used when implementing memory pressure handling
     fn emergency_memory_cleanup(&mut self) {
         log::warn!("Performing emergency memory cleanup");
         
@@ -1352,6 +1439,7 @@ impl CitadelBrowser {
     }
     
     /// Update memory usage metrics
+    #[allow(dead_code)] // Will be used when implementing memory monitoring
     fn update_memory_metrics(&mut self) {
         // Estimate memory usage of various components
         let tab_data_memory = self.tab_render_data.len() * 1024 * 1024; // Estimate 1MB per tab
@@ -1359,13 +1447,14 @@ impl CitadelBrowser {
         let error_state_memory = self.error_states.len() * 1024; // Estimate 1KB per error
         let loading_state_memory = self.loading_states.len() * std::mem::size_of::<LoadingState>();
         
-        let total_app_memory = tab_data_memory + scroll_state_memory + error_state_memory + loading_state_memory;
+        let _total_app_memory = tab_data_memory + scroll_state_memory + error_state_memory + loading_state_memory;
         
         // TODO: Re-enable performance monitoring
         // self.performance_monitor.update_memory_usage("app", total_app_memory);
     }
     
     /// Get performance statistics for debugging (TODO: Fix circular import)
+    #[allow(dead_code)] // Will be used when implementing performance monitoring
     pub fn get_performance_stats(&self) -> String {
         // TODO: Re-enable performance monitoring once circular import is fixed
         format!(
@@ -1383,6 +1472,7 @@ impl CitadelBrowser {
 }
 
 /// Extract title from HTML content (utility function)
+#[allow(dead_code)] // Will be used when implementing HTML title extraction
 fn extract_title(html: &str) -> Option<String> {
     if let Some(start) = html.find("<title>") {
         if let Some(end) = html[start + 7..].find("</title>") {

@@ -26,6 +26,7 @@ url = { workspace = true }
 regex = { workspace = true }
 sha2 = "0.10"
 base64 = "0.22"
+citadel-security = { path = "../security" }
 
 # Examples dependencies
 env_logger = "0.10"
@@ -36,4 +37,8 @@ path = "examples/fetch_html.rs"
 
 [[example]]
 name = "resource_loading_demo"
-path = "examples/resource_loading_demo.rs" 
+path = "examples/resource_loading_demo.rs"
+
+[[example]]
+name = "tracker_blocking_demo"
+path = "examples/tracker_blocking_demo.rs" 

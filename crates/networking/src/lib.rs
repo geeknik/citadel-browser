@@ -11,9 +11,11 @@ pub mod cache;
 pub mod advanced_loader;
 pub mod integrity;
 pub mod performance;
+pub mod tracker_blocking;
+pub mod privacy_engine;
 
 /// Re-export common types for easier usage
-pub use dns::{DnsMode, CitadelDnsResolver};
+pub use dns::{DnsMode, CitadelDnsResolver, DohProviders};
 pub use request::{Request, Method};
 pub use response::Response;
 pub use connection::Connection;
@@ -25,6 +27,8 @@ pub use cache::{ResourceCache, CacheEntry, CacheConfig};
 pub use error::NetworkError;
 pub use advanced_loader::{AdvancedResourceLoader, LoadingStrategy, Priority, NetworkCondition, BandwidthTracker};
 pub use integrity::{IntegrityValidator, HashAlgorithm, IntegrityResult, CSPViolation};
+pub use tracker_blocking::{TrackerBlockingEngine, BlocklistConfig, BlockingLevel, BlockedRequest, TrackerBlockingStats};
+pub use privacy_engine::{CitadelPrivacyEngine, PrivacyStats};
 
 /// Types of privacy level configurations for the networking layer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +56,8 @@ pub struct NetworkConfig {
     pub randomize_user_agent: bool,
     /// Whether to strip tracking parameters from URLs
     pub strip_tracking_params: bool,
+    /// Tracker blocking configuration
+    pub tracker_blocking: tracker_blocking::BlocklistConfig,
 }
 
 impl Default for NetworkConfig {
@@ -62,6 +68,7 @@ impl Default for NetworkConfig {
             enforce_https: true,
             randomize_user_agent: true,
             strip_tracking_params: true,
+            tracker_blocking: tracker_blocking::BlocklistConfig::default(),
         }
     }
 } 

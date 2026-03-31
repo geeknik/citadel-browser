@@ -32,11 +32,13 @@ futures = "0.3"
 # Security & sanitization
 ammonia = "3.3"  # HTML sanitization
 
-# JavaScript engine
-rquickjs = { version = "0.4", features = ["array-buffer", "bindgen", "classes", "futures", "loader"] }
+# JavaScript engine (pure Rust - no C/C++ dependency)
+boa_engine = { version = "0.21", features = ["annex-b"] }
+boa_gc = "0.21"
 
 # Logging and metrics
 tracing = "0.1"
+log = { workspace = true }
 
 # Testing
 criterion = { version = "0.5", optional = true }
@@ -57,6 +59,7 @@ citadel-security = { path = "../security" }
 [dev-dependencies]
 tokio-test = "0.4"
 pretty_assertions = "1.0"
+reqwest = { version = "0.11", default-features = false, features = ["json", "native-tls"] }
 
 [features]
 default = []

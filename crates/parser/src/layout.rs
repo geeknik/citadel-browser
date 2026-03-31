@@ -86,7 +86,9 @@ struct LayoutCacheEntry {
     layout_result: LayoutResult,
     timestamp: Instant,
     access_count: usize,
+    #[allow(dead_code)] // Will be used when implementing layout cache invalidation
     dom_hash: u64,
+    #[allow(dead_code)] // Will be used when implementing layout cache invalidation
     css_hash: u64,
 }
 
@@ -837,6 +839,7 @@ impl CitadelLayoutEngine {
     }
     
     /// Convert CSS length value to Taffy LengthPercentageAuto
+    #[allow(dead_code)] // Will be used when implementing advanced CSS dimension handling
     fn convert_dimension_auto(&self, length: &Option<LengthValue>) -> LengthPercentageAuto {
         match length {
             Some(length_val) => {
@@ -1103,6 +1106,7 @@ impl CitadelLayoutEngine {
     }
     
     /// Parse grid auto size (auto-rows/auto-columns) - simplified implementation
+    #[allow(dead_code)] // Will be used when implementing CSS Grid layout
     fn parse_grid_auto_size(&self, _auto_size: &str) -> Vec<taffy::NonRepeatedTrackSizingFunction> {
         // Simplified: return empty vector for now
         Vec::new()
@@ -1191,6 +1195,7 @@ impl CitadelLayoutEngine {
     }
     
     /// Parse simple length value for grid parsing
+    #[allow(dead_code)] // Will be used when implementing fallback CSS value parsing
     fn parse_length_value_simple(&self, value: &str) -> Option<LengthValue> {
         if value.ends_with("px") {
             let px_str = &value[..value.len() - 2];
@@ -1270,7 +1275,9 @@ impl CitadelLayoutEngine {
     
     /// Check if layout computation is within security limits
     fn check_security_limits(&self, node_count: usize) -> ParserResult<()> {
-        let max_nodes = self.security_context.max_nesting_depth() * 100; // Reasonable multiplier
+        // Real websites have 1,000-20,000+ DOM elements. Allow up to 50,000 nodes
+        // to handle complex pages while still preventing DoS from pathological inputs.
+        let max_nodes = (self.security_context.max_nesting_depth() * 5000).max(50_000);
         
         if node_count > max_nodes {
             return Err(ParserError::SecurityViolation(
@@ -1294,11 +1301,10 @@ impl CitadelLayoutEngine {
     /// Recursively count DOM nodes
     fn count_node_recursive(&self, node: &Node, count: &mut usize) {
         *count += 1;
-        if let Ok(children) = node.children() {
-            for child in children.iter() {
-                if let Ok(child_guard) = child.read() {
-                    self.count_node_recursive(&*child_guard, count);
-                }
+        let children = node.children();
+        for child in children.iter() {
+            if let Ok(child_guard) = child.read() {
+                self.count_node_recursive(&*child_guard, count);
             }
         }
     }
@@ -1852,7 +1858,7 @@ mod tests {
         let result = layout_engine.check_security_limits(1000); // High node count
         assert!(result.is_ok()); // Should be within limits for test context
         
-        let result = layout_engine.check_security_limits(10000); // Very high node count
+        let result = layout_engine.check_security_limits(100_000); // Exceeds max of 50,000
         assert!(result.is_err()); // Should exceed security limits
     }
     

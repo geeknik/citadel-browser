@@ -442,7 +442,7 @@ mod tests {
             200,
             headers,
             Bytes::from(body.to_string()),
-            Url::parse(url).unwrap(),
+            Url::parse(url).expect("Test URL should be valid"),
             Method::GET,
         )
     }
@@ -461,15 +461,15 @@ mod tests {
     #[test]
     fn test_cache_put_and_get() {
         let cache = ResourceCache::default();
-        let url = Url::parse("https://example.com/test").unwrap();
+        let url = Url::parse("https://example.com/test").expect("Test URL should be valid");
         let response = create_test_response("https://example.com/test", "test content");
         
         // Put response in cache
-        cache.put(&url, response.clone()).unwrap();
+        cache.put(&url, response.clone()).expect("Cache put should succeed");
         
         // Get response from cache
-        let cached = cache.get(&url).unwrap();
-        assert_eq!(cached.body_text().unwrap(), "test content");
+        let cached = cache.get(&url).expect("Cache get should succeed");
+        assert_eq!(cached.body_text().expect("Response body should be accessible"), "test content");
     }
     
     #[test]
@@ -478,11 +478,11 @@ mod tests {
         config.default_ttl = Duration::from_millis(10); // Very short TTL
         
         let cache = ResourceCache::new(config);
-        let url = Url::parse("https://example.com/test").unwrap();
+        let url = Url::parse("https://example.com/test").expect("Test URL should be valid");
         let response = create_test_response("https://example.com/test", "test content");
         
         // Put response in cache
-        cache.put(&url, response).unwrap();
+        cache.put(&url, response).expect("Cache put should succeed");
         
         // Should be available immediately
         assert!(cache.get(&url).is_some());
@@ -502,7 +502,7 @@ mod tests {
         let cache = ResourceCache::new(config);
         
         // Add a large response that exceeds cache size
-        let url = Url::parse("https://example.com/large").unwrap();
+        let url = Url::parse("https://example.com/large").expect("Test URL should be valid");
         let large_content = "x".repeat(200); // 200 bytes
         let response = create_test_response("https://example.com/large", &large_content);
         
@@ -519,12 +519,12 @@ mod tests {
         let cache = ResourceCache::new(config);
         
         // Add first entry
-        let url1 = Url::parse("https://example.com/1").unwrap();
+        let url1 = Url::parse("https://example.com/1").expect("Test URL should be valid");
         let response1 = create_test_response("https://example.com/1", "content1");
         cache.put(&url1, response1).unwrap();
         
         // Add second entry
-        let url2 = Url::parse("https://example.com/2").unwrap();
+        let url2 = Url::parse("https://example.com/2").expect("Test URL should be valid");
         let response2 = create_test_response("https://example.com/2", "content2");
         cache.put(&url2, response2).unwrap();
         
@@ -532,7 +532,7 @@ mod tests {
         cache.get(&url1);
         
         // Add third entry (should evict second entry as it's LRU)
-        let url3 = Url::parse("https://example.com/3").unwrap();
+        let url3 = Url::parse("https://example.com/3").expect("Test URL should be valid");
         let response3 = create_test_response("https://example.com/3", "content3");
         cache.put(&url3, response3).unwrap();
         
@@ -551,9 +551,9 @@ mod tests {
         assert_eq!(stats.total_size_bytes, 0);
         
         // Add an entry
-        let url = Url::parse("https://example.com/test").unwrap();
+        let url = Url::parse("https://example.com/test").expect("Test URL should be valid");
         let response = create_test_response("https://example.com/test", "test");
-        cache.put(&url, response).unwrap();
+        cache.put(&url, response).expect("Cache put should succeed");
         
         let stats = cache.stats();
         assert_eq!(stats.entry_count, 1);
@@ -566,9 +566,9 @@ mod tests {
         
         // Add some entries
         for i in 0..5 {
-            let url = Url::parse(&format!("https://example.com/{}", i)).unwrap();
+            let url = Url::parse(&format!("https://example.com/{}", i)).expect("Test URL should be valid");
             let response = create_test_response(&format!("https://example.com/{}", i), "test");
-            cache.put(&url, response).unwrap();
+            cache.put(&url, response).expect("Cache put should succeed");
         }
         
         assert_eq!(cache.stats().entry_count, 5);

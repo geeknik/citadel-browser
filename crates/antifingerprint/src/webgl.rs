@@ -5,6 +5,7 @@
 //! against these fingerprinting techniques.
 
 use crate::{FingerprintManager, FingerprintError, metrics::ProtectionType};
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -249,18 +250,23 @@ impl WebGLProtection {
         if !self.enabled || self.normalized_info.is_none() {
             return None;
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
+
         let info = self.normalized_info.as_ref().unwrap();
-        
-        match param {
-            WebGLParameter::Renderer => Some(info.renderer.clone()),
-            WebGLParameter::Vendor => Some(info.vendor.clone()),
-            WebGLParameter::Version => Some(info.version.clone()),
-            _ => None,
-        }
+
+        let (api_name, value) = match param {
+            WebGLParameter::Renderer => ("webgl.UNMASKED_RENDERER", Some(info.renderer.clone())),
+            WebGLParameter::Vendor => ("webgl.UNMASKED_VENDOR", Some(info.vendor.clone())),
+            WebGLParameter::Version => ("webgl.VERSION", Some(info.version.clone())),
+            _ => return None,
+        };
+
+        // Emit privacy event
+        self.manager.emit_neutralized(api_name, "spoofed value returned");
+
+        value
     }
     
     /// Modify a shader to prevent precision-based fingerprinting
@@ -287,15 +293,33 @@ impl WebGLProtection {
         if !self.enabled {
             return Ok(());
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
+
+        // Emit privacy event
+        self.manager.emit_neutralized("webgl.bufferData", "vertex noise injection");
+
+        // Generate deterministic noise for this domain
+        let domain_seed = self.manager.domain_seed(domain);
+        let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(domain_seed);
+
         // Add subtle noise to vertex positions to prevent drawing-based fingerprinting
+        // Use std_dev of 0.0003 to keep noise well below 0.001
+        let normal = rand_distr::Normal::new(0.0, 0.0003).unwrap();
         for vertex in vertices.iter_mut() {
-            *vertex = self.manager.apply_noise_f32(*vertex, 0.0001, domain);
+            let raw_noise = rand_distr::Distribution::sample(&normal, &mut rng) as f32;
+            // Clamp to sub-thousandth range
+            let clamped = raw_noise.clamp(-0.0009, 0.0009);
+            // Ensure non-zero noise: minimum noise just above f32 precision threshold
+            let noise = if clamped.abs() < 1e-6 {
+                if domain_seed % 2 == 0 { 1e-5_f32 } else { -1e-5_f32 }
+            } else {
+                clamped
+            };
+            *vertex += noise;
         }
-        
+
         Ok(())
     }
 }

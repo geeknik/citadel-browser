@@ -15,6 +15,7 @@ pub mod tabs;
 pub mod renderer;
 pub mod zkvm_receiver;
 pub mod performance;
+pub mod memory_protection;
 
 // Re-export the main application
 pub use app::CitadelBrowser;
@@ -25,3 +26,4 @@ pub use resource_loader::ResourceLoader;
 pub use ui::{CitadelUI, UIMessage};
 pub use renderer::CitadelRenderer;
 pub use performance::{PerformanceMonitor, MemoryConfig, CleanupPriority, MemoryPressure};
+pub use memory_protection::{BrowserMemoryManager, BrowserMemoryStatistics};

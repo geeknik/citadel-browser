@@ -115,14 +115,17 @@ impl CanvasProtection {
         if !self.config.enabled || !self.config.protect_images {
             return Ok(());
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
+
+        // Emit privacy event
+        self.manager.emit_neutralized("canvas.getImageData", "noise injection");
+
         // Calculate a domain-specific seed for deterministic noise
         let domain_seed = self.manager.domain_seed(domain);
         let mut rng = ChaCha20Rng::seed_from_u64(domain_seed);
-        
+
         // Use the implementation with the provided RNG
         self.protect_image_data_with_rng(data, width, height, domain, &mut rng)
     }
@@ -134,7 +137,8 @@ impl CanvasProtection {
         }
         
         // Create a normal distribution for subtle color changes
-        let normal = Normal::new(0.0, self.config.color_noise_factor * 2.55).unwrap_or(Normal::new(0.0, 0.01).unwrap());
+        // color_noise_factor is a fraction (e.g. 0.01 = 1%), multiply by 255 to scale to u8 range
+        let normal = Normal::new(0.0, self.config.color_noise_factor * 255.0).unwrap_or(Normal::new(0.0, 1.0).unwrap());
         
         // Iterate through rgba pixel values and add subtle noise
         for i in (0..data.len()).step_by(4) {
@@ -156,15 +160,45 @@ impl CanvasProtection {
         if !self.config.enabled || !self.config.protect_text {
             return (x, y);
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
-        // Add subtle position noise to text rendering
-        let noisy_x = self.manager.apply_noise(x, self.config.position_noise_factor, domain);
-        let noisy_y = self.manager.apply_noise(y, self.config.position_noise_factor, domain);
-        
-        (noisy_x, noisy_y)
+
+        // Emit privacy event
+        self.manager.emit_neutralized("canvas.fillText", "position noise injection");
+
+        // Generate deterministic position noise for this domain
+        let domain_seed = self.manager.domain_seed(domain);
+        let mut rng = ChaCha20Rng::seed_from_u64(domain_seed);
+
+        let std_dev = (self.config.position_noise_factor * x.abs().max(1.0)).max(0.01);
+        let normal_x = Normal::new(0.0, std_dev).unwrap_or(Normal::new(0.0, 0.01).unwrap());
+        let raw_noise_x = normal_x.sample(&mut rng);
+
+        let std_dev_y = (self.config.position_noise_factor * y.abs().max(1.0)).max(0.01);
+        let normal_y = Normal::new(0.0, std_dev_y).unwrap_or(Normal::new(0.0, 0.01).unwrap());
+        let raw_noise_y = normal_y.sample(&mut rng);
+
+        // Clamp noise to sub-pixel range to maintain visual fidelity
+        let max_noise = 0.99;
+        let min_noise = self.config.position_noise_factor.max(0.001);
+
+        let noise_x = raw_noise_x.clamp(-max_noise, max_noise);
+        let noise_y = raw_noise_y.clamp(-max_noise, max_noise);
+
+        // Ensure non-zero noise so protection is always active
+        let noise_x = if noise_x.abs() < min_noise {
+            if domain_seed % 2 == 0 { min_noise } else { -min_noise }
+        } else {
+            noise_x
+        };
+        let noise_y = if noise_y.abs() < min_noise {
+            if (domain_seed / 2) % 2 == 0 { min_noise } else { -min_noise }
+        } else {
+            noise_y
+        };
+
+        (x + noise_x, y + noise_y)
     }
     
     /// Apply noise to a color value (0-255)
@@ -172,14 +206,28 @@ impl CanvasProtection {
         if !self.config.enabled {
             return color;
         }
-        
+
         // Record this protection event
         self.record_protection(domain, false);
-        
-        // Add subtle color noise
-        let color_f64 = color as f64;
-        let noisy_color = self.manager.apply_noise(color_f64, self.config.color_noise_factor * 2.55, domain);
-        noisy_color.clamp(0.0, 255.0) as u8
+
+        // Generate deterministic noise for this domain
+        let domain_seed = self.manager.domain_seed(domain);
+        let mut rng = ChaCha20Rng::seed_from_u64(domain_seed);
+
+        // Create a normal distribution with std_dev scaled to the u8 color range
+        // color_noise_factor of 0.01 means ~2.55 levels of noise (1% of 255)
+        let std_dev = (self.config.color_noise_factor * 255.0).max(1.0);
+        let normal = Normal::new(0.0, std_dev).unwrap_or(Normal::new(0.0, 1.0).unwrap());
+        let noise = normal.sample(&mut rng).round() as i16;
+
+        // Ensure non-zero noise so protection is always active
+        let noise = if noise == 0 {
+            if domain_seed % 2 == 0 { 1 } else { -1 }
+        } else {
+            noise
+        };
+
+        (color as i16 + noise).clamp(0, 255) as u8
     }
     
     /// Check if protection should be applied for a given operation

@@ -21,6 +21,8 @@ pub struct ParserConfig {
     pub allow_external_resources: bool,
     /// Maximum nesting depth for elements
     pub max_nesting_depth: usize,
+    /// Maximum size for CSS content
+    pub max_css_size: usize,
 }
 
 impl Default for ParserConfig {
@@ -34,6 +36,7 @@ impl Default for ParserConfig {
             allow_scripts: false,
             allow_external_resources: false,
             max_nesting_depth: 32, // Reasonable default for nesting depth
+            max_css_size: 1024 * 1024, // 1MB default CSS size limit
         }
     }
 }

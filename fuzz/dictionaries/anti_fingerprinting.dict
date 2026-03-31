@@ -1,0 +1,209 @@
+# Anti-Fingerprinting Attack Dictionary
+# Vectors for bypassing fingerprinting protection mechanisms
+
+# Canvas Fingerprinting Vectors
+"canvas.getContext('2d')"
+"canvas.toDataURL()"
+"canvas.toBlob()"
+"ctx.fillText('test', 0, 0)"
+"ctx.measureText('test')"
+"ctx.getImageData(0, 0, 1, 1)"
+"ctx.font = 'Arial'"
+"ctx.textBaseline = 'top'"
+"ctx.fillStyle = '#000'"
+"ctx.globalCompositeOperation"
+"ctx.shadowBlur"
+"ctx.shadowColor"
+"ctx.shadowOffsetX"
+"ctx.shadowOffsetY"
+
+# WebGL Fingerprinting Vectors
+"getContext('webgl')"
+"getContext('webgl2')"
+"gl.getParameter(gl.VENDOR)"
+"gl.getParameter(gl.RENDERER)"
+"gl.getParameter(gl.VERSION)"
+"gl.getParameter(gl.SHADING_LANGUAGE_VERSION)"
+"gl.getParameter(gl.MAX_TEXTURE_SIZE)"
+"gl.getParameter(gl.MAX_VERTEX_ATTRIBS)"
+"gl.getParameter(gl.MAX_VIEWPORT_DIMS)"
+"gl.getParameter(gl.ALIASED_LINE_WIDTH_RANGE)"
+"gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)"
+"gl.getSupportedExtensions()"
+"gl.getExtension('WEBGL_debug_renderer_info')"
+"gl.createShader(gl.VERTEX_SHADER)"
+"gl.createShader(gl.FRAGMENT_SHADER)"
+
+# Audio Fingerprinting Vectors
+"new AudioContext()"
+"new webkitAudioContext()"
+"audioContext.sampleRate"
+"audioContext.baseLatency"
+"audioContext.outputLatency"
+"audioContext.createAnalyser()"
+"audioContext.createOscillator()"
+"audioContext.createGain()"
+"oscillator.frequency.value"
+"analyser.frequencyBinCount"
+"analyser.getFloatFrequencyData()"
+"analyser.getByteFrequencyData()"
+
+# Navigator Fingerprinting Vectors
+"navigator.userAgent"
+"navigator.platform"
+"navigator.language"
+"navigator.languages"
+"navigator.cookieEnabled"
+"navigator.onLine"
+"navigator.doNotTrack"
+"navigator.hardwareConcurrency"
+"navigator.deviceMemory"
+"navigator.maxTouchPoints"
+"navigator.vendor"
+"navigator.vendorSub"
+"navigator.product"
+"navigator.productSub"
+"navigator.appName"
+"navigator.appVersion"
+"navigator.appCodeName"
+"navigator.oscpu"
+"navigator.buildID"
+
+# Screen Fingerprinting Vectors
+"screen.width"
+"screen.height"
+"screen.availWidth"
+"screen.availHeight"
+"screen.colorDepth"
+"screen.pixelDepth"
+"screen.orientation"
+"screen.orientation.angle"
+"screen.orientation.type"
+"window.devicePixelRatio"
+"window.innerWidth"
+"window.innerHeight"
+"window.outerWidth"
+"window.outerHeight"
+"window.screenX"
+"window.screenY"
+
+# Font Fingerprinting Vectors
+"document.fonts"
+"document.fonts.ready"
+"document.fonts.check('12px Arial')"
+"new FontFace('test', 'url(font.woff)')"
+"canvas.measureText('test')"
+"getComputedStyle(element).fontFamily"
+"element.offsetWidth"
+"element.offsetHeight"
+
+# Timezone Fingerprinting Vectors
+"new Date().getTimezoneOffset()"
+"Intl.DateTimeFormat().resolvedOptions().timeZone"
+"new Date().toLocaleString()"
+"new Date().toString()"
+"Date.prototype.getTimezoneOffset"
+
+# Battery API Fingerprinting
+"navigator.getBattery()"
+"battery.level"
+"battery.charging"
+"battery.chargingTime"
+"battery.dischargingTime"
+
+# Geolocation Fingerprinting
+"navigator.geolocation"
+"navigator.geolocation.getCurrentPosition"
+"navigator.geolocation.watchPosition"
+
+# Connection Fingerprinting
+"navigator.connection"
+"navigator.connection.effectiveType"
+"navigator.connection.downlink"
+"navigator.connection.rtt"
+
+# Media Device Fingerprinting
+"navigator.mediaDevices"
+"navigator.mediaDevices.enumerateDevices()"
+"navigator.mediaDevices.getSupportedConstraints()"
+
+# Performance Fingerprinting
+"performance.now()"
+"performance.timing"
+"performance.navigation"
+"performance.memory"
+"performance.getEntries()"
+
+# WebRTC Fingerprinting
+"new RTCPeerConnection()"
+"RTCPeerConnection.generateCertificate()"
+"navigator.mediaDevices.getUserMedia()"
+
+# Fingerprinting Evasion Techniques
+"JSON.stringify"
+"JSON.parse"
+"btoa"
+"atob"
+"encodeURIComponent"
+"decodeURIComponent"
+"escape"
+"unescape"
+"String.fromCharCode"
+"parseInt"
+"parseFloat"
+"Math.random"
+"Math.floor"
+"Math.ceil"
+"Math.round"
+
+# Canvas Noise Detection
+"getImageData"
+"createImageData"
+"putImageData"
+"isPointInPath"
+"isPointInStroke"
+
+# WebGL Extensions
+"WEBGL_debug_renderer_info"
+"WEBGL_debug_shaders"
+"WEBGL_lose_context"
+"OES_texture_float"
+"OES_texture_half_float"
+"WEBGL_depth_texture"
+"OES_element_index_uint"
+"EXT_texture_filter_anisotropic"
+"EXT_frag_depth"
+"WEBGL_draw_buffers"
+"ANGLE_instanced_arrays"
+"OES_vertex_array_object"
+"EXT_blend_minmax"
+"EXT_shader_texture_lod"
+
+# Consistency Testing Patterns
+"consistency_test_"
+"fingerprint_hash_"
+"entropy_calculation_"
+"variance_test_"
+"statistical_analysis_"
+
+# Bypass Attempt Patterns
+"override_protection"
+"disable_noise"
+"extract_original"
+"bypass_normalization"
+"leak_hardware_info"
+"reveal_true_value"
+
+# Error-based Information Leakage
+"try { ... } catch(e) { e.message }"
+"try { ... } catch(e) { e.stack }"
+"Error.captureStackTrace"
+"console.trace()"
+
+# Performance-based Detection
+"performance.mark"
+"performance.measure"
+"performance.getEntriesByType"
+"requestAnimationFrame"
+"setTimeout"
+"setInterval"
