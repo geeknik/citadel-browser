@@ -232,3 +232,57 @@ fn boundary_blocks_scripts_and_dangerous_urls() {
         "script + js-url blocked"
     );
 }
+
+/// Stage B1: the CSS cascade inside the boundary drives page background, centered
+/// content width, and per-element colours/sizes — not just tag defaults.
+#[test]
+fn css_cascade_drives_colors_background_and_width() {
+    let html = r#"<!doctype html><html><head><title>Styled</title>
+        <style>
+        body { background-color: #eeeeee; width: 60vw; }
+        h1 { color: #ff0000; }
+        p { color: #222244; font-size: 18px; }
+        a { color: #38488f; }
+        </style></head><body>
+        <h1>Heading</h1>
+        <p>Body text.</p>
+        <p><a href="https://ok.example/">link</a></p>
+        </body></html>"#;
+
+    let r = render_in_isolation(&RenderRequest {
+        url: "https://styled.example/".to_string(),
+        html: html.to_string(),
+        viewport_width: 1000.0,
+    });
+
+    // Page background from `body { background-color: #eeeeee }`.
+    assert_eq!(r.background, [0xee, 0xee, 0xee], "page background from CSS");
+    // Centered content width from `body { width: 60vw }` = 600 of 1000.
+    assert!(
+        (r.content_width - 600.0).abs() < 1.0,
+        "content_width should be 60vw=600, got {}",
+        r.content_width
+    );
+
+    let heading = r
+        .display_list
+        .iter()
+        .find(|i| i.kind == DisplayKind::Heading)
+        .expect("heading present");
+    assert_eq!(heading.color, [255, 0, 0], "h1 colour from CSS");
+
+    let para = r
+        .display_list
+        .iter()
+        .find(|i| i.kind == DisplayKind::Paragraph && i.text.contains("Body text"))
+        .expect("paragraph present");
+    assert_eq!(para.color, [0x22, 0x22, 0x44], "p colour from CSS");
+    assert!((para.font_size - 18.0).abs() < 0.1, "p font-size from CSS, got {}", para.font_size);
+
+    let link = r
+        .display_list
+        .iter()
+        .find(|i| i.kind == DisplayKind::Link)
+        .expect("link present");
+    assert_eq!(link.color, [0x38, 0x48, 0x8f], "a colour from CSS");
+}

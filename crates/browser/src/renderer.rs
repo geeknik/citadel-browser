@@ -346,12 +346,22 @@ impl CitadelRenderer {
             col = col.push(widget);
         }
 
-        // Return the sanitized runs sized to content. The host UI wraps this in a
-        // scrollable AND in a light "page canvas" container (see ui.rs) — the light
-        // background MUST live at that bounded level, not here inside the scrollable,
-        // or `Length::Fill` collapses and the background never paints. The VM's text
-        // colours are web colours (dark), legible on that light canvas.
-        container(col).width(Length::Fill).into()
+        // Center the content column at the CSS-derived content width (e.g. body
+        // width:60vw), on a Fill-width row. The page background lives at the bounded
+        // ui.rs level (see render() callers); here we only place + center the runs.
+        let cw = content.content_width.max(200.0);
+        container(container(col).width(Length::Fixed(cw)))
+            .width(Length::Fill)
+            .center_x()
+            .into()
+    }
+
+    /// The CSS-derived page background colour for the current ZKVM content, if any.
+    /// The host paints this behind the content (see ui.rs page canvas).
+    pub fn zkvm_background(&self) -> Option<Color> {
+        self.zkvm_content
+            .as_ref()
+            .map(|c| Color::from_rgb8(c.background[0], c.background[1], c.background[2]))
     }
 
     /// Create renderer with performance monitor (TODO: Fix circular import)

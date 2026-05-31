@@ -86,6 +86,10 @@ fn print_render(r: &RenderedContent) {
     println!("URL:      {}", r.url);
     println!("Title:    {}", r.title);
     println!(
+        "Page bg:  #{:02x}{:02x}{:02x}   |   content width: {:.0}px (centered)",
+        r.background[0], r.background[1], r.background[2], r.content_width
+    );
+    println!(
         "Canvas:   {:.0} × {:.0} px   |   {} runs   |   {} elements blocked at boundary",
         r.width,
         r.height,

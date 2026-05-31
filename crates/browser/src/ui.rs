@@ -31,20 +31,27 @@ impl StyleSheet for InfoBarStyle {
     }
 }
 
-/// Light "page canvas" for ZKVM-rendered pages. The sanitized display list from
-/// the isolation boundary carries web colours (dark text), so the page area needs a
-/// light surface to be legible over Citadel's dark chrome — and it matches how the
-/// page actually looks. This must live at the bounded UI level (not inside the
-/// scrollable) so its `Fill` background actually paints the whole pane.
+/// Page canvas for ZKVM-rendered pages. Paints the CSS-derived page background
+/// (from `body { background }`) behind the centered content. Must live at the
+/// bounded UI level (not inside the scrollable) so its `Fill` background paints the
+/// whole pane.
 #[derive(Clone, Copy, Debug)]
-struct PageCanvasStyle;
+struct PageCanvasStyle {
+    bg: Color,
+}
+
+impl PageCanvasStyle {
+    fn new(bg: Color) -> Self {
+        Self { bg }
+    }
+}
 
 impl StyleSheet for PageCanvasStyle {
     type Style = iced::Theme;
 
     fn appearance(&self, _style: &Self::Style) -> Appearance {
         Appearance {
-            background: Some(Background::Color(Color::from_rgb(0.97, 0.97, 0.98))),
+            background: Some(Background::Color(self.bg)),
             text_color: Some(Color::from_rgb(0.1, 0.1, 0.1)),
             ..Default::default()
         }
@@ -374,6 +381,10 @@ impl CitadelUI {
                 } => {
                     // Get the actual rendered content from the renderer
                     let rendered_content = renderer.render();
+                    // CSS-derived page background (default to a light canvas).
+                    let page_bg = renderer
+                        .zkvm_background()
+                        .unwrap_or_else(|| Color::from_rgb(0.97, 0.97, 0.98));
 
                     // Create a comprehensive header with scroll info and zoom level
                     let mut header_elements = Row::new()
@@ -437,7 +448,9 @@ impl CitadelUI {
                             container(scrollable_content)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
-                                .style(theme::Container::Custom(Box::new(PageCanvasStyle))),
+                                .style(theme::Container::Custom(Box::new(PageCanvasStyle::new(
+                                    page_bg,
+                                )))),
                         )
                         .spacing(0);
 
@@ -606,13 +619,15 @@ impl CitadelUI {
         scroll_state: Option<&ScrollState>,
     ) -> Element<'a, Message> {
         // Create enhanced scrollable with zoom awareness
+        // Vertical-only scrolling: keeps the content width bounded so the page's
+        // centered, fixed-width content column actually centers (a bidirectional
+        // scrollable leaves width unbounded and breaks center_x).
         let scrollable_view = scrollable(content)
             .height(Length::Fill)
             .width(Length::Fill)
-            .direction(scrollable::Direction::Both {
-                vertical: scrollable::Properties::new(),
-                horizontal: scrollable::Properties::new(),
-            });
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Properties::new(),
+            ));
 
         // Apply zoom transformation by adjusting scrollable properties
         if viewport_info.zoom_level != ZoomLevel::Percent100 {
