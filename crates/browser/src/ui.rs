@@ -142,6 +142,12 @@ impl CitadelUI {
         &self.address_bar_value
     }
 
+    /// Set the address bar text (e.g. to reflect the active tab's URL after a
+    /// navigation, back/forward, or tab switch).
+    pub fn set_address_bar_value(&mut self, value: String) {
+        self.address_bar_value = value;
+    }
+
     /// Update the UI state based on messages
     pub fn update(&mut self, message: UIMessage) -> iced::Command<Message> {
         match message {
@@ -217,9 +223,9 @@ impl CitadelUI {
         viewport_info: &ViewportInfo,
     ) -> Element<'_, Message> {
         let navigation_buttons = Row::new()
-            .push(button("←").padding(8))
-            .push(button("→").padding(8))
-            .push(button("⟳").padding(8))
+            .push(button("←").padding(8).on_press(Message::GoBack))
+            .push(button("→").padding(8).on_press(Message::GoForward))
+            .push(button("⟳").padding(8).on_press(Message::RefreshTab))
             .spacing(4);
 
         let address_bar = text_input("Enter URL...", &self.address_bar_value)

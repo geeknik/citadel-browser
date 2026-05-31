@@ -49,6 +49,10 @@ pub struct CitadelBrowser {
     /// Per-tab sanitized render output from the ZKVM boundary, so switching tabs
     /// shows each tab's own content (not the last-rendered tab's).
     tab_rendered: HashMap<uuid::Uuid, citadel_tabs::RenderedContent>,
+    /// Per-tab back/forward navigation history.
+    tab_history: HashMap<uuid::Uuid, TabHistory>,
+    /// One-shot flag: the next Navigate came from back/forward, so don't record it.
+    history_suppress: bool,
     /// Viewport information and state
     viewport_info: ViewportInfo,
     /// Performance monitoring system (TODO: Fix circular import)
@@ -67,6 +71,55 @@ pub struct CitadelBrowser {
     privacy_sender: PrivacyEventSender,
     /// Whether the privacy panel is expanded to show recent events
     privacy_panel_expanded: bool,
+}
+
+/// Per-tab back/forward navigation history (a linear stack with a cursor).
+#[derive(Debug, Clone, Default)]
+pub struct TabHistory {
+    /// Visited URLs in order.
+    entries: Vec<String>,
+    /// Index of the currently displayed entry.
+    current: usize,
+}
+
+impl TabHistory {
+    /// Record a fresh navigation: drop any forward entries, then push (deduping
+    /// an immediate repeat of the current URL).
+    fn record(&mut self, url: String) {
+        if self.entries.get(self.current) == Some(&url) {
+            return;
+        }
+        let keep = self.current.saturating_add(1).min(self.entries.len());
+        self.entries.truncate(keep);
+        self.entries.push(url);
+        self.current = self.entries.len().saturating_sub(1);
+    }
+
+    fn can_back(&self) -> bool {
+        self.current > 0 && !self.entries.is_empty()
+    }
+
+    fn can_forward(&self) -> bool {
+        self.current.saturating_add(1) < self.entries.len()
+    }
+
+    /// Step back and return the now-current URL.
+    fn go_back(&mut self) -> Option<String> {
+        if !self.can_back() {
+            return None;
+        }
+        self.current = self.current.saturating_sub(1);
+        self.entries.get(self.current).cloned()
+    }
+
+    /// Step forward and return the now-current URL.
+    fn go_forward(&mut self) -> Option<String> {
+        if !self.can_forward() {
+            return None;
+        }
+        self.current = self.current.saturating_add(1);
+        self.entries.get(self.current).cloned()
+    }
 }
 
 /// Detailed loading states for better user feedback
@@ -261,6 +314,10 @@ pub enum Message {
     ClearError(uuid::Uuid),
     /// Refresh current tab
     RefreshTab,
+    /// Navigate back in the active tab's history
+    GoBack,
+    /// Navigate forward in the active tab's history
+    GoForward,
     /// Stop loading current tab
     StopLoading(uuid::Uuid),
     /// A tab's ZKVM boundary returned a sanitized display list (or None on failure).
@@ -402,6 +459,8 @@ impl Application for CitadelBrowser {
             loading_states: HashMap::new(),
             tab_render_data: HashMap::new(),
             tab_rendered: HashMap::new(),
+            tab_history: HashMap::new(),
+            history_suppress: false,
             viewport_info: ViewportInfo::default(),
             tab_scroll_states: HashMap::new(),
             tab_zoom_levels: HashMap::new(),
@@ -522,6 +581,20 @@ impl Application for CitadelBrowser {
 
                         if let Some(active_tab) = tab_states.iter().find(|tab| tab.is_active) {
                             let tab_id = active_tab.id;
+
+                            // Record in history unless this navigation came from
+                            // back/forward (which only moves the cursor).
+                            if self.history_suppress {
+                                self.history_suppress = false;
+                            } else {
+                                self.tab_history
+                                    .entry(tab_id)
+                                    .or_default()
+                                    .record(normalized_url.clone());
+                            }
+
+                            // Reflect the resolved URL in the address bar.
+                            self.ui.set_address_bar_value(normalized_url.clone());
 
                             // Clear any existing error state
                             self.error_states.remove(&tab_id);
@@ -733,6 +806,7 @@ impl Application for CitadelBrowser {
                 self.loading_states.remove(&tab_id);
                 self.tab_render_data.remove(&tab_id);
                 self.tab_rendered.remove(&tab_id);
+                self.tab_history.remove(&tab_id);
                 self.tab_scroll_states.remove(&tab_id);
                 self.tab_zoom_levels.remove(&tab_id);
 
@@ -843,6 +917,34 @@ impl Application for CitadelBrowser {
                     }
                 }
 
+                Command::none()
+            }
+
+            Message::GoBack => {
+                let Some(tab_id) = self.get_active_tab_id() else {
+                    return Command::none();
+                };
+                if let Some(url) = self.tab_history.get_mut(&tab_id).and_then(TabHistory::go_back) {
+                    log::info!("⬅️ Back to {}", url);
+                    self.history_suppress = true;
+                    return self.update(Message::Navigate(url));
+                }
+                Command::none()
+            }
+
+            Message::GoForward => {
+                let Some(tab_id) = self.get_active_tab_id() else {
+                    return Command::none();
+                };
+                if let Some(url) = self
+                    .tab_history
+                    .get_mut(&tab_id)
+                    .and_then(TabHistory::go_forward)
+                {
+                    log::info!("➡️ Forward to {}", url);
+                    self.history_suppress = true;
+                    return self.update(Message::Navigate(url));
+                }
                 Command::none()
             }
 
@@ -1688,4 +1790,39 @@ fn extract_title(html: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TabHistory;
+
+    #[test]
+    fn history_back_forward_truncate_and_dedup() {
+        let mut h = TabHistory::default();
+        assert!(!h.can_back() && !h.can_forward());
+
+        h.record("a".into());
+        h.record("b".into());
+        h.record("c".into());
+        assert!(h.can_back() && !h.can_forward());
+
+        assert_eq!(h.go_back(), Some("b".to_string()));
+        assert_eq!(h.go_back(), Some("a".to_string()));
+        assert!(!h.can_back() && h.can_forward());
+        assert_eq!(h.go_back(), None, "already at the oldest entry");
+
+        assert_eq!(h.go_forward(), Some("b".to_string()));
+
+        // A fresh navigation from 'b' drops the forward entry ('c').
+        h.record("d".into());
+        assert!(!h.can_forward(), "forward history truncated on new nav");
+        assert_eq!(h.go_back(), Some("b".to_string()));
+        assert_eq!(h.go_forward(), Some("d".to_string()));
+
+        // Re-recording the current URL is a no-op (e.g. refresh).
+        let len_before = h.entries.len();
+        h.record("d".into());
+        assert_eq!(h.entries.len(), len_before);
+        assert_eq!(h.go_forward(), None);
+    }
 }
