@@ -2,19 +2,23 @@
 //!
 //! Run it:
 //!     cargo run -p citadel-tabs --example render_example_com
-//!     cargo run -p citadel-tabs --example render_example_com -- https://example.org
+//!     cargo run -p citadel-tabs --example render_example_com -- path/to/page.html
 //!
-//! It fetches the page over the network, then hands ONLY the raw bytes across a
-//! real AES-256-GCM encrypted channel to an isolated renderer task. The renderer
-//! parses, sanitizes, and lays the page out inside the boundary and returns a
-//! display list — which is all this host process ever sees. We print it.
+//! It hands raw HTML bytes across a real AES-256-GCM encrypted channel to an
+//! isolated renderer task, which parses, sanitizes, and lays the page out inside
+//! the boundary and returns a display list — all this host process ever sees.
+//!
+//! To keep the dependency surface minimal (no HTTP client here), this demo uses a
+//! bundled copy of example.com by default, or a local HTML file you pass as an
+//! argument. The browser binary itself performs live network fetches through the
+//! privacy networking layer; this example isolates the *rendering boundary*.
 
-use citadel_tabs::{DisplayKind, RenderRequest, RenderedContent};
 use citadel_tabs::zkvm_renderer::spawn_zkvm_renderer;
+use citadel_tabs::{DisplayKind, RenderRequest, RenderedContent};
 use citadel_zkvm::{Channel, ChannelMessage};
 use std::time::Duration;
 
-/// Offline fallback (verbatim example.com structure) if the network is blocked.
+/// Verbatim structure of the example.com document.
 const BUNDLED: &str = r#"<!doctype html><html><head><title>Example Domain</title>
 <style>body{font-family:sans-serif}</style></head><body><div>
 <h1>Example Domain</h1>
@@ -25,39 +29,27 @@ domain in literature without prior coordination or asking for permission.</p>
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let url = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "https://example.com/".to_string());
-
-    eprintln!("→ Fetching {url} over the network …");
-    let html = match fetch(&url).await {
-        Ok(body) => {
-            eprintln!("  fetched {} bytes", body.len());
-            body
+    let (label, html) = match std::env::args().nth(1) {
+        Some(path) => {
+            let bytes = std::fs::read_to_string(&path)?;
+            (path, bytes)
         }
-        Err(e) => {
-            eprintln!("  network unavailable ({e}); using bundled example.com");
-            BUNDLED.to_string()
-        }
+        None => ("bundled example.com".to_string(), BUNDLED.to_string()),
     };
 
+    eprintln!("→ Source: {label} ({} bytes)", html.len());
     eprintln!("→ Handing raw bytes to an isolated ZKVM renderer over an encrypted channel …");
-    let rendered = render_in_zk_tab(&url, html).await?;
+    let rendered = render_in_zk_tab(&label, html).await?;
 
     print_render(&rendered);
     Ok(())
 }
 
-/// Fetch a URL's body as text.
-async fn fetch(url: &str) -> Result<String, reqwest::Error> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
-    client.get(url).send().await?.error_for_status()?.text().await
-}
-
 /// Drive the real encrypted-channel + isolated-renderer round trip.
-async fn render_in_zk_tab(url: &str, html: String) -> Result<RenderedContent, Box<dyn std::error::Error>> {
+async fn render_in_zk_tab(
+    url: &str,
+    html: String,
+) -> Result<RenderedContent, Box<dyn std::error::Error>> {
     let (mut host_side, vm_side) = Channel::new()?;
     tokio::spawn(async move {
         if let Err(e) = spawn_zkvm_renderer(vm_side).await {
@@ -100,7 +92,10 @@ fn print_render(r: &RenderedContent) {
         r.display_list.len(),
         r.security_metadata.blocked_elements
     );
-    println!("Policies: {}", r.security_metadata.applied_policies.join(", "));
+    println!(
+        "Policies: {}",
+        r.security_metadata.applied_policies.join(", ")
+    );
     println!("────────────────────────────────────────────────────────────────");
     for item in &r.display_list {
         let tag = match item.kind {
