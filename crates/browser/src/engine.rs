@@ -164,9 +164,9 @@ impl BrowserEngine {
             retry_possible: false,
         })?;
 
-        // DNS resolution is handled by reqwest - respects system DNS settings
+        // DNS resolution is handled by the std resolver (TcpStream::connect)
         log::debug!(
-            "📍 Using system DNS configuration via reqwest for host: {}",
+            "📍 Using std system DNS resolution for host: {}",
             host
         );
 
@@ -244,8 +244,8 @@ impl BrowserEngine {
             .with_privacy_level(self.network_config.privacy_level)
             .prepare();
 
-        // DNS resolution is handled by reqwest - respects system DNS settings
-        log::debug!("📍 Using system DNS configuration via reqwest");
+        // DNS resolution is handled by the std resolver (TcpStream::connect)
+        log::debug!("📍 Using std system DNS resolution");
 
         // Make HTTP request
         let response = self.make_http_request(request).await?;
@@ -269,66 +269,30 @@ impl BrowserEngine {
         Ok(result)
     }
 
-    /// Make an HTTP request using reqwest with privacy settings
+    /// Make an HTTP request using the in-house HTTPS client (no reqwest/hyper).
     async fn make_http_request(&self, request: Request) -> Result<String, String> {
-        // Build reqwest client with privacy settings
-        let client = reqwest::Client::builder()
-            .timeout(
-                request
-                    .timeout()
-                    .unwrap_or(std::time::Duration::from_secs(30)),
-            )
-            .redirect(if request.follows_redirects() {
-                reqwest::redirect::Policy::limited(request.get_max_redirects())
-            } else {
-                reqwest::redirect::Policy::none()
-            })
-            .user_agent(
-                request
-                    .headers()
-                    .get("User-Agent")
-                    .unwrap_or(&"Citadel/1.0".to_string()),
-            )
-            .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
-        // Build the request
-        let mut req_builder = match request.method() {
-            Method::GET => client.get(request.url().as_str()),
-            Method::POST => client.post(request.url().as_str()),
-            Method::PUT => client.put(request.url().as_str()),
-            Method::DELETE => client.delete(request.url().as_str()),
-            Method::HEAD => client.head(request.url().as_str()),
-            _ => return Err("Unsupported HTTP method".to_string()),
-        };
-
-        // Add headers
-        for (name, value) in request.headers() {
-            req_builder = req_builder.header(name, value);
+        // The in-house client is GET-only for now (page loads are GET). Form POST
+        // will need a small extension to citadel_networking::http.
+        if !matches!(request.method(), Method::GET) {
+            return Err("only GET is supported by the in-house HTTPS client".to_string());
         }
 
-        // Add body if present
-        if let Some(body) = request.body() {
-            req_builder = req_builder.body(body.to_vec());
-        }
+        // Forward the privacy headers the Request was prepared with.
+        let headers: Vec<(String, String)> = request
+            .headers()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
-        // Execute the request
-        let response = req_builder
-            .send()
+        let response = citadel_networking::https_fetch(request.url(), &headers)
             .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
 
-        // Check response status
-        if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()));
+        if !(200..300).contains(&response.status) {
+            return Err(format!("HTTP error: status {}", response.status));
         }
 
-        // Get response body
-        let content = response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read response body: {}", e))?;
-
+        let content = response.body_text();
         log::info!("Successfully fetched {} bytes", content.len());
         Ok(content)
     }
@@ -968,8 +932,8 @@ impl BrowserEngine {
 
         // Form submission would be handled by the networking layer
 
-        // Convert to reqwest format and execute
-        // For now, just return the target URL as the implementation is simplified
+        // Form submission is not wired to the network layer yet (the in-house
+        // client is GET-only); for now, just return the target URL.
         log::info!("🌐 Form submission prepared for: {}", target_url);
 
         // For this implementation, return the target URL
