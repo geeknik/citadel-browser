@@ -46,6 +46,9 @@ pub struct CitadelBrowser {
     loading_states: HashMap<uuid::Uuid, LoadingState>,
     /// Store DOM and stylesheet per tab for renderer state
     tab_render_data: HashMap<uuid::Uuid, (Arc<Dom>, Arc<CitadelStylesheet>)>,
+    /// Per-tab sanitized render output from the ZKVM boundary, so switching tabs
+    /// shows each tab's own content (not the last-rendered tab's).
+    tab_rendered: HashMap<uuid::Uuid, citadel_tabs::RenderedContent>,
     /// Viewport information and state
     viewport_info: ViewportInfo,
     /// Performance monitoring system (TODO: Fix circular import)
@@ -398,6 +401,7 @@ impl Application for CitadelBrowser {
             error_states: HashMap::new(),
             loading_states: HashMap::new(),
             tab_render_data: HashMap::new(),
+            tab_rendered: HashMap::new(),
             viewport_info: ViewportInfo::default(),
             tab_scroll_states: HashMap::new(),
             tab_zoom_levels: HashMap::new(),
@@ -728,6 +732,7 @@ impl Application for CitadelBrowser {
                 self.error_states.remove(&tab_id);
                 self.loading_states.remove(&tab_id);
                 self.tab_render_data.remove(&tab_id);
+                self.tab_rendered.remove(&tab_id);
                 self.tab_scroll_states.remove(&tab_id);
                 self.tab_zoom_levels.remove(&tab_id);
 
@@ -751,21 +756,18 @@ impl Application for CitadelBrowser {
             Message::SwitchTab(tab_id) => {
                 log::info!("🔄 Switching to tab: {}", tab_id);
 
-                // Update renderer with the stored DOM/stylesheet for this tab
-                if let Some((dom, stylesheet)) = self.tab_render_data.get(&tab_id) {
-                    match self
-                        .renderer
-                        .update_content(dom.clone(), stylesheet.clone())
-                    {
-                        Ok(_) => {
-                            log::info!("✅ Renderer updated with content for tab {}", tab_id);
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to update renderer when switching tab: {}", e);
-                        }
+                // Restore this tab's own sanitized ZKVM render (or clear if it has
+                // none yet). This is what makes each tab show its own page.
+                match self.tab_rendered.get(&tab_id) {
+                    Some(content) => {
+                        self.renderer.set_zkvm_content(content.clone());
+                        self.update_scroll_state_for_content(tab_id);
+                        log::info!("✅ Restored ZKVM render for tab {}", tab_id);
                     }
-                } else {
-                    log::info!("No render data stored for tab {}", tab_id);
+                    None => {
+                        self.renderer.clear_zkvm_content();
+                        log::info!("No render stored for tab {} yet", tab_id);
+                    }
                 }
 
                 let tab_manager = self.tab_manager.clone();
@@ -864,9 +866,14 @@ impl Application for CitadelBrowser {
                             content.height as u32,
                             content.security_metadata.blocked_elements,
                         );
-                        // Paint ONLY the sanitized display list from the boundary.
-                        self.renderer.set_zkvm_content(content);
-                        self.update_scroll_state_for_content(tab_id);
+                        // Keep each tab's output so switching tabs restores it.
+                        self.tab_rendered.insert(tab_id, content.clone());
+                        // Only paint it if this tab is the one on screen — a slow
+                        // background tab must not clobber the active tab's display.
+                        if self.get_active_tab_id() == Some(tab_id) {
+                            self.renderer.set_zkvm_content(content);
+                            self.update_scroll_state_for_content(tab_id);
+                        }
                         self.error_states.remove(&tab_id);
                     }
                     None => {
