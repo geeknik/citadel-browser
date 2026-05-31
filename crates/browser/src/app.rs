@@ -844,6 +844,17 @@ impl Application for CitadelBrowser {
                     }
                 }
 
+                // Reflect the switched-to tab's URL in the address bar.
+                if let Some(url) = self
+                    .tab_manager
+                    .get_tab_states()
+                    .iter()
+                    .find(|t| t.id == tab_id)
+                    .map(|t| t.url.clone())
+                {
+                    self.ui.set_address_bar_value(url);
+                }
+
                 let tab_manager = self.tab_manager.clone();
                 let tab_id_copy = tab_id; // Copy the UUID
                 return Command::perform(
