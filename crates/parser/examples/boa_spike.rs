@@ -29,9 +29,7 @@ fn main() {
                 // Verify freeze worked: in sloppy mode, assignment silently fails
                 // (doesn't throw). Check the property wasn't actually set.
                 let _ = ctx.eval(Source::from_bytes("Object.prototype.evil = 1;"));
-                match ctx.eval(Source::from_bytes(
-                    "Object.prototype.evil === undefined",
-                )) {
+                match ctx.eval(Source::from_bytes("Object.prototype.evil === undefined")) {
                     Ok(val) => {
                         if val.as_boolean() == Some(true) {
                             println!("PASS (freeze verified, assignment silently ignored)");
@@ -142,7 +140,10 @@ fn main() {
         }
     }
 
-    println!("\n=== Results: {passed}/{} passed ({failed} failed) ===", passed + failed);
+    println!(
+        "\n=== Results: {passed}/{} passed ({failed} failed) ===",
+        passed + failed
+    );
 
     if failed > 0 {
         println!("\nSPIKE FAILED: Boa does not support required operations.");
@@ -201,12 +202,8 @@ fn test_native_function(ctx: &mut Context) -> Result<(), String> {
         println!("  [citadelLog] {}", msg.to_std_string_escaped());
         Ok(JsValue::undefined())
     });
-    ctx.register_global_callable(
-        boa_engine::js_string!("citadelLog"),
-        1,
-        citadel_log,
-    )
-    .map_err(|e| format!("register: {}", e))?;
+    ctx.register_global_callable(boa_engine::js_string!("citadelLog"), 1, citadel_log)
+        .map_err(|e| format!("register: {}", e))?;
 
     // Call the native function from JS
     ctx.eval(Source::from_bytes("citadelLog('Hello from Boa!')"))
@@ -330,10 +327,8 @@ fn test_realworld_js(ctx: &mut Context) -> Result<(), String> {
         .map_err(|e| format!("arrow functions: {}", e))?;
 
     // Destructuring
-    ctx.eval(Source::from_bytes(
-        "const {x, y} = {x: 1, y: 2}; x + y",
-    ))
-    .map_err(|e| format!("destructuring: {}", e))?;
+    ctx.eval(Source::from_bytes("const {x, y} = {x: 1, y: 2}; x + y"))
+        .map_err(|e| format!("destructuring: {}", e))?;
 
     // Template literals
     ctx.eval(Source::from_bytes(

@@ -5,5 +5,7 @@ fn main() {
 
     // Print helpful message on non-Linux platforms
     #[cfg(not(target_os = "linux"))]
-    eprintln!("Note: Fuzzing is only supported on Linux. Use Docker for fuzzing on other platforms.");
-} 
+    eprintln!(
+        "Note: Fuzzing is only supported on Linux. Use Docker for fuzzing on other platforms."
+    );
+}

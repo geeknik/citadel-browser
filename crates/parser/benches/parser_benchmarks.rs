@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use citadel_parser::{HtmlParser, ParserConfig, SecurityLevel};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn parse_simple_document(c: &mut Criterion) {
     let config = ParserConfig::default();
@@ -68,4 +68,4 @@ fn parse_complex_document(c: &mut Criterion) {
 }
 
 criterion_group!(benches, parse_simple_document, parse_complex_document);
-criterion_main!(benches); 
+criterion_main!(benches);

@@ -1,5 +1,5 @@
 //! Security-focused unit tests for Citadel HTML parser
-//! 
+//!
 //! These tests specifically target security vulnerabilities and edge cases
 //! that could be exploited by malicious web content.
 
@@ -19,18 +19,14 @@ fn create_strict_security_context() -> Arc<SecurityContext> {
 /// Safe HTML parsing wrapper that handles panics gracefully
 /// This allows our security tests to continue running even when the parser has implementation issues
 fn safe_parse_html(html: &str, security_context: Arc<SecurityContext>) -> Result<bool, String> {
-    let result = std::panic::catch_unwind(|| {
-        parse_html(html, security_context)
-    });
-    
+    let result = std::panic::catch_unwind(|| parse_html(html, security_context));
+
     match result {
-        Ok(parse_result) => {
-            match parse_result {
-                Ok(_dom) => Ok(true),
-                Err(e) => Err(format!("Parse error: {:?}", e))
-            }
-        }
-        Err(_) => Err("Parser panicked".to_string())
+        Ok(parse_result) => match parse_result {
+            Ok(_dom) => Ok(true),
+            Err(e) => Err(format!("Parse error: {:?}", e)),
+        },
+        Err(_) => Err("Parser panicked".to_string()),
     }
 }
 
@@ -49,7 +45,7 @@ fn test_basic_html_parsing() {
 
     let security_context = create_test_security_context();
     let result = safe_parse_html(html, security_context);
-    
+
     match result {
         Ok(success) => {
             assert!(success, "Basic HTML parsing should succeed");
@@ -67,7 +63,7 @@ fn test_empty_html_document() {
     let html = "";
     let security_context = create_test_security_context();
     let result = safe_parse_html(html, security_context);
-    
+
     match result {
         Ok(_) => println!("✅ Empty HTML parsing handled correctly"),
         Err(error) => println!("⚠️  Empty HTML caused parser issue: {}", error),
@@ -86,7 +82,7 @@ fn test_malformed_html_resilience() {
     ];
 
     let security_context = create_test_security_context();
-    
+
     for (i, html) in test_cases.iter().enumerate() {
         let result = parse_html(html, security_context.clone());
         // All malformed HTML should either parse successfully or fail gracefully
@@ -113,7 +109,7 @@ fn test_deep_nesting_protection() {
 
     let security_context = create_strict_security_context(); // Low limit
     let result = parse_html(&html, security_context);
-    
+
     match result {
         Ok(_dom) => {
             // If parsing succeeds, the security context should have limited depth
@@ -151,7 +147,7 @@ fn test_script_and_style_handling() {
 
     let security_context = create_test_security_context();
     let result = safe_parse_html(html, security_context);
-    
+
     match result {
         Ok(_) => println!("✅ Script/style content handled securely"),
         Err(error) => {
@@ -184,17 +180,21 @@ fn test_html_entities_handling() {
 #[test]
 fn test_large_document_limits() {
     // Generate a large HTML document to test resource limits
-    let mut html = String::from("<!DOCTYPE html><html><head><title>Large Document</title></head><body>");
-    
+    let mut html =
+        String::from("<!DOCTYPE html><html><head><title>Large Document</title></head><body>");
+
     // Add 10,000 paragraphs
     for i in 0..10_000 {
-        html.push_str(&format!("<p>Paragraph number {} with some content to make it realistic.</p>\n", i));
+        html.push_str(&format!(
+            "<p>Paragraph number {} with some content to make it realistic.</p>\n",
+            i
+        ));
     }
     html.push_str("</body></html>");
 
     let security_context = create_test_security_context();
     let result = parse_html(&html, security_context);
-    
+
     match result {
         Ok(_dom) => {
             println!("Large document parsed successfully");
@@ -210,19 +210,23 @@ fn test_large_document_limits() {
 fn test_unicode_and_encoding_edge_cases() {
     let test_cases = vec![
         "<!DOCTYPE html><html><body><p>Unicode: 🦀 Rust</p></body></html>",
-        "<!DOCTYPE html><html><body><p>中文测试</p></body></html>", 
+        "<!DOCTYPE html><html><body><p>中文测试</p></body></html>",
         "<!DOCTYPE html><html><body><p>العربية</p></body></html>",
         "<!DOCTYPE html><html><body><p>🚀🛡️🔒</p></body></html>",
         // Potentially problematic Unicode sequences
         "<!DOCTYPE html><html><body><p>\u{200B}\u{200C}\u{200D}</p></body></html>", // Zero-width chars
-        "<!DOCTYPE html><html><body><p>\u{FEFF}</p></body></html>", // BOM
+        "<!DOCTYPE html><html><body><p>\u{FEFF}</p></body></html>",                 // BOM
     ];
 
     let security_context = create_test_security_context();
-    
+
     for (i, html) in test_cases.iter().enumerate() {
         let result = parse_html(html, security_context.clone());
-        assert!(result.is_ok(), "Unicode test case {} should parse successfully", i);
+        assert!(
+            result.is_ok(),
+            "Unicode test case {} should parse successfully",
+            i
+        );
     }
 }
 
@@ -230,7 +234,7 @@ fn test_unicode_and_encoding_edge_cases() {
 fn test_attribute_limits() {
     // Test HTML with many attributes
     let mut html = String::from("<!DOCTYPE html><html><body><div ");
-    
+
     // Add 1000 attributes
     for i in 0..1000 {
         html.push_str(&format!("attr{}='value{}' ", i, i));
@@ -239,7 +243,7 @@ fn test_attribute_limits() {
 
     let security_context = create_test_security_context();
     let result = parse_html(&html, security_context);
-    
+
     match result {
         Ok(_dom) => {
             println!("Many attributes handled successfully");
@@ -254,7 +258,7 @@ fn test_attribute_limits() {
 #[test]
 fn test_concurrent_parsing() {
     use std::thread;
-    
+
     let html = r#"<!DOCTYPE html>
 <html>
 <head><title>Concurrent Test</title></head>
@@ -264,14 +268,16 @@ fn test_concurrent_parsing() {
 </body>
 </html>"#;
 
-    let handles: Vec<_> = (0..10).map(|i| {
-        let html = html.to_string();
-        thread::spawn(move || {
-            let security_context = create_test_security_context();
-            let result = parse_html(&html, security_context);
-            (i, result.is_ok())
+    let handles: Vec<_> = (0..10)
+        .map(|i| {
+            let html = html.to_string();
+            thread::spawn(move || {
+                let security_context = create_test_security_context();
+                let result = parse_html(&html, security_context);
+                (i, result.is_ok())
+            })
         })
-    }).collect();
+        .collect();
 
     for handle in handles {
         let (thread_id, success) = handle.join().unwrap();
@@ -300,7 +306,7 @@ fn test_memory_safety_edge_cases() {
     ];
 
     let security_context = create_test_security_context();
-    
+
     for (i, html) in edge_cases.iter().enumerate() {
         let result = parse_html(html, security_context.clone());
         // The important thing is that it doesn't crash or leak memory
@@ -314,14 +320,14 @@ fn test_memory_safety_edge_cases() {
 #[test]
 fn test_security_context_enforcement() {
     let html = r#"<div><div><div><div><div><div><p>Six levels deep</p></div></div></div></div></div></div>"#;
-    
+
     // Test with different security context limits
     let limits = vec![3, 5, 7, 10];
-    
+
     for limit in limits {
         let security_context = Arc::new(SecurityContext::new(limit));
         let result = parse_html(html, security_context);
-        
+
         match result {
             Ok(_dom) => {
                 println!("Limit {} allowed parsing (content may be truncated)", limit);
@@ -333,7 +339,7 @@ fn test_security_context_enforcement() {
     }
 }
 
-#[test]  
+#[test]
 fn test_comment_and_processing_instruction_handling() {
     let html = r#"<!DOCTYPE html>
 <!-- This is a comment with potential <script>alert('xss')</script> -->
@@ -353,4 +359,4 @@ fn test_comment_and_processing_instruction_handling() {
     let security_context = create_test_security_context();
     let result = parse_html(html, security_context);
     assert!(result.is_ok(), "Comments and PIs should be handled safely");
-} 
+}

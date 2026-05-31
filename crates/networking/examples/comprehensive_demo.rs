@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use citadel_networking::{
-    NetworkConfig, PrivacyLevel,
     advanced_loader::{AdvancedResourceLoader, LoadingStrategy},
-    integrity::{IntegrityValidator, HashAlgorithm},
-    resource_manager::{ResourceManager, ResourceManagerConfig, ResourcePolicy, CachePolicy},
-    resource_loader::{ResourceLoader, LoadOptions},
     cache::CacheConfig,
+    integrity::{HashAlgorithm, IntegrityValidator},
+    resource_loader::{LoadOptions, ResourceLoader},
+    resource_manager::{CachePolicy, ResourceManager, ResourceManagerConfig, ResourcePolicy},
+    NetworkConfig, PrivacyLevel,
 };
 use tokio::sync::mpsc;
 use url::Url;
@@ -79,22 +79,30 @@ async fn demo_basic_resource_loading() -> Result<(), Box<dyn std::error::Error>>
 
     // Load with progress tracking
     let loader_with_progress = loader.with_progress_callback(|progress| {
-        println!("  📈 Progress: {:.1}% ({} loaded, {} failed, {} cached)", 
-                progress.completion_percentage() * 100.0,
-                progress.loaded,
-                progress.failed, 
-                progress.cached);
+        println!(
+            "  📈 Progress: {:.1}% ({} loaded, {} failed, {} cached)",
+            progress.completion_percentage() * 100.0,
+            progress.loaded,
+            progress.failed,
+            progress.cached
+        );
     });
 
-    let result = loader_with_progress.load_from_html(test_html, base_url).await;
+    let result = loader_with_progress
+        .load_from_html(test_html, base_url)
+        .await;
 
     match result {
         Ok(load_result) => {
-            println!("  ✅ Loaded {} resources in {:?}", 
-                    load_result.responses.len(), 
-                    load_result.total_time);
-            println!("  📊 Success rate: {:.1}%", 
-                    load_result.progress.success_rate() * 100.0);
+            println!(
+                "  ✅ Loaded {} resources in {:?}",
+                load_result.responses.len(),
+                load_result.total_time
+            );
+            println!(
+                "  📊 Success rate: {:.1}%",
+                load_result.progress.success_rate() * 100.0
+            );
         }
         Err(e) => {
             println!("  ⚠️ Loading completed with errors: {}", e);
@@ -106,19 +114,19 @@ async fn demo_basic_resource_loading() -> Result<(), Box<dyn std::error::Error>>
 
 async fn demo_advanced_loading_strategies() -> Result<(), Box<dyn std::error::Error>> {
     let config = NetworkConfig::default();
-    
+
     let strategies = [
         ("Sequential", LoadingStrategy::Sequential),
-        ("Parallel", LoadingStrategy::Parallel), 
+        ("Parallel", LoadingStrategy::Parallel),
         ("Critical First", LoadingStrategy::CriticalFirst),
         ("Adaptive", LoadingStrategy::Adaptive),
     ];
 
     for (name, strategy) in &strategies {
         println!("  🔄 Testing {} strategy...", name);
-        
+
         let loader = AdvancedResourceLoader::new(config.clone(), *strategy).await?;
-        
+
         // Set up progress tracking
         let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
         let loader = loader.with_progress_channel(progress_tx);
@@ -128,11 +136,14 @@ async fn demo_advanced_loading_strategies() -> Result<(), Box<dyn std::error::Er
             let mut updates = 0;
             while let Some(progress) = progress_rx.recv().await {
                 updates += 1;
-                if updates <= 3 { // Limit output for demo
-                    println!("    📊 {:.1}% complete, {} Bps, {:?} network", 
-                            progress.basic.completion_percentage() * 100.0,
-                            progress.bandwidth,
-                            progress.network_condition);
+                if updates <= 3 {
+                    // Limit output for demo
+                    println!(
+                        "    📊 {:.1}% complete, {} Bps, {:?} network",
+                        progress.basic.completion_percentage() * 100.0,
+                        progress.bandwidth,
+                        progress.network_condition
+                    );
                 }
             }
         });
@@ -166,7 +177,9 @@ async fn demo_advanced_loading_strategies() -> Result<(), Box<dyn std::error::Er
         };
 
         let start_time = std::time::Instant::now();
-        let result = loader.load_with_strategy(test_html, base_url, options).await;
+        let result = loader
+            .load_with_strategy(test_html, base_url, options)
+            .await;
         let elapsed = start_time.elapsed();
 
         progress_monitor.abort();
@@ -174,9 +187,11 @@ async fn demo_advanced_loading_strategies() -> Result<(), Box<dyn std::error::Er
         match result {
             Ok(load_result) => {
                 println!("    ✅ {} completed in {:?}", name, elapsed);
-                println!("    📈 Bandwidth: {} bytes/s, Condition: {:?}", 
-                        loader.current_bandwidth(),
-                        loader.network_condition());
+                println!(
+                    "    📈 Bandwidth: {} bytes/s, Condition: {:?}",
+                    loader.current_bandwidth(),
+                    loader.network_condition()
+                );
             }
             Err(e) => {
                 println!("    ⚠️ {} completed with errors: {}", name, e);
@@ -192,39 +207,42 @@ async fn demo_content_security_and_integrity() -> Result<(), Box<dyn std::error:
 
     // Demo content integrity verification
     println!("  🔐 Testing content integrity verification...");
-    
+
     let test_script = b"console.log('Citadel Browser is secure!');";
-    
+
     // Generate integrity hash
     let integrity = validator.generate_integrity(test_script, HashAlgorithm::Sha384);
     println!("    📝 Generated integrity: {}", integrity);
-    
+
     // Verify integrity
     let result = validator.verify_integrity(test_script, &integrity);
     println!("    ✅ Integrity verification: {:?}", result);
-    
+
     // Test with tampered content
     let tampered_script = b"console.log('Malicious code injected!');";
     let tampered_result = validator.verify_integrity(tampered_script, &integrity);
-    println!("    🚫 Tampered content verification: {:?}", tampered_result);
+    println!(
+        "    🚫 Tampered content verification: {:?}",
+        tampered_result
+    );
 
     // Demo CSP policy enforcement
     println!("  🛡️ Testing CSP policy enforcement...");
-    
+
     let mut csp_validator = IntegrityValidator::new();
     csp_validator.set_csp_from_header(
-        "default-src 'self'; script-src 'self' https://trusted.com; img-src 'self' data: https:"
+        "default-src 'self'; script-src 'self' https://trusted.com; img-src 'self' data: https:",
     );
-    
+
     // Test allowed URLs
     let self_script = Url::parse("https://citadel-browser.com/app.js")?;
     let violation = csp_validator.check_csp_violation(&self_script, "script");
     println!("    ✅ Self script allowed: {:?}", violation.is_none());
-    
+
     let trusted_script = Url::parse("https://trusted.com/lib.js")?;
     let violation = csp_validator.check_csp_violation(&trusted_script, "script");
     println!("    ✅ Trusted script allowed: {:?}", violation.is_none());
-    
+
     // Test blocked URLs
     let evil_script = Url::parse("https://malicious.com/evil.js")?;
     let violation = csp_validator.check_csp_violation(&evil_script, "script");
@@ -309,13 +327,16 @@ async fn demo_cache_management() -> Result<(), Box<dyn std::error::Error>> {
     for (i, url_str) in urls.iter().enumerate() {
         let url = Url::parse(url_str)?;
         let mut headers = std::collections::HashMap::new();
-        headers.insert("content-type".to_string(), 
-                      match i {
-                          0 => "text/css",
-                          1 => "application/javascript", 
-                          2 => "image/png",
-                          _ => "text/plain",
-                      }.to_string());
+        headers.insert(
+            "content-type".to_string(),
+            match i {
+                0 => "text/css",
+                1 => "application/javascript",
+                2 => "image/png",
+                _ => "text/plain",
+            }
+            .to_string(),
+        );
         headers.insert("cache-control".to_string(), "max-age=1800".to_string());
 
         let content = format!("/* Test content for resource {} */", i);
@@ -336,10 +357,12 @@ async fn demo_cache_management() -> Result<(), Box<dyn std::error::Error>> {
     let stats = cache.stats();
     println!("  📊 Cache Statistics:");
     println!("    Entries: {}/{}", stats.entry_count, stats.max_entries);
-    println!("    Size: {} bytes / {} bytes ({:.1}%)", 
-            stats.total_size_bytes, 
-            stats.max_size_bytes,
-            stats.size_utilization());
+    println!(
+        "    Size: {} bytes / {} bytes ({:.1}%)",
+        stats.total_size_bytes,
+        stats.max_size_bytes,
+        stats.size_utilization()
+    );
     println!("    Entry utilization: {:.1}%", stats.entry_utilization());
 
     // Test cache retrieval
@@ -352,11 +375,12 @@ async fn demo_cache_management() -> Result<(), Box<dyn std::error::Error>> {
     // Demonstrate privacy feature: cache clearing
     println!("  🧹 Clearing cache for privacy...");
     cache.clear();
-    
+
     let cleared_stats = cache.stats();
-    println!("    ✅ Cache cleared - Entries: {}, Size: {} bytes", 
-            cleared_stats.entry_count, 
-            cleared_stats.total_size_bytes);
+    println!(
+        "    ✅ Cache cleared - Entries: {}, Size: {} bytes",
+        cleared_stats.entry_count, cleared_stats.total_size_bytes
+    );
 
     Ok(())
 }

@@ -5,9 +5,9 @@
 //!
 //! Run: cargo run -p citadel-parser --example rendering_audit
 
-use citadel_parser::{parse_css, compute_layout, CitadelStylesheet};
 use citadel_parser::html::parse_html;
 use citadel_parser::security::SecurityContext;
+use citadel_parser::{compute_layout, parse_css, CitadelStylesheet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -36,7 +36,10 @@ fn main() {
         ("https://motherfuckingwebsite.com", "Tier 1"),
         ("https://lite.cnn.com", "Tier 1"),
         ("https://news.ycombinator.com", "Tier 2"),
-        ("https://en.wikipedia.org/wiki/Rust_(programming_language)", "Tier 2"),
+        (
+            "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+            "Tier 2",
+        ),
         ("https://www.nytimes.com", "Tier 3"),
         ("https://old.reddit.com", "Tier 3"),
         ("https://coveryourtracks.eff.org", "Tier 4"),
@@ -62,11 +65,15 @@ fn main() {
         result.duration_ms = duration;
 
         if result.parse_ok && result.layout_ok {
-            println!("OK ({} elements, {} layout nodes, {}ms)",
-                result.elements_count, result.layout_nodes, duration);
+            println!(
+                "OK ({} elements, {} layout nodes, {}ms)",
+                result.elements_count, result.layout_nodes, duration
+            );
         } else if result.fetch_ok && result.parse_ok {
-            println!("PARTIAL (parsed {} elements, layout failed, {}ms)",
-                result.elements_count, duration);
+            println!(
+                "PARTIAL (parsed {} elements, layout failed, {}ms)",
+                result.elements_count, duration
+            );
         } else if result.fetch_ok {
             println!("PARSE FAIL ({}ms)", duration);
         } else {
@@ -191,20 +198,36 @@ async fn test_site(client: &reqwest::Client, url: &str, tier: &'static str) -> S
 fn print_summary(results: &[SiteResult]) {
     println!("\nSUMMARY");
     println!("{}", "-".repeat(80));
-    println!("{:<45} {:>6} {:>6} {:>6} {:>6} {:>6}",
-        "URL", "Fetch", "Parse", "CSS", "Layout", "Time");
+    println!(
+        "{:<45} {:>6} {:>6} {:>6} {:>6} {:>6}",
+        "URL", "Fetch", "Parse", "CSS", "Layout", "Time"
+    );
     println!("{}", "-".repeat(80));
 
     let mut pass_count = 0;
     for r in results {
         let fetch = if r.fetch_ok { "OK" } else { "FAIL" };
-        let parse = if r.parse_ok { format!("{}", r.elements_count) } else { "FAIL".to_string() };
+        let parse = if r.parse_ok {
+            format!("{}", r.elements_count)
+        } else {
+            "FAIL".to_string()
+        };
         let css = format!("{}", r.css_rules);
-        let layout = if r.layout_ok { format!("{}", r.layout_nodes) } else { "FAIL".to_string() };
+        let layout = if r.layout_ok {
+            format!("{}", r.layout_nodes)
+        } else {
+            "FAIL".to_string()
+        };
 
-        let short_url = if r.url.len() > 43 { format!("{}...", &r.url[..40]) } else { r.url.clone() };
-        println!("{:<45} {:>6} {:>6} {:>6} {:>6} {:>4}ms",
-            short_url, fetch, parse, css, layout, r.duration_ms);
+        let short_url = if r.url.len() > 43 {
+            format!("{}...", &r.url[..40])
+        } else {
+            r.url.clone()
+        };
+        println!(
+            "{:<45} {:>6} {:>6} {:>6} {:>6} {:>4}ms",
+            short_url, fetch, parse, css, layout, r.duration_ms
+        );
 
         if r.parse_ok && r.layout_ok && r.text_content_len > 0 {
             pass_count += 1;
@@ -212,8 +235,15 @@ fn print_summary(results: &[SiteResult]) {
     }
 
     println!("{}", "-".repeat(80));
-    println!("\nRendering pipeline success: {}/{} sites", pass_count, results.len());
-    println!("Success criterion: 3/{} sites render recognizably (2 from Tier 1/2)", results.len());
+    println!(
+        "\nRendering pipeline success: {}/{} sites",
+        pass_count,
+        results.len()
+    );
+    println!(
+        "Success criterion: 3/{} sites render recognizably (2 from Tier 1/2)",
+        results.len()
+    );
 
     if pass_count >= 3 {
         println!("STATUS: CRITERION MET");
@@ -234,34 +264,60 @@ fn print_gap_analysis(results: &[SiteResult]) {
 
     for r in results {
         if !r.fetch_ok {
-            fetch_gaps.push(format!("{}: {}", r.url, r.errors.first().map(|s| s.as_str()).unwrap_or("unknown")));
+            fetch_gaps.push(format!(
+                "{}: {}",
+                r.url,
+                r.errors.first().map(|s| s.as_str()).unwrap_or("unknown")
+            ));
         }
         if r.fetch_ok && !r.layout_ok {
-            layout_gaps.push(format!("{}: {}", r.url, r.errors.iter().find(|e| e.contains("Layout")).map(|s| s.as_str()).unwrap_or("unknown layout error")));
+            layout_gaps.push(format!(
+                "{}: {}",
+                r.url,
+                r.errors
+                    .iter()
+                    .find(|e| e.contains("Layout"))
+                    .map(|s| s.as_str())
+                    .unwrap_or("unknown layout error")
+            ));
         }
         if r.css_rules == 0 && r.fetch_ok {
-            css_gaps.push(format!("{}: No inline CSS parsed (external stylesheets not loaded)", r.url));
+            css_gaps.push(format!(
+                "{}: No inline CSS parsed (external stylesheets not loaded)",
+                r.url
+            ));
         }
         if r.js_scripts_found > 10 {
-            js_heavy_sites.push(format!("{}: {} script tags (JS-heavy, may render blank without execution)", r.url, r.js_scripts_found));
+            js_heavy_sites.push(format!(
+                "{}: {} script tags (JS-heavy, may render blank without execution)",
+                r.url, r.js_scripts_found
+            ));
         }
     }
 
     if !fetch_gaps.is_empty() {
         println!("\nNetwork gaps:");
-        for g in &fetch_gaps { println!("  - {}", g); }
+        for g in &fetch_gaps {
+            println!("  - {}", g);
+        }
     }
     if !layout_gaps.is_empty() {
         println!("\nLayout gaps:");
-        for g in &layout_gaps { println!("  - {}", g); }
+        for g in &layout_gaps {
+            println!("  - {}", g);
+        }
     }
     if !css_gaps.is_empty() {
         println!("\nCSS gaps:");
-        for g in &css_gaps { println!("  - {}", g); }
+        for g in &css_gaps {
+            println!("  - {}", g);
+        }
     }
     if !js_heavy_sites.is_empty() {
         println!("\nJS-heavy sites (content may require JS execution):");
-        for g in &js_heavy_sites { println!("  - {}", g); }
+        for g in &js_heavy_sites {
+            println!("  - {}", g);
+        }
     }
 
     // Summary stats

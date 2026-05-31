@@ -11,10 +11,10 @@ pub mod node;
 // Re-export key types for easier access from outside the dom module
 pub use error::DomError;
 pub use metrics::DomMetrics;
-pub use node::{Attribute, Element, Node, NodeBuilder, NodeHandle, NodeData};
+pub use node::{Attribute, Element, Node, NodeBuilder, NodeData, NodeHandle};
 
-use std::sync::Arc;
 use html5ever::namespace_url;
+use std::sync::Arc;
 
 /// Represents the top-level DOM structure for a parsed document.
 #[derive(Debug)]
@@ -61,9 +61,8 @@ impl Dom {
     /// Appends text content to a parent node.
     pub fn append_text(&mut self, parent: &NodeHandle, text: String) {
         if let Ok(mut parent_node) = parent.write() {
-            let text_node = crate::dom::node::Node::create_new(
-                crate::dom::node::NodeData::Text(text.clone())
-            );
+            let text_node =
+                crate::dom::node::Node::create_new(crate::dom::node::NodeData::Text(text.clone()));
             parent_node.children.push(text_node);
             self.metrics.add_text_content(text.len());
         }
@@ -104,20 +103,29 @@ impl Dom {
     }
 
     /// Gets read access to a node.
-    pub fn get_node<'a>(&self, handle: &'a NodeHandle) -> Option<std::sync::RwLockReadGuard<'a, Node>> {
+    pub fn get_node<'a>(
+        &self,
+        handle: &'a NodeHandle,
+    ) -> Option<std::sync::RwLockReadGuard<'a, Node>> {
         handle.read().ok()
     }
 
     /// Gets write access to a node.
-    pub fn get_node_mut<'a>(&self, handle: &'a NodeHandle) -> Option<std::sync::RwLockWriteGuard<'a, Node>> {
+    pub fn get_node_mut<'a>(
+        &self,
+        handle: &'a NodeHandle,
+    ) -> Option<std::sync::RwLockWriteGuard<'a, Node>> {
         handle.write().ok()
     }
-    
+
     /// Creates a document wrapper from this DOM
     pub fn into_document(self) -> crate::Document {
         // For now, this simply extracts the document node
         // In the future, we might want to wrap it with additional document-specific APIs
-        let node = self.document_node_handle.read().ok()
+        let node = self
+            .document_node_handle
+            .read()
+            .ok()
             .expect("Failed to get read lock on document node")
             .clone();
         node
@@ -131,25 +139,37 @@ impl Dom {
     /// Get the text content of the entire document
     pub fn get_text_content(&self) -> String {
         tracing::info!("🔍 DOM::get_text_content() called");
-        
+
         let raw_content = self.extract_text_recursive(&self.document_node_handle);
-        
+
         // Debug logging
         if raw_content.is_empty() {
-            tracing::warn!("🔍 DOM text extraction: Raw content is empty - investigating DOM structure");
-            
+            tracing::warn!(
+                "🔍 DOM text extraction: Raw content is empty - investigating DOM structure"
+            );
+
             // Debug: Examine the document structure when text extraction fails
             if let Ok(root_node) = self.document_node_handle.read() {
-                tracing::info!("  🌳 Document root has {} children", root_node.children.len());
-                
+                tracing::info!(
+                    "  🌳 Document root has {} children",
+                    root_node.children.len()
+                );
+
                 for (i, child) in root_node.children.iter().enumerate() {
                     if let Ok(child_node) = child.read() {
                         match &child_node.data {
                             crate::dom::node::NodeData::Element(element) => {
-                                tracing::info!("    Child {}: <{}> with {} children", i, element.local_name(), child_node.children.len());
-                                
+                                tracing::info!(
+                                    "    Child {}: <{}> with {} children",
+                                    i,
+                                    element.local_name(),
+                                    child_node.children.len()
+                                );
+
                                 if element.local_name() == "html" {
-                                    tracing::info!("      🎯 Found HTML! Examining its structure...");
+                                    tracing::info!(
+                                        "      🎯 Found HTML! Examining its structure..."
+                                    );
                                     for (j, html_child) in child_node.children.iter().enumerate() {
                                         if let Ok(html_child_node) = html_child.read() {
                                             match &html_child_node.data {
@@ -160,7 +180,10 @@ impl Dom {
                                                     tracing::info!("        HTML child {}: TEXT '{}' ({} chars)", j, t.trim(), t.len());
                                                 }
                                                 _ => {
-                                                    tracing::info!("        HTML child {}: Other", j);
+                                                    tracing::info!(
+                                                        "        HTML child {}: Other",
+                                                        j
+                                                    );
                                                 }
                                             }
                                         }
@@ -168,7 +191,12 @@ impl Dom {
                                 }
                             }
                             crate::dom::node::NodeData::Text(text) => {
-                                tracing::info!("    Child {}: TEXT '{}' ({} chars)", i, text.trim(), text.len());
+                                tracing::info!(
+                                    "    Child {}: TEXT '{}' ({} chars)",
+                                    i,
+                                    text.trim(),
+                                    text.len()
+                                );
                             }
                             _ => {
                                 tracing::info!("    Child {}: Other node type", i);
@@ -178,17 +206,25 @@ impl Dom {
                 }
             }
         } else {
-            let preview = if raw_content.len() > 100 { format!("{}...", &raw_content[..100]) } else { raw_content.clone() };
-            tracing::info!("DOM text extraction: Raw content {} chars: '{}'", raw_content.len(), preview);
+            let preview = if raw_content.len() > 100 {
+                format!("{}...", &raw_content[..100])
+            } else {
+                raw_content.clone()
+            };
+            tracing::info!(
+                "DOM text extraction: Raw content {} chars: '{}'",
+                raw_content.len(),
+                preview
+            );
         }
-        
+
         // Clean up the extracted content
         // Replace multiple spaces with single spaces
         let cleaned = raw_content
             .split_whitespace()
             .collect::<Vec<&str>>()
             .join(" ");
-            
+
         // Replace multiple newlines with double newlines for paragraph spacing
         let final_content = cleaned
             .lines()
@@ -196,8 +232,11 @@ impl Dom {
             .filter(|line| !line.is_empty())
             .collect::<Vec<&str>>()
             .join("\n\n");
-            
-        tracing::info!("🔍 DOM text extraction: Final content {} chars", final_content.len());
+
+        tracing::info!(
+            "🔍 DOM text extraction: Final content {} chars",
+            final_content.len()
+        );
         if final_content.len() > 0 {
             let preview = if final_content.len() > 200 {
                 format!("{}...", &final_content[..200])
@@ -206,7 +245,7 @@ impl Dom {
             };
             tracing::info!("📚 Final content preview: '{}'", preview);
         }
-        
+
         final_content
     }
 
@@ -224,7 +263,7 @@ impl Dom {
                     return title_text.trim().to_string();
                 }
             }
-            
+
             // Recursively search children
             for child in &node.children {
                 let title = self.extract_title_recursive(child);
@@ -239,14 +278,18 @@ impl Dom {
     /// Recursively extract all text content from DOM tree
     fn extract_text_recursive(&self, node_handle: &NodeHandle) -> String {
         let mut text_content = String::new();
-        
+
         if let Ok(node) = node_handle.read() {
             match &node.data {
                 crate::dom::node::NodeData::Text(text) => {
                     // Add the text content, trimming excessive whitespace
                     let trimmed_text = text.trim();
                     if !trimmed_text.is_empty() {
-                        tracing::debug!("📄 Found text node: '{}' ({} chars)", trimmed_text, trimmed_text.len());
+                        tracing::debug!(
+                            "📄 Found text node: '{}' ({} chars)",
+                            trimmed_text,
+                            trimmed_text.len()
+                        );
                         text_content.push_str(trimmed_text);
                         text_content.push(' '); // Add space after text nodes
                     }
@@ -255,32 +298,64 @@ impl Dom {
                     // Skip script and style elements
                     let tag_name = element.local_name();
                     if tag_name != "script" && tag_name != "style" {
-                        tracing::debug!("🏷️ Processing element <{}> with {} children", tag_name, node.children.len());
-                        
-                        // Check if this is a block element that should have spacing
-                        let is_block_element = matches!(tag_name, 
-                            "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | 
-                            "section" | "article" | "header" | "footer" | "main" | 
-                            "aside" | "nav" | "blockquote" | "pre" | "address" |
-                            "li" | "dt" | "dd" | "td" | "th" | "tr"
+                        tracing::debug!(
+                            "🏷️ Processing element <{}> with {} children",
+                            tag_name,
+                            node.children.len()
                         );
-                        
+
+                        // Check if this is a block element that should have spacing
+                        let is_block_element = matches!(
+                            tag_name,
+                            "div"
+                                | "p"
+                                | "h1"
+                                | "h2"
+                                | "h3"
+                                | "h4"
+                                | "h5"
+                                | "h6"
+                                | "section"
+                                | "article"
+                                | "header"
+                                | "footer"
+                                | "main"
+                                | "aside"
+                                | "nav"
+                                | "blockquote"
+                                | "pre"
+                                | "address"
+                                | "li"
+                                | "dt"
+                                | "dd"
+                                | "td"
+                                | "th"
+                                | "tr"
+                        );
+
                         let content_before = text_content.len();
-                        
+
                         // Add text content from children
                         for child in &node.children {
                             text_content.push_str(&self.extract_text_recursive(child));
                         }
-                        
+
                         let content_after = text_content.len();
                         if content_after > content_before {
-                            tracing::debug!("  ✅ Element <{}> contributed {} chars", tag_name, content_after - content_before);
+                            tracing::debug!(
+                                "  ✅ Element <{}> contributed {} chars",
+                                tag_name,
+                                content_after - content_before
+                            );
                         } else {
                             tracing::debug!("  ⚠️ Element <{}> contributed no text", tag_name);
                         }
-                        
+
                         // Add spacing after block elements
-                        if is_block_element && !text_content.is_empty() && !text_content.ends_with('\n') {
+                        if is_block_element
+                            && !text_content.is_empty()
+                            && !text_content.ends_with('\n')
+                        {
                             text_content.push('\n');
                         }
                     } else {
@@ -288,7 +363,10 @@ impl Dom {
                     }
                 }
                 _ => {
-                    tracing::debug!("🔄 Processing other node type with {} children", node.children.len());
+                    tracing::debug!(
+                        "🔄 Processing other node type with {} children",
+                        node.children.len()
+                    );
                     // For other node types, check children
                     for child in &node.children {
                         text_content.push_str(&self.extract_text_recursive(child));
@@ -298,7 +376,7 @@ impl Dom {
         } else {
             tracing::warn!("⚠️ Failed to read node in extract_text_recursive");
         }
-        
+
         text_content
     }
 
@@ -306,14 +384,18 @@ impl Dom {
     pub fn get_metrics(&self) -> &DomMetrics {
         &self.metrics
     }
-    
+
     /// Find element by ID (JavaScript getElementById support)
     pub fn get_element_by_id(&self, id: &str) -> Option<NodeHandle> {
         self.find_element_by_id_recursive(&self.document_node_handle, id)
     }
-    
+
     /// Recursively search for element by ID
-    fn find_element_by_id_recursive(&self, node_handle: &NodeHandle, target_id: &str) -> Option<NodeHandle> {
+    fn find_element_by_id_recursive(
+        &self,
+        node_handle: &NodeHandle,
+        target_id: &str,
+    ) -> Option<NodeHandle> {
         if let Ok(node) = node_handle.read() {
             // Check if this element has the target ID
             if let Some(element_id) = node.element_id() {
@@ -321,7 +403,7 @@ impl Dom {
                     return Some(node_handle.clone());
                 }
             }
-            
+
             // Search children
             for child in &node.children {
                 if let Some(found) = self.find_element_by_id_recursive(child, target_id) {
@@ -331,16 +413,21 @@ impl Dom {
         }
         None
     }
-    
+
     /// Find elements by tag name (basic querySelector support)
     pub fn get_elements_by_tag_name(&self, tag_name: &str) -> Vec<NodeHandle> {
         let mut results = Vec::new();
         self.find_elements_by_tag_recursive(&self.document_node_handle, tag_name, &mut results);
         results
     }
-    
+
     /// Recursively search for elements by tag name
-    fn find_elements_by_tag_recursive(&self, node_handle: &NodeHandle, target_tag: &str, results: &mut Vec<NodeHandle>) {
+    fn find_elements_by_tag_recursive(
+        &self,
+        node_handle: &NodeHandle,
+        target_tag: &str,
+        results: &mut Vec<NodeHandle>,
+    ) {
         if let Ok(node) = node_handle.read() {
             // Check if this element matches the tag name
             if let Some(tag_name) = node.tag_name() {
@@ -348,37 +435,42 @@ impl Dom {
                     results.push(node_handle.clone());
                 }
             }
-            
+
             // Search children
             for child in &node.children {
                 self.find_elements_by_tag_recursive(child, target_tag, results);
             }
         }
     }
-    
+
     /// Find elements by class name
     pub fn get_elements_by_class_name(&self, class_name: &str) -> Vec<NodeHandle> {
         let mut results = Vec::new();
         self.find_elements_by_class_recursive(&self.document_node_handle, class_name, &mut results);
         results
     }
-    
+
     /// Recursively search for elements by class name
-    fn find_elements_by_class_recursive(&self, node_handle: &NodeHandle, target_class: &str, results: &mut Vec<NodeHandle>) {
+    fn find_elements_by_class_recursive(
+        &self,
+        node_handle: &NodeHandle,
+        target_class: &str,
+        results: &mut Vec<NodeHandle>,
+    ) {
         if let Ok(node) = node_handle.read() {
             // Check if this element has the target class
             let classes = node.class_list();
             if classes.contains(&target_class.to_string()) {
                 results.push(node_handle.clone());
             }
-            
+
             // Search children
             for child in &node.children {
                 self.find_elements_by_class_recursive(child, target_class, results);
             }
         }
     }
-    
+
     /// Basic querySelector implementation (ID and tag name only for now)
     pub fn query_selector(&self, selector: &str) -> Option<NodeHandle> {
         if selector.starts_with('#') {
@@ -388,13 +480,15 @@ impl Dom {
         } else if selector.starts_with('.') {
             // Class selector - return first match
             let class_name = &selector[1..];
-            self.get_elements_by_class_name(class_name).into_iter().next()
+            self.get_elements_by_class_name(class_name)
+                .into_iter()
+                .next()
         } else {
             // Tag selector - return first match
             self.get_elements_by_tag_name(selector).into_iter().next()
         }
     }
-    
+
     /// Basic querySelectorAll implementation
     pub fn query_selector_all(&self, selector: &str) -> Vec<NodeHandle> {
         if selector.starts_with('#') {
@@ -410,16 +504,16 @@ impl Dom {
             self.get_elements_by_tag_name(selector)
         }
     }
-    
+
     /// Create a new element and add it to the DOM
     pub fn create_element(&mut self, tag_name: &str) -> NodeHandle {
-        use crate::dom::node::{NodeBuilder, NodeData, Element};
-        use html5ever::{QualName, ns};
+        use crate::dom::node::{Element, NodeBuilder, NodeData};
+        use html5ever::{ns, QualName};
         use string_cache::Atom;
-        
+
         let name = QualName::new(None, ns!(html), Atom::from(tag_name));
         let attrs = Vec::new();
-        
+
         let builder = NodeBuilder::new(self.metrics.clone(), self.security_context.clone());
         match builder.create_element_node(name, attrs) {
             Ok(node) => node,
@@ -427,30 +521,30 @@ impl Dom {
                 // Fallback: create a simple element
                 let element = Element::new(
                     QualName::new(None, ns!(html), Atom::from(tag_name)),
-                    Vec::new()
+                    Vec::new(),
                 );
                 let node_data = NodeData::Element(element);
                 crate::dom::node::Node::create_new(node_data)
             }
         }
     }
-    
+
     /// Create a text node
     pub fn create_text_node(&self, text: &str) -> NodeHandle {
-        use crate::dom::node::{NodeData, Node};
+        use crate::dom::node::{Node, NodeData};
         Node::create_new(NodeData::Text(text.to_string()))
     }
-    
+
     /// Get the document's body element
     pub fn get_body(&self) -> Option<NodeHandle> {
         self.get_elements_by_tag_name("body").into_iter().next()
     }
-    
+
     /// Get the document's head element
     pub fn get_head(&self) -> Option<NodeHandle> {
         self.get_elements_by_tag_name("head").into_iter().next()
     }
-    
+
     /// Add element to the document (append to body if it exists, otherwise to root)
     pub fn add_element(&mut self, element: NodeHandle) {
         if let Some(body) = self.get_body() {
@@ -459,30 +553,30 @@ impl Dom {
                 return;
             }
         }
-        
+
         // Fallback: add to root
         self.append_child(&self.document_node_handle.clone(), element);
     }
-    
+
     /// Count total elements in DOM
     pub fn count_elements(&self) -> usize {
         self.count_elements_recursive(&self.document_node_handle)
     }
-    
+
     /// Recursively count elements
     fn count_elements_recursive(&self, node_handle: &NodeHandle) -> usize {
         let mut count = 0;
-        
+
         if let Ok(node) = node_handle.read() {
             if node.is_element() {
                 count += 1;
             }
-            
+
             for child in &node.children {
                 count += self.count_elements_recursive(child);
             }
         }
-        
+
         count
     }
 }
@@ -493,9 +587,9 @@ fn create_minimal_dom() -> Result<Dom, DomError> {
     let dom = Dom::new();
     let _metrics = dom.metrics.clone();
     let _security_context = dom.security_context.clone();
-    
+
     // You could add elements to the DOM here if needed
     Ok(dom)
 }
 
-// Potentially re-export or define common DOM interfaces/traits here 
+// Potentially re-export or define common DOM interfaces/traits here

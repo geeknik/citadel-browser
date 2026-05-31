@@ -189,7 +189,10 @@ impl TrackerBlockingEngine {
         // Initialize built-in blocklists
         engine.initialize_builtin_blocklists().await?;
 
-        log::info!("🛡️ Tracker blocking engine initialized with level: {:?}", config.blocking_level);
+        log::info!(
+            "🛡️ Tracker blocking engine initialized with level: {:?}",
+            config.blocking_level
+        );
 
         Ok(engine)
     }
@@ -301,13 +304,16 @@ impl TrackerBlockingEngine {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
-                    .as_secs()
+                    .as_secs(),
             );
         }
 
         let stats = self.stats.lock().await;
-        log::info!("🛡️ Initialized {} blocklist sources with {} total domains", 
-                  6, stats.total_blocklist_entries);
+        log::info!(
+            "🛡️ Initialized {} blocklist sources with {} total domains",
+            6,
+            stats.total_blocklist_entries
+        );
 
         Ok(())
     }
@@ -353,29 +359,37 @@ impl TrackerBlockingEngine {
         if let Ok(config) = self.config.read() {
             let level_enabled = match config.blocking_level {
                 BlockingLevel::Disabled => false,
-                BlockingLevel::Basic => matches!(category, 
+                BlockingLevel::Basic => matches!(
+                    category,
                     BlockingCategory::Advertising | BlockingCategory::Malware
                 ),
-                BlockingLevel::Standard => matches!(category,
-                    BlockingCategory::Advertising | BlockingCategory::Analytics | 
-                    BlockingCategory::SocialMedia | BlockingCategory::Malware
+                BlockingLevel::Standard => matches!(
+                    category,
+                    BlockingCategory::Advertising
+                        | BlockingCategory::Analytics
+                        | BlockingCategory::SocialMedia
+                        | BlockingCategory::Malware
                 ),
-                BlockingLevel::Aggressive => matches!(category,
-                    BlockingCategory::Advertising | BlockingCategory::Analytics | 
-                    BlockingCategory::SocialMedia | BlockingCategory::Fingerprinting |
-                    BlockingCategory::Cryptomining | BlockingCategory::Malware |
-                    BlockingCategory::ThirdParty
+                BlockingLevel::Aggressive => matches!(
+                    category,
+                    BlockingCategory::Advertising
+                        | BlockingCategory::Analytics
+                        | BlockingCategory::SocialMedia
+                        | BlockingCategory::Fingerprinting
+                        | BlockingCategory::Cryptomining
+                        | BlockingCategory::Malware
+                        | BlockingCategory::ThirdParty
                 ),
                 BlockingLevel::Paranoid => true, // Block everything except allow list
             };
-            
+
             let category_enabled = match category {
                 BlockingCategory::Fingerprinting => config.block_fingerprinting,
                 BlockingCategory::Cryptomining => config.block_cryptomining,
                 BlockingCategory::Malware => config.block_malware,
                 _ => true,
             };
-            
+
             level_enabled && category_enabled
         } else {
             false
@@ -387,7 +401,10 @@ impl TrackerBlockingEngine {
         // Check allow list first - clone the data to avoid holding lock across await
         let (in_allow_list, is_disabled) = {
             if let Ok(config) = self.config.read() {
-                (config.allow_list.contains(domain), config.blocking_level == BlockingLevel::Disabled)
+                (
+                    config.allow_list.contains(domain),
+                    config.blocking_level == BlockingLevel::Disabled,
+                )
             } else {
                 (false, false)
             }
@@ -468,7 +485,11 @@ impl TrackerBlockingEngine {
     }
 
     /// Check if a URL should be blocked
-    pub async fn should_block_url(&self, url: &str, resource_type: Option<ResourceType>) -> Option<BlockedRequest> {
+    pub async fn should_block_url(
+        &self,
+        url: &str,
+        resource_type: Option<ResourceType>,
+    ) -> Option<BlockedRequest> {
         let parsed_url = match Url::parse(url) {
             Ok(url) => url,
             Err(_) => return None,
@@ -498,7 +519,10 @@ impl TrackerBlockingEngine {
 
         // Check for third-party blocking in aggressive/paranoid modes
         if let Ok(config) = self.config.read() {
-            if matches!(config.blocking_level, BlockingLevel::Aggressive | BlockingLevel::Paranoid) {
+            if matches!(
+                config.blocking_level,
+                BlockingLevel::Aggressive | BlockingLevel::Paranoid
+            ) {
                 // This would need context about the main frame to determine if third-party
                 // For now, we'll skip this check as it requires integration with ResourceManager
             }
@@ -523,7 +547,7 @@ impl TrackerBlockingEngine {
                 Vec::new()
             }
         };
-        
+
         for (category, patterns) in patterns_to_check {
             if self.is_category_enabled(category).await {
                 for pattern in &patterns {
@@ -576,7 +600,13 @@ impl TrackerBlockingEngine {
     }
 
     /// Create a blocked request record
-    fn create_blocked_request(&self, url: &str, reason: String, category: BlockingCategory, resource_type: Option<ResourceType>) -> BlockedRequest {
+    fn create_blocked_request(
+        &self,
+        url: &str,
+        reason: String,
+        category: BlockingCategory,
+        resource_type: Option<ResourceType>,
+    ) -> BlockedRequest {
         BlockedRequest {
             url: url.to_string(),
             reason,
@@ -593,8 +623,12 @@ impl TrackerBlockingEngine {
 
     /// Record a blocked request and update statistics
     pub async fn record_blocked_request(&self, blocked: BlockedRequest) {
-        log::info!("🚫 Blocked {} request: {} ({})",
-                  blocked.category.to_string(), blocked.url, blocked.reason);
+        log::info!(
+            "🚫 Blocked {} request: {} ({})",
+            blocked.category.to_string(),
+            blocked.url,
+            blocked.reason
+        );
 
         // Emit privacy event for the scoreboard
         if let Some(sender) = &self.privacy_sender {
@@ -615,21 +649,24 @@ impl TrackerBlockingEngine {
         // Update statistics
         if let Ok(mut stats) = self.stats.try_lock() {
             stats.total_blocked += 1;
-            let counter = stats.blocked_by_category.entry(blocked.category).or_insert(0);
+            let counter = stats
+                .blocked_by_category
+                .entry(blocked.category)
+                .or_insert(0);
             *counter += 1;
 
             // Update top blocked domains
             if let Ok(parsed_url) = Url::parse(&blocked.url) {
                 if let Some(host) = parsed_url.host_str() {
                     let domain_stats = &mut stats.top_blocked_domains;
-                    
+
                     // Find existing entry or create new one
                     if let Some(pos) = domain_stats.iter().position(|(domain, _)| domain == host) {
                         domain_stats[pos].1 += 1;
                     } else if domain_stats.len() < 50 {
                         domain_stats.push((host.to_string(), 1));
                     }
-                    
+
                     // Sort by count (descending)
                     domain_stats.sort_by(|a, b| b.1.cmp(&a.1));
                     domain_stats.truncate(50);
@@ -681,7 +718,11 @@ impl TrackerBlockingEngine {
     fn extract_parent_domain(&self, domain: &str) -> Option<String> {
         let parts: Vec<&str> = domain.split('.').collect();
         if parts.len() >= 2 {
-            Some(format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]))
+            Some(format!(
+                "{}.{}",
+                parts[parts.len() - 2],
+                parts[parts.len() - 1]
+            ))
         } else {
             None
         }
@@ -692,7 +733,8 @@ impl TrackerBlockingEngine {
         // Collect domain-category mappings without holding lock across await
         let domain_categories: Vec<(BlockingCategory, bool)> = {
             if let Ok(blocklists) = self.blocklists.read() {
-                blocklists.iter()
+                blocklists
+                    .iter()
                     .map(|(category, source)| (*category, source.domains.contains(domain)))
                     .collect()
             } else {
@@ -728,18 +770,16 @@ impl TrackerBlockingEngine {
                 100_000 // default
             }
         };
-        
+
         if let Ok(mut cache) = self.pattern_cache.write() {
             cache.insert(domain.to_string(), blocked);
-            
+
             // Limit cache size
             if cache.len() > max_entries {
                 // Remove oldest entries (simple FIFO)
-                let keys_to_remove: Vec<String> = cache.keys()
-                    .take(cache.len() / 4)
-                    .cloned()
-                    .collect();
-                
+                let keys_to_remove: Vec<String> =
+                    cache.keys().take(cache.len() / 4).cloned().collect();
+
                 for key in keys_to_remove {
                     cache.remove(&key);
                 }
@@ -748,57 +788,125 @@ impl TrackerBlockingEngine {
     }
 
     // Built-in domain lists (these would ideally be loaded from external sources)
-    
+
     fn get_advertising_domains(&self) -> HashSet<String> {
         [
-            "doubleclick.net", "googleadservices.com", "googlesyndication.com",
-            "googletagmanager.com", "adsystem.amazon.com", "amazon-adsystem.com",
-            "adsrvr.org", "pubmatic.com", "rubiconproject.com", "appnexus.com",
-            "openx.com", "adsystem.com", "criteo.com", "outbrain.com",
-            "taboola.com", "scorecardresearch.com", "quantserve.com",
-            "ads.twitter.com", "ads.facebook.com", "ads.yahoo.com",
-            "bing.com", "microsoft.com", "ads.linkedin.com",
-        ].iter().map(|s| s.to_string()).collect()
+            "doubleclick.net",
+            "googleadservices.com",
+            "googlesyndication.com",
+            "googletagmanager.com",
+            "adsystem.amazon.com",
+            "amazon-adsystem.com",
+            "adsrvr.org",
+            "pubmatic.com",
+            "rubiconproject.com",
+            "appnexus.com",
+            "openx.com",
+            "adsystem.com",
+            "criteo.com",
+            "outbrain.com",
+            "taboola.com",
+            "scorecardresearch.com",
+            "quantserve.com",
+            "ads.twitter.com",
+            "ads.facebook.com",
+            "ads.yahoo.com",
+            "bing.com",
+            "microsoft.com",
+            "ads.linkedin.com",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn get_analytics_domains(&self) -> HashSet<String> {
         [
-            "google-analytics.com", "analytics.google.com", "stats.g.doubleclick.net",
-            "pixel.facebook.com", "analytics.facebook.com", "analytics.twitter.com",
-            "matomo.org", "statcounter.com", "hotjar.com", "fullstory.com",
-            "mouseflow.com", "crazyegg.com", "mixpanel.com", "segment.com",
-            "amplitude.com", "heap.io", "kissmetrics.com", "chartbeat.com",
-        ].iter().map(|s| s.to_string()).collect()
+            "google-analytics.com",
+            "analytics.google.com",
+            "stats.g.doubleclick.net",
+            "pixel.facebook.com",
+            "analytics.facebook.com",
+            "analytics.twitter.com",
+            "matomo.org",
+            "statcounter.com",
+            "hotjar.com",
+            "fullstory.com",
+            "mouseflow.com",
+            "crazyegg.com",
+            "mixpanel.com",
+            "segment.com",
+            "amplitude.com",
+            "heap.io",
+            "kissmetrics.com",
+            "chartbeat.com",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn get_social_media_domains(&self) -> HashSet<String> {
         [
-            "connect.facebook.net", "platform.twitter.com", "platform.linkedin.com",
-            "platform.instagram.com", "widgets.pinterest.com", "api.tiktok.com",
-            "snapchat.com", "reddit.com", "disqus.com", "addthis.com",
-            "sharethis.com", "social-plugins.facebook.com",
-        ].iter().map(|s| s.to_string()).collect()
+            "connect.facebook.net",
+            "platform.twitter.com",
+            "platform.linkedin.com",
+            "platform.instagram.com",
+            "widgets.pinterest.com",
+            "api.tiktok.com",
+            "snapchat.com",
+            "reddit.com",
+            "disqus.com",
+            "addthis.com",
+            "sharethis.com",
+            "social-plugins.facebook.com",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn get_fingerprinting_domains(&self) -> HashSet<String> {
         [
-            "fingerprintjs.com", "deviceinfo.me", "maxmind.com",
-            "browserleaks.com", "uniquemachine.org", "cross-device.io",
-        ].iter().map(|s| s.to_string()).collect()
+            "fingerprintjs.com",
+            "deviceinfo.me",
+            "maxmind.com",
+            "browserleaks.com",
+            "uniquemachine.org",
+            "cross-device.io",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn get_cryptomining_domains(&self) -> HashSet<String> {
         [
-            "coinhive.com", "jsecoin.com", "coin-hive.com", "crypto-loot.com",
-            "webminer.pro", "minero.cc", "miner.start.fyi", "coinblocker.org",
-        ].iter().map(|s| s.to_string()).collect()
+            "coinhive.com",
+            "jsecoin.com",
+            "coin-hive.com",
+            "crypto-loot.com",
+            "webminer.pro",
+            "minero.cc",
+            "miner.start.fyi",
+            "coinblocker.org",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn get_malware_domains(&self) -> HashSet<String> {
         [
-            "malware.com", "phishing.com", "trojan.com", "virus.com",
+            "malware.com",
+            "phishing.com",
+            "trojan.com",
+            "virus.com",
             // These would be populated from threat intelligence feeds
-        ].iter().map(|s| s.to_string()).collect()
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn get_advertising_patterns(&self) -> Result<Vec<Regex>, NetworkError> {
@@ -811,8 +919,11 @@ impl TrackerBlockingEngine {
             r".*\.amazon-adsystem\.",
         ];
 
-        patterns.iter()
-            .map(|p| Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e))))
+        patterns
+            .iter()
+            .map(|p| {
+                Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e)))
+            })
             .collect()
     }
 
@@ -825,8 +936,11 @@ impl TrackerBlockingEngine {
             r".*\.pixel\.",
         ];
 
-        patterns.iter()
-            .map(|p| Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e))))
+        patterns
+            .iter()
+            .map(|p| {
+                Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e)))
+            })
             .collect()
     }
 
@@ -838,8 +952,11 @@ impl TrackerBlockingEngine {
             r".*\.connect\.",
         ];
 
-        patterns.iter()
-            .map(|p| Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e))))
+        patterns
+            .iter()
+            .map(|p| {
+                Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e)))
+            })
             .collect()
     }
 
@@ -851,34 +968,33 @@ impl TrackerBlockingEngine {
             r".*browserinfo.*",
         ];
 
-        patterns.iter()
-            .map(|p| Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e))))
+        patterns
+            .iter()
+            .map(|p| {
+                Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e)))
+            })
             .collect()
     }
 
     fn get_cryptomining_patterns(&self) -> Result<Vec<Regex>, NetworkError> {
-        let patterns = [
-            r".*coin.*",
-            r".*crypto.*",
-            r".*mine.*",
-            r".*miner.*",
-        ];
+        let patterns = [r".*coin.*", r".*crypto.*", r".*mine.*", r".*miner.*"];
 
-        patterns.iter()
-            .map(|p| Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e))))
+        patterns
+            .iter()
+            .map(|p| {
+                Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e)))
+            })
             .collect()
     }
 
     fn get_malware_patterns(&self) -> Result<Vec<Regex>, NetworkError> {
-        let patterns = [
-            r".*malware.*",
-            r".*phishing.*",
-            r".*trojan.*",
-            r".*virus.*",
-        ];
+        let patterns = [r".*malware.*", r".*phishing.*", r".*trojan.*", r".*virus.*"];
 
-        patterns.iter()
-            .map(|p| Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e))))
+        patterns
+            .iter()
+            .map(|p| {
+                Regex::new(p).map_err(|e| NetworkError::UnknownError(format!("Regex error: {}", e)))
+            })
             .collect()
     }
 }
@@ -913,11 +1029,11 @@ mod tests {
     #[tokio::test]
     async fn test_domain_blocking() {
         let engine = TrackerBlockingEngine::new().await.unwrap();
-        
+
         // Test known tracker domain
         let blocked = engine.should_block_domain("doubleclick.net").await;
         assert!(blocked.is_some());
-        
+
         if let Some(blocked_req) = blocked {
             assert_eq!(blocked_req.category, BlockingCategory::Advertising);
         }
@@ -930,7 +1046,7 @@ mod tests {
     #[tokio::test]
     async fn test_subdomain_blocking() {
         let engine = TrackerBlockingEngine::new().await.unwrap();
-        
+
         // Test subdomain of blocked domain
         let blocked = engine.should_block_domain("ads.doubleclick.net").await;
         assert!(blocked.is_some());
@@ -939,7 +1055,7 @@ mod tests {
     #[tokio::test]
     async fn test_pattern_matching() {
         let engine = TrackerBlockingEngine::new().await.unwrap();
-        
+
         // Test pattern-based blocking
         let blocked = engine.should_block_domain("analytics.example.com").await;
         assert!(blocked.is_some());
@@ -949,9 +1065,9 @@ mod tests {
     async fn test_allow_list() {
         let mut config = BlocklistConfig::default();
         config.allow_list.insert("doubleclick.net".to_string());
-        
+
         let engine = TrackerBlockingEngine::with_config(config).await.unwrap();
-        
+
         // Should not block domain in allow list
         let not_blocked = engine.should_block_domain("doubleclick.net").await;
         assert!(not_blocked.is_none());
@@ -962,7 +1078,7 @@ mod tests {
         // Test disabled level
         let mut config = BlocklistConfig::default();
         config.blocking_level = BlockingLevel::Disabled;
-        
+
         let engine = TrackerBlockingEngine::with_config(config).await.unwrap();
         let not_blocked = engine.should_block_domain("doubleclick.net").await;
         assert!(not_blocked.is_none());
@@ -970,7 +1086,7 @@ mod tests {
         // Test basic level
         let mut config = BlocklistConfig::default();
         config.blocking_level = BlockingLevel::Basic;
-        
+
         let engine = TrackerBlockingEngine::with_config(config).await.unwrap();
         let blocked = engine.should_block_domain("doubleclick.net").await;
         assert!(blocked.is_some());
@@ -979,25 +1095,32 @@ mod tests {
     #[tokio::test]
     async fn test_statistics() {
         let engine = TrackerBlockingEngine::new().await.unwrap();
-        
+
         // Block a domain and check statistics
         if let Some(blocked) = engine.should_block_domain("doubleclick.net").await {
             engine.record_blocked_request(blocked).await;
         }
-        
+
         let stats = engine.get_stats().await;
         assert!(stats.total_blocked > 0);
-        assert!(stats.blocked_by_category.contains_key(&BlockingCategory::Advertising));
+        assert!(stats
+            .blocked_by_category
+            .contains_key(&BlockingCategory::Advertising));
     }
 
     #[tokio::test]
     async fn test_url_blocking() {
         let engine = TrackerBlockingEngine::new().await.unwrap();
-        
+
         // Test URL with tracker domain
-        let blocked = engine.should_block_url("https://doubleclick.net/tracker.js", Some(ResourceType::Script)).await;
+        let blocked = engine
+            .should_block_url(
+                "https://doubleclick.net/tracker.js",
+                Some(ResourceType::Script),
+            )
+            .await;
         assert!(blocked.is_some());
-        
+
         if let Some(blocked_req) = blocked {
             assert_eq!(blocked_req.url, "https://doubleclick.net/tracker.js");
             assert_eq!(blocked_req.resource_type, Some(ResourceType::Script));

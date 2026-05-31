@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use citadel_networking::{
-    NetworkConfig, ResourceLoader, ResourceDiscovery, ResourceContext,
-    LoadOptions, LoadProgress, CacheConfig, 
+    CacheConfig, LoadOptions, LoadProgress, NetworkConfig, ResourceContext, ResourceDiscovery,
+    ResourceLoader,
 };
 use url::Url;
 
@@ -11,10 +11,10 @@ use url::Url;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
     env_logger::init();
-    
+
     println!("🚀 Citadel Browser Resource Loading Pipeline Demo");
     println!("==================================================");
-    
+
     // Configure networking with privacy-first settings
     let network_config = NetworkConfig {
         privacy_level: citadel_networking::PrivacyLevel::High,
@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         strip_tracking_params: true,
         tracker_blocking: citadel_networking::BlocklistConfig::default(),
     };
-    
+
     // Configure resource loading with reasonable limits
     let load_options = LoadOptions {
         max_concurrent: 4,
@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_retries: 2,
         allowed_types: None, // Load all resource types
     };
-    
+
     // Configure cache with privacy-preserving settings
     let cache_config = CacheConfig {
         max_size_bytes: 10 * 1024 * 1024, // 10MB cache
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         respect_cache_control: true,
         enable_validation: true,
     };
-    
+
     // Create resource loader with progress tracking
     let progress_callback = Arc::new(|progress: &LoadProgress| {
         println!(
@@ -56,25 +56,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             progress.total,
             progress.phase
         );
-        
+
         if progress.bytes_loaded > 0 {
             println!("   📦 Bytes loaded: {} KB", progress.bytes_loaded / 1024);
         }
-        
+
         if progress.cached > 0 {
             println!("   💾 Cache hits: {}", progress.cached);
         }
-        
+
         if progress.failed > 0 {
             println!("   ❌ Failed loads: {}", progress.failed);
         }
     });
-    
+
     let loader = ResourceLoader::with_cache_config(network_config, cache_config)
         .await?
         .with_options(load_options)
         .with_progress_callback(move |progress| progress_callback(progress));
-    
+
     // Demo HTML content with various resource types
     let html_content = r#"
     <!DOCTYPE html>
@@ -113,19 +113,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     </body>
     </html>
     "#;
-    
+
     let base_url = Url::parse("https://demo.citadelbrowser.com/")?;
-    
+
     println!("🔍 Discovering resources from HTML...");
-    
+
     // Demonstrate resource discovery
     let discovery = ResourceDiscovery::new()?;
     let context = ResourceContext::new(base_url.clone())
         .include_non_critical(true)
         .max_resources(Some(20));
-    
+
     let discovered_resources = discovery.discover_all(html_content, &context)?;
-    
+
     println!("📋 Discovered {} resources:", discovered_resources.len());
     for (i, resource) in discovered_resources.iter().enumerate() {
         println!(
@@ -137,14 +137,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             resource.is_critical
         );
     }
-    
+
     println!("\n🌐 Starting resource loading...");
-    
+
     // Load resources
     let start_time = std::time::Instant::now();
     let result = loader.load_from_html(html_content, base_url).await;
     let total_time = start_time.elapsed();
-    
+
     match result {
         Ok(load_result) => {
             println!("\n✅ Resource loading completed!");
@@ -154,17 +154,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("   • Successfully loaded: {}", load_result.progress.loaded);
             println!("   • Served from cache: {}", load_result.progress.cached);
             println!("   • Failed to load: {}", load_result.progress.failed);
-            println!("   • Total bytes: {} KB", load_result.progress.bytes_loaded / 1024);
-            println!("   • Success rate: {:.1}%", load_result.progress.success_rate() * 100.0);
-            
+            println!(
+                "   • Total bytes: {} KB",
+                load_result.progress.bytes_loaded / 1024
+            );
+            println!(
+                "   • Success rate: {:.1}%",
+                load_result.progress.success_rate() * 100.0
+            );
+
             // Show cache statistics
             let cache_stats = loader.cache_stats();
             println!("\n💾 Cache statistics:");
             println!("   • Cache entries: {}", cache_stats.entry_count);
-            println!("   • Cache size: {} KB", cache_stats.total_size_bytes / 1024);
-            println!("   • Size utilization: {:.1}%", cache_stats.size_utilization());
-            println!("   • Entry utilization: {:.1}%", cache_stats.entry_utilization());
-            
+            println!(
+                "   • Cache size: {} KB",
+                cache_stats.total_size_bytes / 1024
+            );
+            println!(
+                "   • Size utilization: {:.1}%",
+                cache_stats.size_utilization()
+            );
+            println!(
+                "   • Entry utilization: {:.1}%",
+                cache_stats.entry_utilization()
+            );
+
             // Show successful responses
             if !load_result.responses.is_empty() {
                 println!("\n🎉 Successfully loaded resources:");
@@ -181,7 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("   ... and {} more", load_result.responses.len() - 5);
                 }
             }
-            
+
             // Show errors if any
             if !load_result.errors.is_empty() {
                 println!("\n⚠️  Errors encountered:");
@@ -192,22 +207,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("   ... and {} more errors", load_result.errors.len() - 3);
                 }
             }
-            
+
             // Show resource details
             println!("\n📋 Detailed resource loading results:");
             for (url, details) in load_result.progress.resource_details.iter().take(8) {
                 let status_icon = if details.success { "✅" } else { "❌" };
                 let cache_info = if details.from_cache { " (cached)" } else { "" };
                 println!(
-                    "   {} {} [{:?}] {} bytes{}", 
-                    status_icon, 
-                    url,
-                    details.resource_type,
-                    details.size_bytes,
-                    cache_info
+                    "   {} {} [{:?}] {} bytes{}",
+                    status_icon, url, details.resource_type, details.size_bytes, cache_info
                 );
             }
-            
+
             println!("\n🔒 Privacy and Security Features Active:");
             println!("   • HTTPS-only enforcement");
             println!("   • User-Agent randomization");
@@ -216,16 +227,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("   • LRU cache with time limits");
             println!("   • Malicious URL filtering");
             println!("   • Resource type validation");
-            
         }
         Err(e) => {
             println!("❌ Resource loading failed: {}", e);
             return Err(e.into());
         }
     }
-    
+
     println!("\n🎯 Demo completed successfully!");
     println!("This demonstrates Citadel Browser's privacy-first resource loading pipeline.");
-    
+
     Ok(())
 }

@@ -15,18 +15,18 @@
 //!   override_critical_functions MUST run BEFORE prevent_prototype_pollution.
 //!   Freezing prototypes first would cause toString overrides to fail silently.
 
-use boa_engine::{Context, JsValue, Source};
-use boa_engine::object::IntegrityLevel;
+use crate::error::{ParserError, ParserResult};
+use crate::security::SecurityContext;
 use boa_engine::js_string;
+use boa_engine::object::IntegrityLevel;
 use boa_engine::JsString;
 use boa_engine::NativeFunction;
+use boa_engine::{Context, JsValue, Source};
 use citadel_security::privacy::{PrivacyEvent, PrivacyEventSender};
-use crate::security::SecurityContext;
-use crate::error::{ParserError, ParserResult};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 /// Maximum allowed JavaScript source code size in bytes.
 /// Prevents DoS via excessively large script payloads.
@@ -51,33 +51,26 @@ pub fn validate_js_code(code: &str) -> ParserResult<()> {
 
     // Case-SENSITIVE patterns where we must NOT match the lowercase keyword.
     // "Function(" targets the Function constructor, NOT the "function" keyword.
-    let case_sensitive_patterns = [
-        "Function(",
-        "__proto__",
-        "constructor.constructor",
-    ];
+    let case_sensitive_patterns = ["Function(", "__proto__", "constructor.constructor"];
     for pattern in &case_sensitive_patterns {
         if normalized.contains(pattern) {
-            return Err(ParserError::SecurityViolation(
-                format!("JavaScript code contains dangerous pattern: {}", pattern),
-            ));
+            return Err(ParserError::SecurityViolation(format!(
+                "JavaScript code contains dangerous pattern: {}",
+                pattern
+            )));
         }
     }
 
     // Case-INSENSITIVE patterns for eval, fetch, XMLHttpRequest, import.
     // eval/EVAL/Eval should all be blocked; fetch/Fetch too.
     let normalized_lower = normalized.to_lowercase();
-    let ci_patterns = [
-        "eval(",
-        "xmlhttprequest",
-        "fetch(",
-        "import(",
-    ];
+    let ci_patterns = ["eval(", "xmlhttprequest", "fetch(", "import("];
     for pattern in &ci_patterns {
         if normalized_lower.contains(pattern) {
-            return Err(ParserError::SecurityViolation(
-                format!("JavaScript code contains dangerous pattern: {}", pattern),
-            ));
+            return Err(ParserError::SecurityViolation(format!(
+                "JavaScript code contains dangerous pattern: {}",
+                pattern
+            )));
         }
     }
 
@@ -88,7 +81,10 @@ pub fn validate_js_code(code: &str) -> ParserResult<()> {
 ///
 /// This is the standard security posture applied to all JS execution.
 /// For maximum isolation, use `apply_sandbox_restrictions` instead.
-pub fn apply_security_restrictions(ctx: &mut Context, security_context: &SecurityContext) -> ParserResult<()> {
+pub fn apply_security_restrictions(
+    ctx: &mut Context,
+    security_context: &SecurityContext,
+) -> ParserResult<()> {
     apply_security_restrictions_with_privacy(ctx, security_context, None)
 }
 
@@ -128,7 +124,10 @@ pub fn apply_security_restrictions_with_privacy(
 /// ORDERING INVARIANT: override_critical_functions runs BEFORE
 /// prevent_prototype_pollution. Reversing this order would cause
 /// toString overrides to silently fail against frozen prototypes.
-pub fn apply_sandbox_restrictions(ctx: &mut Context, security_context: &SecurityContext) -> ParserResult<()> {
+pub fn apply_sandbox_restrictions(
+    ctx: &mut Context,
+    security_context: &SecurityContext,
+) -> ParserResult<()> {
     apply_sandbox_restrictions_with_privacy(ctx, security_context, None)
 }
 
@@ -165,13 +164,25 @@ pub fn apply_sandbox_restrictions_with_privacy(
 ///
 /// Uses real property deletion (delete_property_or_throw) rather than
 /// setting to undefined, which leaves the property key enumerable.
-fn remove_dangerous_apis(ctx: &mut Context, privacy_sender: Option<&PrivacyEventSender>) -> ParserResult<()> {
+fn remove_dangerous_apis(
+    ctx: &mut Context,
+    privacy_sender: Option<&PrivacyEventSender>,
+) -> ParserResult<()> {
     let dangerous_apis = [
-        "eval", "Function",
-        "importScripts", "import",
-        "XMLHttpRequest", "fetch", "WebSocket", "EventSource",
-        "localStorage", "sessionStorage", "indexedDB",
-        "Worker", "SharedWorker", "ServiceWorker",
+        "eval",
+        "Function",
+        "importScripts",
+        "import",
+        "XMLHttpRequest",
+        "fetch",
+        "WebSocket",
+        "EventSource",
+        "localStorage",
+        "sessionStorage",
+        "indexedDB",
+        "Worker",
+        "SharedWorker",
+        "ServiceWorker",
     ];
 
     for api_name in &dangerous_apis {
@@ -193,12 +204,19 @@ fn remove_dangerous_apis(ctx: &mut Context, privacy_sender: Option<&PrivacyEvent
 ///
 /// Targets fingerprinting vectors: timing, device sensors, geolocation,
 /// media devices, Bluetooth/USB/Serial/HID, and WebRTC.
-fn remove_tracking_apis(ctx: &mut Context, privacy_sender: Option<&PrivacyEventSender>) -> ParserResult<()> {
+fn remove_tracking_apis(
+    ctx: &mut Context,
+    privacy_sender: Option<&PrivacyEventSender>,
+) -> ParserResult<()> {
     let tracking_globals = [
         "performance",
-        "DeviceOrientationEvent", "DeviceMotionEvent",
-        "Battery", "BatteryManager",
-        "RTCPeerConnection", "webkitRTCPeerConnection", "mozRTCPeerConnection",
+        "DeviceOrientationEvent",
+        "DeviceMotionEvent",
+        "Battery",
+        "BatteryManager",
+        "RTCPeerConnection",
+        "webkitRTCPeerConnection",
+        "mozRTCPeerConnection",
     ];
 
     for api_name in &tracking_globals {
@@ -214,8 +232,15 @@ fn remove_tracking_apis(ctx: &mut Context, privacy_sender: Option<&PrivacyEventS
 
     // Remove navigator sub-properties used for tracking
     let nav_sub_properties = [
-        "geolocation", "permissions", "serviceWorker", "storage",
-        "mediaDevices", "bluetooth", "usb", "serial", "hid",
+        "geolocation",
+        "permissions",
+        "serviceWorker",
+        "storage",
+        "mediaDevices",
+        "bluetooth",
+        "usb",
+        "serial",
+        "hid",
     ];
 
     let global = ctx.global_object().clone();
@@ -298,9 +323,7 @@ fn remove_frame_access(ctx: &mut Context) -> ParserResult<()> {
 /// for stronger guarantees. Falls back gracefully if a prototype is not
 /// accessible (e.g., if the constructor was already deleted).
 fn prevent_prototype_pollution(ctx: &mut Context) -> ParserResult<()> {
-    let constructors_to_freeze = [
-        "Object", "Array", "String", "Number", "Boolean",
-    ];
+    let constructors_to_freeze = ["Object", "Array", "String", "Number", "Boolean"];
 
     for name in &constructors_to_freeze {
         freeze_prototype(ctx, name)?;
@@ -456,8 +479,15 @@ fn restrict_console_object(ctx: &mut Context) -> ParserResult<()> {
     if let Ok(console_val) = global.get(console_key, ctx) {
         if let Some(console_obj) = console_val.as_object() {
             let dangerous_methods = [
-                "trace", "table", "dir", "dirxml", "count",
-                "time", "timeEnd", "profile", "profileEnd",
+                "trace",
+                "table",
+                "dir",
+                "dirxml",
+                "count",
+                "time",
+                "timeEnd",
+                "profile",
+                "profileEnd",
             ];
             for method in &dangerous_methods {
                 remove_object_property(&console_obj, method, ctx)?;
@@ -655,9 +685,9 @@ pub struct JSResourceMonitor {
 impl Default for JSResourceMonitor {
     fn default() -> Self {
         Self {
-            max_execution_time: 5000,                // 5 seconds
-            max_memory_usage: 16 * 1024 * 1024,      // 16 MiB
-            max_instructions: 1_000_000,              // 1M instructions
+            max_execution_time: 5000,           // 5 seconds
+            max_memory_usage: 16 * 1024 * 1024, // 16 MiB
+            max_instructions: 1_000_000,        // 1M instructions
             start_time: None,
             instruction_count: 0,
         }
@@ -733,7 +763,10 @@ mod tests {
         assert!(result.is_err(), "eval with spaces should be blocked");
 
         let result = validate_js_code("e\tv\na\rl\t(");
-        assert!(result.is_err(), "eval with mixed whitespace should be blocked");
+        assert!(
+            result.is_err(),
+            "eval with mixed whitespace should be blocked"
+        );
     }
 
     #[test]
@@ -758,7 +791,10 @@ mod tests {
         assert!(result.is_err(), "Fetch mixed case should be blocked");
 
         let result = validate_js_code("XmlHttpRequest");
-        assert!(result.is_err(), "XmlHttpRequest mixed case should be blocked");
+        assert!(
+            result.is_err(),
+            "XmlHttpRequest mixed case should be blocked"
+        );
     }
 
     #[test]
@@ -839,7 +875,12 @@ mod tests {
 
         // Set a property, then delete it
         let global = ctx.global_object().clone();
-        let _ = global.set(js_string!("testDangerous"), JsValue::from(42), false, &mut ctx);
+        let _ = global.set(
+            js_string!("testDangerous"),
+            JsValue::from(42),
+            false,
+            &mut ctx,
+        );
 
         // Verify it exists
         let exists = ctx
@@ -903,9 +944,7 @@ mod tests {
         prevent_prototype_pollution(&mut ctx).unwrap();
 
         // Verify toString was overridden successfully
-        let result = ctx
-            .eval(Source::from_bytes("({}).toString()"))
-            .unwrap();
+        let result = ctx.eval(Source::from_bytes("({}).toString()")).unwrap();
         let s = result.to_string(&mut ctx).unwrap();
         assert_eq!(s.to_std_string_escaped(), "[object Object]");
     }

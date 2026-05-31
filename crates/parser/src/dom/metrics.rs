@@ -40,7 +40,8 @@ impl DomMetrics {
     }
 
     pub fn increment_privacy_sensitive_elements(&self) {
-        self.privacy_sensitive_elements.fetch_add(1, Ordering::Relaxed);
+        self.privacy_sensitive_elements
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_elements_blocked(&self) {
@@ -83,5 +84,5 @@ impl Clone for DomMetrics {
 
 #[cfg(test)]
 mod tests {
-// ... existing code ...
-} 
+    // ... existing code ...
+}

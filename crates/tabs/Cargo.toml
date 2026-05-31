@@ -8,6 +8,10 @@ license = "MIT"
 [dependencies]
 # Internal dependencies
 citadel-zkvm = { path = "../zkvm" }
+# Parsing + security run INSIDE the ZKVM isolation boundary so untrusted bytes
+# are parsed and laid out without the host ever touching them.
+citadel-parser = { path = "../parser" }
+citadel-security = { path = "../security" }
 
 # Async runtime
 tokio = { version = "1.28", features = ["full"] }

@@ -1,18 +1,17 @@
 //! Minimal working TreeSink implementation for Citadel's HTML parser.
-//! 
+//!
 //! This implementation follows html5ever best practices to ensure basic parsing works,
 //! then adds Citadel's security features on top.
 
 use html5ever::{
     tendril::StrTendril,
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
-    Attribute as HtmlAttribute,
-    QualName,
+    Attribute as HtmlAttribute, QualName,
 };
 use markup5ever::ExpandedName;
-use std::sync::Arc;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 // Static values for fallback
 lazy_static::lazy_static! {
@@ -20,15 +19,13 @@ lazy_static::lazy_static! {
     static ref EMPTY_LOCAL_NAME: markup5ever::LocalName = markup5ever::LocalName::from("");
 }
 
-use crate::dom::{
-    Attribute, Dom, NodeBuilder, NodeHandle,
-};
-use crate::metrics::DocumentMetrics;
 use crate::dom::metrics::DomMetrics;
+use crate::dom::{Attribute, Dom, NodeBuilder, NodeHandle};
+use crate::metrics::DocumentMetrics;
 use crate::security::SecurityContext;
 
 /// Minimal working TreeSink implementation for html5ever
-/// 
+///
 /// This implementation stores element names correctly (required by html5ever)
 /// and provides basic security filtering while maintaining parsing compatibility.
 pub struct HtmlTreeSink {
@@ -58,7 +55,7 @@ impl HtmlTreeSink {
         let metrics = Arc::new(DomMetrics::new());
         let node_builder = Arc::new(NodeBuilder::new(metrics, security_context.clone()));
         let document_handle = dom.root();
-        
+
         Self {
             dom,
             node_builder,
@@ -70,18 +67,19 @@ impl HtmlTreeSink {
             next_id: 1,
         }
     }
-    
+
     /// Get a unique ID for a handle (using Arc pointer address)
     fn get_handle_id(&self, handle: &NodeHandle) -> usize {
         Arc::as_ptr(handle) as *const _ as usize
     }
-    
+
     /// Convert html5ever attributes to Citadel attributes with security filtering
     fn convert_attributes(&self, attrs: Vec<HtmlAttribute>) -> Vec<Attribute> {
-        attrs.into_iter()
+        attrs
+            .into_iter()
             .filter_map(|attr| {
                 let attr_name = attr.name.local.as_ref();
-                
+
                 // Apply security filtering
                 if self.security_context.is_attribute_allowed(attr_name) {
                     Some(Attribute {
@@ -138,18 +136,23 @@ impl TreeSink for HtmlTreeSink {
         let handle_id = self.get_handle_id(target);
         if let Some(qname) = self.element_names.get(&handle_id) {
             qname.expanded()
-                 } else {
-             // Fallback for non-element nodes
-             ExpandedName {
-                 ns: &EMPTY_NAMESPACE,
-                 local: &EMPTY_LOCAL_NAME,
-             }
-         }
+        } else {
+            // Fallback for non-element nodes
+            ExpandedName {
+                ns: &EMPTY_NAMESPACE,
+                local: &EMPTY_LOCAL_NAME,
+            }
+        }
     }
 
-    fn create_element(&mut self, name: QualName, attrs: Vec<HtmlAttribute>, _flags: ElementFlags) -> Self::Handle {
+    fn create_element(
+        &mut self,
+        name: QualName,
+        attrs: Vec<HtmlAttribute>,
+        _flags: ElementFlags,
+    ) -> Self::Handle {
         let tag_name = name.local.as_ref();
-        
+
         // For parsing compatibility, create ALL elements but apply security filtering to content
         // This prevents html5ever parsing errors while maintaining security
         let safe_attrs = if self.security_context.is_element_allowed(tag_name) {
@@ -158,9 +161,12 @@ impl TreeSink for HtmlTreeSink {
             // For blocked elements, strip all attributes to minimize attack surface
             Vec::new()
         };
-        
+
         // Create the element regardless of security status - security is applied at render time
-        match self.node_builder.create_element_node(name.clone(), safe_attrs) {
+        match self
+            .node_builder
+            .create_element_node(name.clone(), safe_attrs)
+        {
             Ok(handle) => {
                 // CRITICAL: Store the element name for elem_name() method
                 let handle_id = self.get_handle_id(&handle);
@@ -169,7 +175,9 @@ impl TreeSink for HtmlTreeSink {
             }
             Err(_) => {
                 // On error, still create a placeholder to maintain parsing flow
-                let placeholder = self.node_builder.comment(format!("error creating: {}", tag_name));
+                let placeholder = self
+                    .node_builder
+                    .comment(format!("error creating: {}", tag_name));
                 let handle_id = self.get_handle_id(&placeholder);
                 self.element_names.insert(handle_id, name);
                 placeholder
@@ -182,7 +190,8 @@ impl TreeSink for HtmlTreeSink {
     }
 
     fn create_pi(&mut self, target: StrTendril, data: StrTendril) -> Self::Handle {
-        self.node_builder.processing_instruction(target.to_string(), data.to_string())
+        self.node_builder
+            .processing_instruction(target.to_string(), data.to_string())
     }
 
     fn append(&mut self, parent: &Self::Handle, child: NodeOrText<Self::Handle>) {
@@ -199,7 +208,11 @@ impl TreeSink for HtmlTreeSink {
         }
     }
 
-    fn append_before_sibling(&mut self, sibling: &Self::Handle, new_node: NodeOrText<Self::Handle>) {
+    fn append_before_sibling(
+        &mut self,
+        sibling: &Self::Handle,
+        new_node: NodeOrText<Self::Handle>,
+    ) {
         match new_node {
             NodeOrText::AppendNode(node_handle) => {
                 self.dom.insert_before(sibling, node_handle);
@@ -211,36 +224,44 @@ impl TreeSink for HtmlTreeSink {
         }
     }
 
-    fn append_based_on_parent_node(&mut self, _element: &Self::Handle, prev_element: &Self::Handle, child: NodeOrText<Self::Handle>) {
+    fn append_based_on_parent_node(
+        &mut self,
+        _element: &Self::Handle,
+        prev_element: &Self::Handle,
+        child: NodeOrText<Self::Handle>,
+    ) {
         // Handle foster parenting by delegating to regular append
         self.append(prev_element, child);
     }
 
-    fn append_doctype_to_document(&mut self, name: StrTendril, public_id: StrTendril, system_id: StrTendril) {
+    fn append_doctype_to_document(
+        &mut self,
+        name: StrTendril,
+        public_id: StrTendril,
+        system_id: StrTendril,
+    ) {
         // Create and store doctype - apply basic validation
         let safe_name = name.to_string();
         if safe_name.to_lowercase() == "html" {
-            let _doctype = self.node_builder.doctype(
-                safe_name, 
-                public_id.to_string(), 
-                system_id.to_string()
-            );
+            let _doctype =
+                self.node_builder
+                    .doctype(safe_name, public_id.to_string(), system_id.to_string());
         }
     }
 
     fn add_attrs_if_missing(&mut self, target: &Self::Handle, attrs: Vec<HtmlAttribute>) {
         let safe_attrs = self.convert_attributes(attrs);
-        
+
         if let Some(mut node_guard) = self.dom.get_node_mut(target) {
             if let Some(current_attrs) = node_guard.element_attributes_mut() {
-                let existing_names: std::collections::HashSet<_> = current_attrs.iter()
-                    .map(|attr| &attr.name)
-                    .collect();
-                
-                let new_attrs: Vec<_> = safe_attrs.into_iter()
+                let existing_names: std::collections::HashSet<_> =
+                    current_attrs.iter().map(|attr| &attr.name).collect();
+
+                let new_attrs: Vec<_> = safe_attrs
+                    .into_iter()
                     .filter(|attr| !existing_names.contains(&attr.name))
                     .collect();
-                    
+
                 current_attrs.extend(new_attrs);
             }
         }
@@ -269,6 +290,9 @@ impl TreeSink for HtmlTreeSink {
 }
 
 /// Create a TreeSink for HTML parsing
-pub fn create_html_sink(security_context: Arc<SecurityContext>, doc_metrics: Arc<DocumentMetrics>) -> HtmlTreeSink {
+pub fn create_html_sink(
+    security_context: Arc<SecurityContext>,
+    doc_metrics: Arc<DocumentMetrics>,
+) -> HtmlTreeSink {
     HtmlTreeSink::new(security_context, doc_metrics)
-} 
+}

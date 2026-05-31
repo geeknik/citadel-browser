@@ -1,29 +1,31 @@
 use std::time::Duration;
 
-use citadel_networking::{
-    NetworkConfig, PrivacyLevel,
-    resource_loader::{ResourceLoader, LoadOptions},
-    resource_manager::{ResourceManager, ResourceManagerConfig, ResourcePolicy, CachePolicy},
-    resource_discovery::{ResourceDiscovery, ResourceContext},
-    cache::{ResourceCache, CacheConfig},
-    Resource, Request,
-};
 use citadel_networking::request::Method;
+use citadel_networking::{
+    cache::{CacheConfig, ResourceCache},
+    resource_discovery::{ResourceContext, ResourceDiscovery},
+    resource_loader::{LoadOptions, ResourceLoader},
+    resource_manager::{CachePolicy, ResourceManager, ResourceManagerConfig, ResourcePolicy},
+    NetworkConfig, PrivacyLevel, Request, Resource,
+};
 use url::Url;
 
 #[tokio::test]
 async fn test_basic_fetch() {
     // Create a default config
     let config = NetworkConfig::default();
-    
+
     // Create a resource fetcher
-    let _resource = Resource::new(config).await.expect("Failed to create resource fetcher");
-    
+    let _resource = Resource::new(config)
+        .await
+        .expect("Failed to create resource fetcher");
+
     // Fetch a test URL
-    let response = _resource.fetch_html("https://example.com")
+    let response = _resource
+        .fetch_html("https://example.com")
         .await
         .expect("Failed to fetch HTML");
-        
+
     // Verify the response
     assert!(response.is_success());
     assert!(response.is_html());
@@ -36,27 +38,32 @@ async fn test_privacy_levels() {
     for privacy_level in [
         PrivacyLevel::Maximum,
         PrivacyLevel::High,
-        PrivacyLevel::Balanced
-    ].iter() {
+        PrivacyLevel::Balanced,
+    ]
+    .iter()
+    {
         // Create config with specific privacy level
         let mut config = NetworkConfig::default();
         config.privacy_level = *privacy_level;
-        
+
         // Create a resource fetcher
-        let _resource = Resource::new(config).await.expect("Failed to create resource fetcher");
-        
+        let _resource = Resource::new(config)
+            .await
+            .expect("Failed to create resource fetcher");
+
         // Make a request
         let request = Request::new(Method::GET, "https://example.com")
             .expect("Failed to create request")
             .with_privacy_level(*privacy_level)
             .with_timeout(Duration::from_secs(10))
             .prepare();
-            
+
         // Fetch with that privacy level
-        let response = _resource.fetch(request)
+        let response = _resource
+            .fetch(request)
             .await
             .expect("Failed to fetch with privacy level");
-            
+
         // Basic verification
         assert!(response.is_success());
     }
@@ -66,10 +73,12 @@ async fn test_privacy_levels() {
 async fn test_https_enforcement() {
     // Create a default config
     let config = NetworkConfig::default();
-    
+
     // Create a resource fetcher
-    let _resource = Resource::new(config).await.expect("Failed to create resource fetcher");
-    
+    let _resource = Resource::new(config)
+        .await
+        .expect("Failed to create resource fetcher");
+
     // Try to fetch an insecure URL, which should fail
     let result = Request::new(Method::GET, "http://example.com");
     assert!(result.is_err());
@@ -79,21 +88,24 @@ async fn test_https_enforcement() {
 async fn test_tracking_param_removal() {
     // Create a default config
     let config = NetworkConfig::default();
-    
+
     // Create a resource fetcher
-    let _resource = Resource::new(config).await.expect("Failed to create resource fetcher");
-    
+    let _resource = Resource::new(config)
+        .await
+        .expect("Failed to create resource fetcher");
+
     // Create a request with tracking parameters
     let request = Request::new(
-        Method::GET, 
-        "https://example.com/?id=123&utm_source=test&valid=true&fbclid=abc123"
-    ).expect("Failed to create request")
+        Method::GET,
+        "https://example.com/?id=123&utm_source=test&valid=true&fbclid=abc123",
+    )
+    .expect("Failed to create request")
     .prepare();
-    
+
     // The URL should have tracking parameters removed
     let url = request.url();
     let query = url.query().unwrap_or("");
-    
+
     assert!(query.contains("id=123"));
     assert!(query.contains("valid=true"));
     assert!(!query.contains("utm_source"));
@@ -116,7 +128,7 @@ async fn test_complete_resource_loading_pipeline() {
         max_size_bytes: 10 * 1024 * 1024, // 10MB
         max_entries: 100,
         default_ttl: Duration::from_secs(1800), // 30 minutes
-        max_ttl: Duration::from_secs(7200), // 2 hours max
+        max_ttl: Duration::from_secs(7200),     // 2 hours max
         respect_cache_control: true,
         enable_validation: true,
     };
@@ -144,17 +156,21 @@ async fn test_complete_resource_loading_pipeline() {
     "#;
 
     let base_url = Url::parse("https://httpbin.org/").expect("Invalid base URL");
-    
+
     // Load resources with progress tracking
     let loader_with_progress = loader.with_progress_callback(move |progress| {
-        println!("Loading progress: {:.1}% ({}/{})", 
-                progress.completion_percentage() * 100.0,
-                progress.loaded + progress.failed + progress.cached,
-                progress.total);
+        println!(
+            "Loading progress: {:.1}% ({}/{})",
+            progress.completion_percentage() * 100.0,
+            progress.loaded + progress.failed + progress.cached,
+            progress.total
+        );
     });
 
     // Load resources
-    let result = loader_with_progress.load_from_html(test_html, base_url).await;
+    let result = loader_with_progress
+        .load_from_html(test_html, base_url)
+        .await;
 
     // Verify results
     match result {
@@ -163,10 +179,19 @@ async fn test_complete_resource_loading_pipeline() {
             println!("📊 Total time: {:?}", load_result.total_time);
             println!("📦 Loaded resources: {}", load_result.responses.len());
             println!("❌ Failed resources: {}", load_result.errors.len());
-            println!("📈 Success rate: {:.1}%", load_result.progress.success_rate() * 100.0);
+            println!(
+                "📈 Success rate: {:.1}%",
+                load_result.progress.success_rate() * 100.0
+            );
 
-            assert!(load_result.progress.total > 0, "Should have discovered resources");
-            assert!(load_result.progress.is_complete(), "Loading should be complete");
+            assert!(
+                load_result.progress.total > 0,
+                "Should have discovered resources"
+            );
+            assert!(
+                load_result.progress.is_complete(),
+                "Loading should be complete"
+            );
         }
         Err(e) => {
             println!("❌ Resource loading failed: {}", e);
@@ -181,11 +206,9 @@ async fn test_complete_resource_loading_pipeline() {
 /// Test resource discovery and prioritization
 #[tokio::test]
 async fn test_resource_discovery_and_prioritization() {
-    let discovery = ResourceDiscovery::new()
-        .expect("Failed to create resource discovery");
+    let discovery = ResourceDiscovery::new().expect("Failed to create resource discovery");
 
-    let base_url = Url::parse("https://example.com/page.html")
-        .expect("Invalid base URL");
+    let base_url = Url::parse("https://example.com/page.html").expect("Invalid base URL");
 
     let context = ResourceContext::new(base_url)
         .include_non_critical(true)
@@ -245,11 +268,12 @@ async fn test_resource_discovery_and_prioritization() {
     "#;
 
     // Discover all resources
-    let resources = discovery.discover_all(complex_html, &context)
+    let resources = discovery
+        .discover_all(complex_html, &context)
         .expect("Failed to discover resources");
 
     println!("🔍 Discovered {} resources:", resources.len());
-    
+
     // Analyze discovered resources
     let mut css_count = 0;
     let mut js_count = 0;
@@ -258,10 +282,16 @@ async fn test_resource_discovery_and_prioritization() {
     let mut critical_count = 0;
 
     for resource in &resources {
-        println!("  📄 {} ({}): {}", 
-                resource.resource_type as u8,
-                if resource.is_critical { "CRITICAL" } else { "non-critical" },
-                resource.url);
+        println!(
+            "  📄 {} ({}): {}",
+            resource.resource_type as u8,
+            if resource.is_critical {
+                "CRITICAL"
+            } else {
+                "non-critical"
+            },
+            resource.url
+        );
 
         match resource.resource_type {
             citadel_networking::resource::ResourceType::Css => css_count += 1,
@@ -284,18 +314,20 @@ async fn test_resource_discovery_and_prioritization() {
     println!("  Critical: {}", critical_count);
 
     // Verify we found the expected basic resources (adjusted for current discovery capabilities)
-    assert!(css_count >= 2, "Should find basic CSS files"); // critical.css, print.css  
+    assert!(css_count >= 2, "Should find basic CSS files"); // critical.css, print.css
     assert!(js_count >= 2, "Should find JavaScript files"); // analytics.js, main.js
     assert!(image_count >= 2, "Should find basic images"); // hero, thumb, fallback
-    // Note: Advanced CSS parsing (@import, @font-face, background-image) may not be fully implemented yet
-    // assert!(font_count >= 1, "Should find font files"); // This requires CSS content parsing
+                                                           // Note: Advanced CSS parsing (@import, @font-face, background-image) may not be fully implemented yet
+                                                           // assert!(font_count >= 1, "Should find font files"); // This requires CSS content parsing
     assert!(critical_count > 0, "Should identify critical resources");
-    
+
     // Verify resources are properly sorted by priority
     let mut prev_priority = 0;
     for resource in &resources {
-        assert!(resource.priority >= prev_priority, 
-               "Resources should be sorted by priority");
+        assert!(
+            resource.priority >= prev_priority,
+            "Resources should be sorted by priority"
+        );
         prev_priority = resource.priority;
     }
 }
@@ -350,7 +382,8 @@ async fn test_resource_manager_privacy_policies() {
                 // This might happen if the domain classification doesn't catch it
             }
             Err(e) => {
-                if e.to_string().contains("Privacy violation") || e.to_string().contains("blocked") {
+                if e.to_string().contains("Privacy violation") || e.to_string().contains("blocked")
+                {
                     println!("✅ Tracking resource blocked: {}", tracking_url);
                 } else {
                     println!("🌐 Network error for {}: {}", tracking_url, e);
@@ -376,10 +409,10 @@ async fn test_resource_manager_privacy_policies() {
 async fn test_cache_privacy_compliance() {
     // Create cache with privacy-focused configuration
     let cache_config = CacheConfig {
-        max_size_bytes: 5 * 1024 * 1024, // 5MB limit
-        max_entries: 50, // Low entry limit
+        max_size_bytes: 5 * 1024 * 1024,       // 5MB limit
+        max_entries: 50,                       // Low entry limit
         default_ttl: Duration::from_secs(900), // 15 minutes (short for privacy)
-        max_ttl: Duration::from_secs(3600), // 1 hour max
+        max_ttl: Duration::from_secs(3600),    // 1 hour max
         respect_cache_control: true,
         enable_validation: true,
     };
@@ -391,7 +424,7 @@ async fn test_cache_privacy_compliance() {
     let mut headers = std::collections::HashMap::new();
     headers.insert("content-type".to_string(), "text/css".to_string());
     headers.insert("cache-control".to_string(), "max-age=1800".to_string());
-    
+
     let response = citadel_networking::response::Response::new(
         200,
         headers,
@@ -401,7 +434,8 @@ async fn test_cache_privacy_compliance() {
     );
 
     // Test caching
-    cache.put(&test_url, response.clone())
+    cache
+        .put(&test_url, response.clone())
         .expect("Failed to cache response");
 
     // Test cache retrieval
@@ -409,7 +443,11 @@ async fn test_cache_privacy_compliance() {
     assert!(cached.is_some(), "Response should be cached");
 
     let cached_response = cached.unwrap();
-    assert_eq!(cached_response.body(), response.body(), "Cached content should match");
+    assert_eq!(
+        cached_response.body(),
+        response.body(),
+        "Cached content should match"
+    );
 
     // Test cache stats
     let stats = cache.stats();
@@ -424,8 +462,14 @@ async fn test_cache_privacy_compliance() {
     // Test cache clearing (privacy feature)
     cache.clear();
     let stats_after_clear = cache.stats();
-    assert_eq!(stats_after_clear.entry_count, 0, "Cache should be empty after clear");
-    assert_eq!(stats_after_clear.total_size_bytes, 0, "Cache size should be zero after clear");
+    assert_eq!(
+        stats_after_clear.entry_count, 0,
+        "Cache should be empty after clear"
+    );
+    assert_eq!(
+        stats_after_clear.total_size_bytes, 0,
+        "Cache size should be zero after clear"
+    );
 
     println!("✅ Cache privacy compliance tests passed");
 }
@@ -446,35 +490,35 @@ async fn test_concurrent_resource_loading() {
     ];
 
     let base_url = Url::parse("https://example.com/").unwrap();
-    
+
     // Run multiple resource loading operations concurrently
     let futures = tasks.into_iter().map(|html| {
         let loader = &loader;
         let base_url = base_url.clone();
-        async move {
-            loader.load_from_html(html, base_url).await
-        }
+        async move { loader.load_from_html(html, base_url).await }
     });
 
     let results = futures::future::join_all(futures).await;
-    
+
     println!("🔄 Concurrent loading completed");
     println!("📊 Results: {} tasks", results.len());
-    
+
     for (i, result) in results.iter().enumerate() {
         match result {
             Ok(load_result) => {
-                println!("  Task {}: {} resources, {:.1}% success", 
-                        i + 1, 
-                        load_result.progress.total,
-                        load_result.progress.success_rate() * 100.0);
+                println!(
+                    "  Task {}: {} resources, {:.1}% success",
+                    i + 1,
+                    load_result.progress.total,
+                    load_result.progress.success_rate() * 100.0
+                );
             }
             Err(e) => {
                 println!("  Task {}: Error - {}", i + 1, e);
             }
         }
     }
-    
+
     println!("✅ Concurrent resource loading test completed");
 }
 
@@ -500,7 +544,7 @@ async fn test_error_handling_and_resilience() {
     "#;
 
     let base_url = Url::parse("https://example.com/").unwrap();
-    
+
     let options = LoadOptions {
         max_concurrent: 3,
         request_timeout: Duration::from_secs(5),
@@ -513,7 +557,9 @@ async fn test_error_handling_and_resilience() {
     };
 
     let loader_with_options = loader.with_options(options);
-    let result = loader_with_options.load_from_html(problematic_html, base_url).await;
+    let result = loader_with_options
+        .load_from_html(problematic_html, base_url)
+        .await;
 
     match result {
         Ok(load_result) => {
@@ -521,12 +567,21 @@ async fn test_error_handling_and_resilience() {
             println!("📊 Total resources: {}", load_result.progress.total);
             println!("📦 Successful: {}", load_result.progress.loaded);
             println!("❌ Failed: {}", load_result.progress.failed);
-            println!("📈 Success rate: {:.1}%", load_result.progress.success_rate() * 100.0);
-            
+            println!(
+                "📈 Success rate: {:.1}%",
+                load_result.progress.success_rate() * 100.0
+            );
+
             // Should have discovered resources but many should fail
-            assert!(load_result.progress.total > 0, "Should discover some resources");
-            assert!(load_result.progress.failed > 0, "Some resources should fail");
-            
+            assert!(
+                load_result.progress.total > 0,
+                "Should discover some resources"
+            );
+            assert!(
+                load_result.progress.failed > 0,
+                "Some resources should fail"
+            );
+
             // Print detailed error information
             for (url, error) in &load_result.errors {
                 println!("  ❌ Failed to load {}: {}", url, error);
@@ -536,15 +591,14 @@ async fn test_error_handling_and_resilience() {
             println!("🔍 Expected error in resilience test: {}", e);
         }
     }
-    
+
     println!("✅ Error handling and resilience test completed");
 }
 
 /// Test resource filtering and type restrictions
 #[tokio::test]
 async fn test_resource_filtering_and_restrictions() {
-    let discovery = ResourceDiscovery::new()
-        .expect("Failed to create resource discovery");
+    let discovery = ResourceDiscovery::new().expect("Failed to create resource discovery");
 
     let base_url = Url::parse("https://example.com/").unwrap();
 
@@ -565,44 +619,57 @@ async fn test_resource_filtering_and_restrictions() {
     // Test filtering by resource type
     let css_only_context = ResourceContext::new(base_url.clone())
         .allowed_types(vec![citadel_networking::resource::ResourceType::Css]);
-    
-    let css_resources = discovery.discover_from_html(html, &css_only_context)
+
+    let css_resources = discovery
+        .discover_from_html(html, &css_only_context)
         .expect("Failed to discover CSS resources");
-    
+
     println!("🎯 CSS-only filtering:");
     for resource in &css_resources {
-        println!("  Found: {} (type: {:?})", resource.url, resource.resource_type);
-        assert_eq!(resource.resource_type, citadel_networking::resource::ResourceType::Css);
+        println!(
+            "  Found: {} (type: {:?})",
+            resource.url, resource.resource_type
+        );
+        assert_eq!(
+            resource.resource_type,
+            citadel_networking::resource::ResourceType::Css
+        );
     }
-    
+
     assert!(!css_resources.is_empty(), "Should find CSS resources");
 
     // Test critical resources only
-    let critical_only_context = ResourceContext::new(base_url.clone())
-        .include_non_critical(false);
-    
-    let critical_resources = discovery.discover_from_html(html, &critical_only_context)
+    let critical_only_context = ResourceContext::new(base_url.clone()).include_non_critical(false);
+
+    let critical_resources = discovery
+        .discover_from_html(html, &critical_only_context)
         .expect("Failed to discover critical resources");
-    
+
     println!("🚨 Critical-only filtering:");
     for resource in &critical_resources {
-        println!("  Found: {} (critical: {})", resource.url, resource.is_critical);
+        println!(
+            "  Found: {} (critical: {})",
+            resource.url, resource.is_critical
+        );
         assert!(resource.is_critical, "Should only find critical resources");
     }
 
     // Test resource limit
-    let limited_context = ResourceContext::new(base_url)
-        .max_resources(Some(2));
-    
-    let limited_resources = discovery.discover_from_html(html, &limited_context)
+    let limited_context = ResourceContext::new(base_url).max_resources(Some(2));
+
+    let limited_resources = discovery
+        .discover_from_html(html, &limited_context)
         .expect("Failed to discover limited resources");
-    
+
     println!("🔢 Limited resources (max 2):");
     for resource in &limited_resources {
         println!("  Found: {}", resource.url);
     }
-    
-    assert!(limited_resources.len() <= 2, "Should respect resource limit");
-    
+
+    assert!(
+        limited_resources.len() <= 2,
+        "Should respect resource limit"
+    );
+
     println!("✅ Resource filtering and restrictions test completed");
 }

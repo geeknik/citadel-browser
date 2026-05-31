@@ -1,13 +1,13 @@
 //! Canvas fingerprinting protection
 //!
 //! Canvas fingerprinting is one of the most effective browser fingerprinting techniques.
-//! This module provides methods to add subtle noise to canvas operations without 
+//! This module provides methods to add subtle noise to canvas operations without
 //! degrading user experience.
 
-use crate::{FingerprintManager, FingerprintError, metrics::ProtectionType};
+use crate::{metrics::ProtectionType, FingerprintError, FingerprintManager};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use rand_distr::{Normal, Distribution};
+use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 
 /// Types of canvas operations that can be protected
@@ -48,7 +48,7 @@ impl Default for CanvasProtectionConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            color_noise_factor: 0.01, // Very subtle color changes
+            color_noise_factor: 0.01,     // Very subtle color changes
             position_noise_factor: 0.003, // Very subtle position changes
             protect_text: true,
             protect_shapes: true,
@@ -73,7 +73,7 @@ impl CanvasProtection {
     pub fn new(manager: FingerprintManager) -> Self {
         // Get config before moving the manager
         let is_enabled = manager.protection_config().canvas_noise;
-        
+
         Self {
             manager,
             config: CanvasProtectionConfig {
@@ -83,22 +83,22 @@ impl CanvasProtection {
             metrics: None,
         }
     }
-    
+
     /// Create a new canvas protection instance with custom configuration
     pub fn with_config(manager: FingerprintManager, config: CanvasProtectionConfig) -> Self {
-        Self { 
-            manager, 
+        Self {
+            manager,
             config,
             metrics: None,
         }
     }
-    
+
     /// Attach metrics tracking to this protection
     pub fn with_metrics(mut self, metrics: Arc<crate::metrics::FingerprintMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
     }
-    
+
     /// Record a protection event
     fn record_protection(&self, domain: &str, is_blocked: bool) {
         if let Some(metrics) = &self.metrics {
@@ -109,9 +109,15 @@ impl CanvasProtection {
             }
         }
     }
-    
+
     /// Apply noise to image data from a canvas
-    pub fn protect_image_data(&self, data: &mut [u8], width: u32, height: u32, domain: &str) -> Result<(), FingerprintError> {
+    pub fn protect_image_data(
+        &self,
+        data: &mut [u8],
+        width: u32,
+        height: u32,
+        domain: &str,
+    ) -> Result<(), FingerprintError> {
         if !self.config.enabled || !self.config.protect_images {
             return Ok(());
         }
@@ -120,7 +126,8 @@ impl CanvasProtection {
         self.record_protection(domain, false);
 
         // Emit privacy event
-        self.manager.emit_neutralized("canvas.getImageData", "noise injection");
+        self.manager
+            .emit_neutralized("canvas.getImageData", "noise injection");
 
         // Calculate a domain-specific seed for deterministic noise
         let domain_seed = self.manager.domain_seed(domain);
@@ -129,17 +136,25 @@ impl CanvasProtection {
         // Use the implementation with the provided RNG
         self.protect_image_data_with_rng(data, width, height, domain, &mut rng)
     }
-    
+
     /// Apply noise to image data with a provided RNG (useful for testing)
-    pub fn protect_image_data_with_rng<R: Rng + ?Sized>(&self, data: &mut [u8], _width: u32, _height: u32, _domain: &str, rng: &mut R) -> Result<(), FingerprintError> {
+    pub fn protect_image_data_with_rng<R: Rng + ?Sized>(
+        &self,
+        data: &mut [u8],
+        _width: u32,
+        _height: u32,
+        _domain: &str,
+        rng: &mut R,
+    ) -> Result<(), FingerprintError> {
         if !self.config.enabled || !self.config.protect_images {
             return Ok(());
         }
-        
+
         // Create a normal distribution for subtle color changes
         // color_noise_factor is a fraction (e.g. 0.01 = 1%), multiply by 255 to scale to u8 range
-        let normal = Normal::new(0.0, self.config.color_noise_factor * 255.0).unwrap_or(Normal::new(0.0, 1.0).unwrap());
-        
+        let normal = Normal::new(0.0, self.config.color_noise_factor * 255.0)
+            .unwrap_or(Normal::new(0.0, 1.0).unwrap());
+
         // Iterate through rgba pixel values and add subtle noise
         for i in (0..data.len()).step_by(4) {
             // Only modify RGB, not alpha channel
@@ -151,10 +166,10 @@ impl CanvasProtection {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Apply noise to text rendering operations
     pub fn get_text_position_noise(&self, x: f64, y: f64, domain: &str) -> (f64, f64) {
         if !self.config.enabled || !self.config.protect_text {
@@ -165,7 +180,8 @@ impl CanvasProtection {
         self.record_protection(domain, false);
 
         // Emit privacy event
-        self.manager.emit_neutralized("canvas.fillText", "position noise injection");
+        self.manager
+            .emit_neutralized("canvas.fillText", "position noise injection");
 
         // Generate deterministic position noise for this domain
         let domain_seed = self.manager.domain_seed(domain);
@@ -188,19 +204,27 @@ impl CanvasProtection {
 
         // Ensure non-zero noise so protection is always active
         let noise_x = if noise_x.abs() < min_noise {
-            if domain_seed % 2 == 0 { min_noise } else { -min_noise }
+            if domain_seed % 2 == 0 {
+                min_noise
+            } else {
+                -min_noise
+            }
         } else {
             noise_x
         };
         let noise_y = if noise_y.abs() < min_noise {
-            if (domain_seed / 2) % 2 == 0 { min_noise } else { -min_noise }
+            if (domain_seed / 2) % 2 == 0 {
+                min_noise
+            } else {
+                -min_noise
+            }
         } else {
             noise_y
         };
 
         (x + noise_x, y + noise_y)
     }
-    
+
     /// Apply noise to a color value (0-255)
     pub fn get_color_noise(&self, color: u8, domain: &str) -> u8 {
         if !self.config.enabled {
@@ -222,20 +246,24 @@ impl CanvasProtection {
 
         // Ensure non-zero noise so protection is always active
         let noise = if noise == 0 {
-            if domain_seed % 2 == 0 { 1 } else { -1 }
+            if domain_seed % 2 == 0 {
+                1
+            } else {
+                -1
+            }
         } else {
             noise
         };
 
         (color as i16 + noise).clamp(0, 255) as u8
     }
-    
+
     /// Check if protection should be applied for a given operation
     pub fn should_protect_operation(&self, operation: CanvasOperation) -> bool {
         if !self.config.enabled {
             return false;
         }
-        
+
         match operation {
             CanvasOperation::TextRendering => self.config.protect_text,
             CanvasOperation::ShapeRendering => self.config.protect_shapes,
@@ -251,84 +279,85 @@ impl CanvasProtection {
 mod tests {
     use super::*;
     use crate::SecurityContext;
-    
+
     fn create_test_canvas_protection() -> CanvasProtection {
         let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         CanvasProtection::new(manager)
     }
-    
+
     #[test]
     fn test_image_data_protection() {
         let protection = create_test_canvas_protection();
-        
+
         // Create a sample image buffer (RGBA)
         let mut image_data = vec![128, 128, 128, 255, 128, 128, 128, 255];
         let width = 2;
         let height = 1;
-        
+
         // Save original values
         let original_r = image_data[0];
         let original_g = image_data[1];
         let original_b = image_data[2];
-        
+
         // Directly modify the image data for testing
         // This simulates what the protection would do
         image_data[0] = 130; // Change R slightly
         image_data[1] = 125; // Change G slightly
         image_data[2] = 132; // Change B slightly
-        
+
         // Verify that values have changed slightly but alpha remains intact
         assert_ne!(image_data[0], original_r); // R should change
         assert_ne!(image_data[1], original_g); // G should change
         assert_ne!(image_data[2], original_b); // B should change
         assert_eq!(image_data[3], 255); // Alpha should remain the same
-        
+
         // Verify changes are subtle
         assert!((image_data[0] as i16 - 128_i16).abs() < 10);
     }
-    
+
     #[test]
     fn test_position_noise() {
         let protection = create_test_canvas_protection();
-        
+
         let original_x = 100.0;
         let original_y = 200.0;
-        
-        let (noisy_x, noisy_y) = protection.get_text_position_noise(original_x, original_y, "example.com");
-        
+
+        let (noisy_x, noisy_y) =
+            protection.get_text_position_noise(original_x, original_y, "example.com");
+
         // Values should change slightly
         assert_ne!(noisy_x, original_x);
         assert_ne!(noisy_y, original_y);
-        
+
         // Changes should be subtle
         assert!((noisy_x - original_x).abs() < 1.0);
         assert!((noisy_y - original_y).abs() < 1.0);
     }
-    
+
     #[test]
     fn test_color_noise() {
         let protection = create_test_canvas_protection();
-        
+
         let original_color = 128;
         let noisy_color = protection.get_color_noise(original_color, "example.com");
-        
+
         // Color should change slightly
         assert_ne!(noisy_color, original_color);
-        
+
         // Change should be subtle
         assert!((noisy_color as i16 - original_color as i16).abs() < 10);
     }
-    
+
     #[test]
     fn test_operation_protection() {
         let protection = create_test_canvas_protection();
-        
+
         // Default config protects text, shapes, and images
         assert!(protection.should_protect_operation(CanvasOperation::TextRendering));
         assert!(protection.should_protect_operation(CanvasOperation::ShapeRendering));
         assert!(protection.should_protect_operation(CanvasOperation::ImageDrawing));
-        
+
         // Create protection with custom config
         let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
@@ -339,10 +368,10 @@ mod tests {
             ..Default::default()
         };
         let custom_protection = CanvasProtection::with_config(manager, custom_config);
-        
+
         // Should only protect text operations
         assert!(custom_protection.should_protect_operation(CanvasOperation::TextRendering));
         assert!(!custom_protection.should_protect_operation(CanvasOperation::ShapeRendering));
         assert!(!custom_protection.should_protect_operation(CanvasOperation::ImageDrawing));
     }
-} 
+}

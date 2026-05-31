@@ -66,31 +66,19 @@ pub enum SecurityError {
     },
 
     #[error("Resource timeout exceeded: {resource} took longer than {timeout_ms}ms")]
-    ResourceTimeout {
-        resource: String,
-        timeout_ms: u64,
-    },
+    ResourceTimeout { resource: String, timeout_ms: u64 },
 
     #[error("Certificate validation failed for host {host}: {reason}")]
-    CertificateValidationFailed {
-        host: String,
-        reason: String,
-    },
+    CertificateValidationFailed { host: String, reason: String },
 
     #[error("Mixed content detected: loading insecure {resource_type} from {url}")]
-    MixedContent {
-        resource_type: String,
-        url: String,
-    },
+    MixedContent { resource_type: String, url: String },
 
     #[error("Script execution blocked: {reason}")]
     ScriptExecutionBlocked { reason: String },
 
     #[error("DOM manipulation blocked: {operation} on {element}")]
-    DomManipulationBlocked {
-        operation: String,
-        element: String,
-    },
+    DomManipulationBlocked { operation: String, element: String },
 
     #[error("Cross-origin request blocked: {request_type} to {target_origin}")]
     CrossOriginBlocked {
@@ -102,22 +90,13 @@ pub enum SecurityError {
     PermissionDenied { permission: String },
 
     #[error("Content type validation failed: expected {expected}, got {actual}")]
-    ContentTypeValidationFailed {
-        expected: String,
-        actual: String,
-    },
+    ContentTypeValidationFailed { expected: String, actual: String },
 
     #[error("Iframe security violation: {violation_type} for source {url}")]
-    IframeSecurityViolation {
-        violation_type: String,
-        url: String,
-    },
+    IframeSecurityViolation { violation_type: String, url: String },
 
     #[error("WebSocket security violation: {reason} for connection to {url}")]
-    WebSocketSecurityViolation {
-        reason: String,
-        url: String,
-    },
+    WebSocketSecurityViolation { reason: String, url: String },
 
     #[error("Service worker security violation: {violation} for script {script_url}")]
     ServiceWorkerSecurityViolation {
@@ -126,10 +105,7 @@ pub enum SecurityError {
     },
 
     #[error("Web API access blocked: {api} access denied due to {reason}")]
-    WebApiAccessBlocked {
-        api: String,
-        reason: String,
-    },
+    WebApiAccessBlocked { api: String, reason: String },
 
     #[error("Fingerprinting attempt detected: {method} blocked")]
     FingerprintingAttempt { method: String },
@@ -140,7 +116,9 @@ pub enum SecurityError {
         violation: String,
     },
 
-    #[error("Resource size limit exceeded: {resource_type} size {actual_size} exceeds limit {max_size}")]
+    #[error(
+        "Resource size limit exceeded: {resource_type} size {actual_size} exceeds limit {max_size}"
+    )]
     ResourceSizeLimitExceeded {
         resource_type: String,
         actual_size: usize,
@@ -148,31 +126,19 @@ pub enum SecurityError {
     },
 
     #[error("Security policy conflict: {policy1} conflicts with {policy2}")]
-    SecurityPolicyConflict {
-        policy1: String,
-        policy2: String,
-    },
+    SecurityPolicyConflict { policy1: String, policy2: String },
 
     #[error("Cryptographic operation failed: {operation} - {reason}")]
-    CryptographicFailure {
-        operation: String,
-        reason: String,
-    },
+    CryptographicFailure { operation: String, reason: String },
 
     #[error("Sandbox violation: {operation} attempted outside sandbox boundaries")]
     SandboxViolation { operation: String },
 
     #[error("Security header validation failed: {header} has invalid value {value}")]
-    SecurityHeaderValidationFailed {
-        header: String,
-        value: String,
-    },
+    SecurityHeaderValidationFailed { header: String, value: String },
 
     #[error("CORS policy violation: {violation} for origin {origin}")]
-    CorsViolation {
-        violation: String,
-        origin: String,
-    },
+    CorsViolation { violation: String, origin: String },
 
     // Generic catch-all for other security-related errors
     #[error("Generic security error: {message}")]
@@ -188,7 +154,7 @@ impl SecurityError {
             SecurityError::SandboxViolation { .. } => SecuritySeverity::Critical,
             SecurityError::CryptographicFailure { .. } => SecuritySeverity::Critical,
             SecurityError::CertificateValidationFailed { .. } => SecuritySeverity::Critical,
-            
+
             // High severity errors - significant security violations
             SecurityError::CspViolation { .. } => SecuritySeverity::High,
             SecurityError::CrossOriginBlocked { .. } => SecuritySeverity::High,
@@ -199,7 +165,7 @@ impl SecurityError {
             SecurityError::IframeSecurityViolation { .. } => SecuritySeverity::High,
             SecurityError::CorsViolation { .. } => SecuritySeverity::High,
             SecurityError::ParserSecurityViolation { .. } => SecuritySeverity::High,
-            
+
             // Medium severity errors - policy violations
             SecurityError::BlockedResource { .. } => SecuritySeverity::Medium,
             SecurityError::NetworkSecurityViolation { .. } => SecuritySeverity::Medium,
@@ -208,7 +174,7 @@ impl SecurityError {
             SecurityError::FingerprintingAttempt { .. } => SecuritySeverity::Medium,
             SecurityError::ResourceSizeLimitExceeded { .. } => SecuritySeverity::Medium,
             SecurityError::SecurityHeaderValidationFailed { .. } => SecuritySeverity::Medium,
-            
+
             // Low severity errors - informational or minor issues
             SecurityError::InvalidConfiguration { .. } => SecuritySeverity::Low,
             SecurityError::InvalidScheme { .. } => SecuritySeverity::Low,
@@ -220,17 +186,20 @@ impl SecurityError {
             SecurityError::Generic { .. } => SecuritySeverity::Low,
         }
     }
-    
+
     /// Check if this error should trigger an immediate security response
     pub fn requires_immediate_response(&self) -> bool {
         matches!(self.severity(), SecuritySeverity::Critical)
     }
-    
+
     /// Check if this error should be reported to security monitoring
     pub fn should_report(&self) -> bool {
-        matches!(self.severity(), SecuritySeverity::High | SecuritySeverity::Critical)
+        matches!(
+            self.severity(),
+            SecuritySeverity::High | SecuritySeverity::Critical
+        )
     }
-    
+
     /// Get a short description suitable for logging
     pub fn short_description(&self) -> &'static str {
         match self {
@@ -264,7 +233,7 @@ impl SecurityError {
             SecurityError::Generic { .. } => "generic_error",
         }
     }
-    
+
     /// Get remediation advice for this error
     pub fn remediation_advice(&self) -> &'static str {
         match self {
@@ -295,4 +264,4 @@ impl SecurityError {
             _ => "Review security policies and configuration for this resource or operation",
         }
     }
-} 
+}

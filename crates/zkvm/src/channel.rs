@@ -1,13 +1,13 @@
-use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use blake3::Hash;
-use crate::{ZkVmResult, ZkVmError};
-use rand::RngCore;
+use crate::{ZkVmError, ZkVmResult};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm,
 };
-use serde::{Serialize, Deserialize};
+use blake3::Hash;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
 
 /// Message types that can be sent through the channel
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,10 +18,7 @@ pub enum ChannelMessage {
         headers: Vec<(String, String)>,
     },
     /// Resource response
-    ResourceResponse {
-        data: Vec<u8>,
-        content_type: String,
-    },
+    ResourceResponse { data: Vec<u8>, content_type: String },
     /// UI event
     UiEvent {
         event_type: String,
@@ -129,10 +126,10 @@ impl Channel {
         let mut key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key);
         let key = Arc::new(key);
-        
+
         let (tx1, rx1) = mpsc::channel(32);
         let (tx2, rx2) = mpsc::channel(32);
-        
+
         let channel1 = Self {
             sender: tx1,
             receiver: rx2,
@@ -143,7 +140,7 @@ impl Channel {
                 active: true,
             })),
         };
-        
+
         let channel2 = Self {
             sender: tx2,
             receiver: rx1,
@@ -154,91 +151,94 @@ impl Channel {
                 active: true,
             })),
         };
-        
+
         Ok((channel1, channel2))
     }
-    
+
     /// Send a message through the channel
     pub async fn send(&self, message: ChannelMessage) -> ZkVmResult<()> {
         let mut state = self.state.write().await;
         if !state.active {
             return Err(ZkVmError::ChannelError("Channel is closed".into()));
         }
-        
+
         // Serialize the message
         let message_bytes = bincode::serialize(&message)
             .map_err(|e| ZkVmError::ChannelError(format!("Serialization failed: {}", e)))?;
-        
+
         // Generate nonce
         let mut nonce = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce);
-        
+
         // Encrypt the message
         let cipher = aes_gcm::Aes256Gcm::new_from_slice(self.key.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-            
+
         let encrypted = cipher
             .encrypt(aes_gcm::Nonce::from_slice(&nonce), message_bytes.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-        
+
         // Calculate MAC
         let mac = blake3::hash(&encrypted);
-        
+
         // Create encrypted message
         let encrypted_message = EncryptedMessage {
             content: encrypted,
             mac,
             nonce,
         };
-        
+
         // Send the message
         self.sender
             .send(encrypted_message)
             .await
             .map_err(|e| ZkVmError::ChannelError(format!("Send failed: {}", e)))?;
-        
+
         state.messages_sent += 1;
         Ok(())
     }
-    
+
     /// Receive a message from the channel
     pub async fn receive(&mut self) -> ZkVmResult<ChannelMessage> {
         let mut state = self.state.write().await;
         if !state.active {
             return Err(ZkVmError::ChannelError("Channel is closed".into()));
         }
-        
+
         // Receive encrypted message
-        let encrypted_message = self.receiver
+        let encrypted_message = self
+            .receiver
             .recv()
             .await
             .ok_or_else(|| ZkVmError::ChannelError("Channel closed".into()))?;
-        
+
         // Verify MAC
         let calculated_mac = blake3::hash(&encrypted_message.content);
         if calculated_mac != encrypted_message.mac {
-            return Err(ZkVmError::ChannelError("Message authentication failed".into()));
+            return Err(ZkVmError::ChannelError(
+                "Message authentication failed".into(),
+            ));
         }
-        
+
         // Decrypt the message
         let cipher = aes_gcm::Aes256Gcm::new_from_slice(self.key.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-            
+
         let decrypted = cipher
             .decrypt(
                 aes_gcm::Nonce::from_slice(&encrypted_message.nonce),
-                encrypted_message.content.as_ref()
+                encrypted_message.content.as_ref(),
             )
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-        
+
         // Deserialize the message
         let message = bincode::deserialize(&decrypted)
             .map_err(|e| ZkVmError::ChannelError(format!("Deserialization failed: {}", e)))?;
-        
+
         state.messages_received += 1;
         Ok(message)
     }
-    
+
     /// Close the channel
     pub async fn close(&self) {
         let mut state = self.state.write().await;
@@ -250,7 +250,7 @@ impl Channel {
 mod tests {
     use super::*;
     use tokio_test::block_on;
-    
+
     #[test]
     fn test_channel_creation() {
         block_on(async {
@@ -259,25 +259,31 @@ mod tests {
             assert!(channel2.state.read().await.active);
         });
     }
-    
+
     #[test]
     fn test_message_transmission() {
         let (mut channel1, mut channel2) = Channel::new().unwrap();
-        
+
         // Send a test message
         let message = ChannelMessage::Control {
             command: "test".into(),
             params: serde_json::json!({"key": "value"}).to_string(),
         };
-        
+
         block_on(async {
             channel1.send(message.clone()).await.unwrap();
             let received = channel2.receive().await.unwrap();
-            
+
             match (message, received) {
                 (
-                    ChannelMessage::Control { command: c1, params: p1 },
-                    ChannelMessage::Control { command: c2, params: p2 }
+                    ChannelMessage::Control {
+                        command: c1,
+                        params: p1,
+                    },
+                    ChannelMessage::Control {
+                        command: c2,
+                        params: p2,
+                    },
                 ) => {
                     assert_eq!(c1, c2);
                     assert_eq!(p1, p2);
@@ -286,7 +292,7 @@ mod tests {
             }
         });
     }
-    
+
     #[test]
     fn test_channel_closure() {
         block_on(async {
@@ -300,11 +306,11 @@ mod tests {
     fn test_encryption_decryption() {
         let key = [42u8; 32];
         let channel = SecureChannel::new(key);
-        
+
         let message = b"Hello, World!";
         let encrypted = channel.encrypt(message).unwrap();
         let decrypted = channel.decrypt(&encrypted).unwrap();
-        
+
         assert_eq!(message, decrypted.as_slice());
     }
 
@@ -312,13 +318,13 @@ mod tests {
     fn test_encryption_different_messages() {
         let key = [42u8; 32];
         let channel = SecureChannel::new(key);
-        
+
         let message1 = b"Hello";
         let message2 = b"World";
-        
+
         let encrypted1 = channel.encrypt(message1).unwrap();
         let encrypted2 = channel.encrypt(message2).unwrap();
-        
+
         assert_ne!(encrypted1, encrypted2);
     }
 
@@ -326,14 +332,14 @@ mod tests {
     fn test_decryption_failure() {
         let key1 = [42u8; 32];
         let key2 = [43u8; 32];
-        
+
         let channel1 = SecureChannel::new(key1);
         let channel2 = SecureChannel::new(key2);
-        
+
         let message = b"Secret message";
         let encrypted = channel1.encrypt(message).unwrap();
-        
+
         // Trying to decrypt with wrong key should fail
         assert!(channel2.decrypt(&encrypted).is_err());
     }
-} 
+}

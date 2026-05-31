@@ -5,10 +5,10 @@
 //!
 //! All methods create a fresh `boa_engine::Context` per call for isolation.
 
-use boa_engine::{Context, Source};
+use super::{boa_value_to_string, security, CitadelJSEngine};
 use crate::dom::Dom;
 use crate::error::ParserResult;
-use super::{CitadelJSEngine, boa_value_to_string, security};
+use boa_engine::{Context, Source};
 
 impl CitadelJSEngine {
     /// Execute JavaScript found in script tags during HTML parsing
@@ -48,10 +48,7 @@ impl CitadelJSEngine {
             if let Ok(node) = script_handle.read() {
                 // Skip external scripts that reference a src attribute
                 if let crate::dom::node::NodeData::Element(ref el) = node.data {
-                    let has_src = el
-                        .attributes
-                        .iter()
-                        .any(|a| a.name.local.as_ref() == "src");
+                    let has_src = el.attributes.iter().any(|a| a.name.local.as_ref() == "src");
                     if has_src {
                         continue;
                     }
@@ -204,13 +201,9 @@ mod tests {
         assert!(result.is_ok());
 
         // Test element creation via DOM bindings
-        let result =
-            engine.execute_browser_script("document.createElement('div').tagName", &dom);
+        let result = engine.execute_browser_script("document.createElement('div').tagName", &dom);
         assert!(result.is_ok());
-        assert_eq!(
-            result.expect("DOM API integration should work"),
-            "DIV"
-        );
+        assert_eq!(result.expect("DOM API integration should work"), "DIV");
     }
 
     #[test]
@@ -221,10 +214,7 @@ mod tests {
         // console.log is a no-op; the expression result is 'success'
         let result = engine.execute_browser_script("console.log('test'); 'success'", &dom);
         assert!(result.is_ok());
-        assert_eq!(
-            result.expect("Console integration should work"),
-            "success"
-        );
+        assert_eq!(result.expect("Console integration should work"), "success");
     }
 
     #[test]

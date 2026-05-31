@@ -1,25 +1,26 @@
 //! Enhanced Citadel Browser application with comprehensive error handling and user feedback
-//! 
+//!
 //! This module implements the main browser application with security-first design,
 //! ZKVM tab isolation, and privacy-preserving features.
 
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio::runtime::Runtime;
-use iced::{Application, Command, Element, Subscription, Theme};
 use iced::keyboard::Key;
+use iced::{Application, Command, Element, Subscription, Theme};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::runtime::Runtime;
 use url::Url;
 
-use crate::ui::{CitadelUI, UIMessage};
 use crate::engine::BrowserEngine;
 use crate::renderer::{CitadelRenderer, FormMessage, FormSubmission};
-use crate::zkvm_receiver;
+use crate::ui::{CitadelUI, UIMessage};
 // WORKAROUND: Use explicit paths to break circular import
 // Import performance types directly to avoid circular dependency with lib.rs re-exports
-use citadel_tabs::{SendSafeTabManager as TabManager, TabType, PageContent};
-use citadel_networking::{NetworkConfig, PrivacyLevel, DnsMode};
-use citadel_security::{SecurityContext, PrivacyEvent, PrivacyStats, PrivacyEventSender, PrivacyEventReceiver};
-use citadel_parser::{Dom, CitadelStylesheet};
+use citadel_networking::{DnsMode, NetworkConfig, PrivacyLevel};
+use citadel_parser::{CitadelStylesheet, Dom};
+use citadel_security::{
+    PrivacyEvent, PrivacyEventReceiver, PrivacyEventSender, PrivacyStats, SecurityContext,
+};
+use citadel_tabs::{PageContent, SendSafeTabManager as TabManager, TabType};
 
 /// Main Citadel Browser application
 pub struct CitadelBrowser {
@@ -43,11 +44,6 @@ pub struct CitadelBrowser {
     error_states: HashMap<uuid::Uuid, String>,
     /// Loading states for tab operations
     loading_states: HashMap<uuid::Uuid, LoadingState>,
-    /// Channel for receiving ZKVM output
-    #[allow(dead_code)] // Will be used when implementing ZKVM communication
-    zkvm_output_sender: tokio::sync::mpsc::UnboundedSender<zkvm_receiver::ZkVmOutput>,
-    #[allow(dead_code)] // Will be used when implementing ZKVM communication
-    zkvm_output_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<zkvm_receiver::ZkVmOutput>>,
     /// Store DOM and stylesheet per tab for renderer state
     tab_render_data: HashMap<uuid::Uuid, (Arc<Dom>, Arc<CitadelStylesheet>)>,
     /// Viewport information and state
@@ -115,7 +111,7 @@ impl ZoomLevel {
             ZoomLevel::Percent200 => 2.0,
         }
     }
-    
+
     pub fn next(&self) -> Option<ZoomLevel> {
         match self {
             ZoomLevel::Percent50 => Some(ZoomLevel::Percent75),
@@ -126,7 +122,7 @@ impl ZoomLevel {
             ZoomLevel::Percent200 => None,
         }
     }
-    
+
     pub fn previous(&self) -> Option<ZoomLevel> {
         match self {
             ZoomLevel::Percent50 => None,
@@ -137,7 +133,7 @@ impl ZoomLevel {
             ZoomLevel::Percent200 => Some(ZoomLevel::Percent150),
         }
     }
-    
+
     pub fn as_percentage(&self) -> u16 {
         match self {
             ZoomLevel::Percent50 => 50,
@@ -187,46 +183,46 @@ impl ScrollState {
     pub fn can_scroll_up(&self) -> bool {
         self.y > 0.0
     }
-    
+
     #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_down(&self) -> bool {
         self.y < self.max_y
     }
-    
+
     #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_left(&self) -> bool {
         self.x > 0.0
     }
-    
+
     #[allow(dead_code)] // Will be used when implementing scroll controls
     pub fn can_scroll_right(&self) -> bool {
         self.x < self.max_x
     }
-    
+
     pub fn scroll_by(&mut self, dx: f32, dy: f32) {
         self.x = (self.x + dx).clamp(0.0, self.max_x);
         self.y = (self.y + dy).clamp(0.0, self.max_y);
     }
-    
+
     pub fn scroll_to(&mut self, x: f32, y: f32) {
         self.x = x.clamp(0.0, self.max_x);
         self.y = y.clamp(0.0, self.max_y);
     }
-    
+
     pub fn page_up(&mut self) {
         let page_height = self.viewport_height * 0.9; // 90% of viewport
         self.scroll_by(0.0, -page_height);
     }
-    
+
     pub fn page_down(&mut self) {
         let page_height = self.viewport_height * 0.9; // 90% of viewport
         self.scroll_by(0.0, page_height);
     }
-    
+
     pub fn home(&mut self) {
         self.scroll_to(0.0, 0.0);
     }
-    
+
     pub fn end(&mut self) {
         self.scroll_to(0.0, self.max_y);
     }
@@ -242,7 +238,10 @@ pub enum Message {
     /// Page loading completed with detailed result
     PageLoaded(uuid::Uuid, Result<ParsedPageData, LoadingError>),
     /// Create a new tab with specific configuration
-    NewTab { tab_type: TabType, initial_url: Option<String> },
+    NewTab {
+        tab_type: TabType,
+        initial_url: Option<String>,
+    },
     /// Close a tab with cleanup
     CloseTab(uuid::Uuid),
     /// Switch to a tab
@@ -261,12 +260,12 @@ pub enum Message {
     RefreshTab,
     /// Stop loading current tab
     StopLoading(uuid::Uuid),
-    /// ZKVM output received
-    ZkVmOutput(zkvm_receiver::ZkVmOutput),
+    /// A tab's ZKVM boundary returned a sanitized display list (or None on failure).
+    ZkVmRendered(uuid::Uuid, Option<citadel_tabs::RenderedContent>),
     /// Tab opened, need to setup channel
-    TabOpened { 
+    TabOpened {
         tab_id: uuid::Uuid,
-        initial_url: Option<String> 
+        initial_url: Option<String>,
     },
     /// Form interaction messages
     FormInteraction(FormMessage),
@@ -285,9 +284,18 @@ pub enum Message {
     PageDown,
     Home,
     End,
-    ScrollTo { x: f32, y: f32 },
-    ViewportResized { width: f32, height: f32 },
-    MouseWheel { delta_x: f32, delta_y: f32 },
+    ScrollTo {
+        x: f32,
+        y: f32,
+    },
+    ViewportResized {
+        width: f32,
+        height: f32,
+    },
+    MouseWheel {
+        delta_x: f32,
+        delta_y: f32,
+    },
     /// A privacy event was received from the engine
     PrivacyTick(PrivacyEvent),
     /// Drain pending privacy events from the channel
@@ -340,6 +348,9 @@ pub struct ParsedPageData {
     pub security_warnings: Vec<String>,
     pub dom: Option<std::sync::Arc<citadel_parser::Dom>>,
     pub stylesheet: Option<std::sync::Arc<citadel_parser::CitadelStylesheet>>,
+    /// The raw, untrusted HTML bytes — handed to the tab's ZKVM boundary for
+    /// isolated parsing/layout. The host never parses these for display.
+    pub raw_html: String,
 }
 
 impl Application for CitadelBrowser {
@@ -350,10 +361,10 @@ impl Application for CitadelBrowser {
 
     fn new(runtime: Arc<Runtime>) -> (Self, Command<Message>) {
         log::info!("🚀 Initializing Citadel Browser application with enhanced security");
-        
+
         // Initialize security context with maximum privacy by default
         let security_context = Arc::new(SecurityContext::new(10));
-        
+
         // Initialize network configuration with privacy-first settings
         let network_config = NetworkConfig {
             privacy_level: PrivacyLevel::High,
@@ -363,22 +374,19 @@ impl Application for CitadelBrowser {
             strip_tracking_params: true,
             tracker_blocking: citadel_networking::BlocklistConfig::default(),
         };
-        
+
         // Initialize tab manager with ZKVM isolation
         let tab_manager = Arc::new(TabManager::new());
-        
+
         // Initialize UI with enhanced features
         let ui = CitadelUI::new();
-        
+
         // Initialize HTML/CSS renderer
         let renderer = CitadelRenderer::new();
-        
-        // Create ZKVM output channel
-        let (zkvm_output_sender, zkvm_output_receiver) = tokio::sync::mpsc::unbounded_channel();
 
         // Create privacy event channel for the scoreboard
         let (privacy_sender, privacy_receiver) = citadel_security::create_privacy_channel();
-        
+
         let browser = Self {
             runtime: runtime.clone(),
             engine: None,
@@ -389,8 +397,6 @@ impl Application for CitadelBrowser {
             security_context: security_context.clone(),
             error_states: HashMap::new(),
             loading_states: HashMap::new(),
-            zkvm_output_sender,
-            zkvm_output_receiver: Some(zkvm_output_receiver),
             tab_render_data: HashMap::new(),
             viewport_info: ViewportInfo::default(),
             tab_scroll_states: HashMap::new(),
@@ -402,7 +408,7 @@ impl Application for CitadelBrowser {
             // performance_monitor,
             last_memory_cleanup: std::time::Instant::now(),
         };
-        
+
         // Initialize browser engine asynchronously with detailed error handling
         let init_command = Command::perform(
             BrowserEngine::new(runtime, network_config, security_context),
@@ -415,23 +421,23 @@ impl Application for CitadelBrowser {
                     log::error!("❌ Engine initialization failed: {}", e);
                     Message::InitializationError(format!("Failed to initialize engine: {}", e))
                 }
-            }
+            },
         );
-        
+
         (browser, init_command)
     }
 
     fn title(&self) -> String {
         let version = env!("CARGO_PKG_VERSION");
         let base_title = format!("Citadel Browser v{} (Alpha) - Privacy First", version);
-        
+
         // Get active tab from tab states
         let tab_states = self.tab_manager.get_tab_states();
         if let Some(active_tab) = tab_states.iter().find(|tab| tab.is_active) {
             // Show loading state in title if applicable
             if let Some(loading_state) = self.loading_states.get(&active_tab.id) {
                 match loading_state {
-                    LoadingState::Idle => {},
+                    LoadingState::Idle => {}
                     LoadingState::ResolvingDns { domain } => {
                         return format!("🔍 Resolving {} - {}", domain, base_title);
                     }
@@ -452,12 +458,12 @@ impl Application for CitadelBrowser {
                     }
                 }
             }
-            
+
             // Show error state in title if applicable
             if self.error_states.contains_key(&active_tab.id) {
                 return format!("❌ Error - {}", base_title);
             }
-            
+
             // Show normal tab title
             if active_tab.title.is_empty() {
                 base_title
@@ -472,7 +478,7 @@ impl Application for CitadelBrowser {
     fn update(&mut self, message: Message) -> Command<Message> {
         // Periodic memory cleanup and performance monitoring
         self.periodic_memory_cleanup();
-        
+
         match message {
             Message::UI(ui_message) => {
                 match &ui_message {
@@ -486,16 +492,16 @@ impl Application for CitadelBrowser {
                 }
                 self.ui.update(ui_message)
             }
-            
+
             Message::Navigate(url_str) => {
                 log::info!("🧭 Navigating to: {}", url_str);
-                
+
                 // Check if engine is initialized
                 if self.engine.is_none() {
                     log::warn!("⚠️ Engine not yet initialized, cannot navigate");
                     return Command::none();
                 }
-                
+
                 // Enhanced URL validation and normalization
                 let normalized_url = self.normalize_url(&url_str);
                 match Url::parse(&normalized_url) {
@@ -504,63 +510,76 @@ impl Application for CitadelBrowser {
                         let tab_states = self.tab_manager.get_tab_states();
                         if tab_states.is_empty() {
                             // Create a new tab first
-                            return self.update(Message::NewTab { 
-                                tab_type: TabType::Ephemeral, 
-                                initial_url: Some(url_str) 
+                            return self.update(Message::NewTab {
+                                tab_type: TabType::Ephemeral,
+                                initial_url: Some(url_str),
                             });
                         }
-                        
+
                         if let Some(active_tab) = tab_states.iter().find(|tab| tab.is_active) {
                             let tab_id = active_tab.id;
-                            
+
                             // Clear any existing error state
                             self.error_states.remove(&tab_id);
-                            
+
                             // Set initial loading state
-                            self.loading_states.insert(tab_id, LoadingState::ResolvingDns { 
-                                domain: url.host_str().unwrap_or("unknown").to_string() 
-                            });
-                            
+                            self.loading_states.insert(
+                                tab_id,
+                                LoadingState::ResolvingDns {
+                                    domain: url.host_str().unwrap_or("unknown").to_string(),
+                                },
+                            );
+
                             // Update tab content to loading state
                             let tab_manager = self.tab_manager.clone();
-                            let loading_content = PageContent::Loading { url: normalized_url.clone() };
-                            
+                            let loading_content = PageContent::Loading {
+                                url: normalized_url.clone(),
+                            };
+
                             // Start the page loading process
                             let Some(engine) = self.engine.clone() else {
-                                eprintln!("[App] Browser engine not available for page loading");
+                                log::error!("Browser engine not available for page loading");
                                 return Command::none();
                             };
                             return Command::batch([
                                 // Set loading state in tab
                                 Command::perform(
                                     async move {
-                                        let _ = tab_manager.update_page_content(tab_id, loading_content).await;
+                                        let _ = tab_manager
+                                            .update_page_content(tab_id, loading_content)
+                                            .await;
                                     },
                                     {
                                         let tab_id_copy = tab_id;
                                         let url_copy = normalized_url.clone();
-                                        move |_| Message::LoadingStateUpdate(tab_id_copy, LoadingState::Connecting { 
-                                            url: url_copy 
-                                        })
-                                    }
+                                        move |_| {
+                                            Message::LoadingStateUpdate(
+                                                tab_id_copy,
+                                                LoadingState::Connecting { url: url_copy },
+                                            )
+                                        }
+                                    },
                                 ),
                                 // Start loading the page
                                 Command::perform(
-                                    async move {
-                                        engine.load_page_with_progress(url, tab_id).await
-                                    },
-                                    move |result| Message::PageLoaded(tab_id, result)
+                                    async move { engine.load_page_with_progress(url, tab_id).await },
+                                    move |result| Message::PageLoaded(tab_id, result),
                                 ),
                             ]);
                         }
-                        
+
                         Command::none()
                     }
                     Err(e) => {
                         log::error!("❌ Invalid URL: {} - {}", url_str, e);
-                        
+
                         // Show user-friendly error
-                        if let Some(active_tab) = self.tab_manager.get_tab_states().iter().find(|tab| tab.is_active) {
+                        if let Some(active_tab) = self
+                            .tab_manager
+                            .get_tab_states()
+                            .iter()
+                            .find(|tab| tab.is_active)
+                        {
                             let error = LoadingError {
                                 error_type: ErrorType::Content,
                                 message: format!("Invalid URL: {}", e),
@@ -568,198 +587,179 @@ impl Application for CitadelBrowser {
                                 timestamp: std::time::SystemTime::now(),
                                 retry_possible: true,
                             };
-                            self.error_states.insert(active_tab.id, error.message.clone());
+                            self.error_states
+                                .insert(active_tab.id, error.message.clone());
                         }
-                        
+
                         Command::none()
                     }
                 }
             }
-            
+
             Message::PageLoaded(tab_id, result) => {
                 // Clear loading state
                 self.loading_states.remove(&tab_id);
-                
+
                 match result {
                     Ok(page_data) => {
-                        log::info!("✅ Page loaded successfully: {}, {} elements, {} bytes", 
-                                   page_data.title, page_data.element_count, page_data.size_bytes);
-                        
+                        log::info!(
+                            "✅ Page loaded successfully: {}, {} elements, {} bytes",
+                            page_data.title,
+                            page_data.element_count,
+                            page_data.size_bytes
+                        );
+
                         // Clear any error state
                         self.error_states.remove(&tab_id);
-                        
-                        // Route content through ZKVM for proper tab isolation
-                        if let (Some(dom), Some(stylesheet)) = (&page_data.dom, &page_data.stylesheet) {
-                            log::info!("🔒 Routing content through ZKVM for tab isolation: {}", tab_id);
-                            
-                            // Store DOM and stylesheet for this tab
-                            self.tab_render_data.insert(tab_id, (dom.clone(), stylesheet.clone()));
-                            
-                            // Send content to ZKVM for isolated processing
-                            let zkvm_content = citadel_tabs::PageContent::Loaded {
-                                url: page_data.url.clone(),
-                                title: page_data.title.clone(),
-                                content: page_data.content.clone(),
-                                element_count: page_data.element_count,
-                                size_bytes: page_data.size_bytes,
-                            };
-                            
-                            // Send to ZKVM channel for isolated processing
-                            match citadel_zkvm::Channel::new() {
-                                Ok((mut vm_channel, _host_channel)) => {
-                                    // Send rendering command to ZKVM
-                                    let message = citadel_zkvm::ChannelMessage::Control {
-                                        command: "render_content".to_string(),
-                                        params: serde_json::to_string(&zkvm_content).unwrap_or_default(),
-                                    };
-                                    
-                                    // Process in isolated environment
-                                    let _render_result = tokio::spawn(async move {
-                                        if let Err(e) = vm_channel.send(message).await {
-                                            log::error!("Failed to send to ZKVM: {}", e);
-                                            return Err(e.to_string());
-                                        }
-                                        Ok(())
-                                    });
-                                    
-                                    // For now, also update renderer directly (will be replaced by ZKVM output)
-                                    match self.renderer.update_content(dom.clone(), stylesheet.clone()) {
-                                        Ok(_) => {
-                                            log::info!("✅ Content processed through ZKVM isolation boundary");
-                                        },
-                                        Err(e) => {
-                                            log::error!("❌ Failed to process content through ZKVM: {}", e);
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("❌ ZKVM channel creation failed: {}", e);
-                                    // Fallback to direct rendering for now
-                                    if let Err(e) = self.renderer.update_content(dom.clone(), stylesheet.clone()) {
-                                        log::error!("❌ Fallback renderer update failed: {}", e);
-                                    }
-                                }
-                            }
-                        } else {
-                            log::error!("❌ CRITICAL: No DOM or stylesheet available for ZKVM processing");
-                            log::error!("  DOM present: {}", page_data.dom.is_some());
-                            log::error!("  Stylesheet present: {}", page_data.stylesheet.is_some());
+
+                        // Keep DOM/stylesheet for diagnostics only. The host does NOT
+                        // render them — the raw bytes are handed to the tab's ZKVM
+                        // boundary, which returns a sanitized display list to paint.
+                        if let (Some(dom), Some(stylesheet)) =
+                            (&page_data.dom, &page_data.stylesheet)
+                        {
+                            self.tab_render_data
+                                .insert(tab_id, (dom.clone(), stylesheet.clone()));
                         }
-                        
-                                                 // Initialize or update scroll state for this tab
+                        self.renderer.clear_zkvm_content();
+
+                        // Initialize scroll state for this tab
                         self.initialize_tab_scroll_state(tab_id);
-                        self.update_scroll_state_for_content(tab_id);
-                        
-                        // Update tab with loaded content
-                         let tab_manager = self.tab_manager.clone();
-                         let content = PageContent::Loaded {
-                             url: page_data.url.clone(),
-                             title: page_data.title.clone(),
-                             content: page_data.content.clone(),
-                             element_count: page_data.element_count,
-                             size_bytes: page_data.size_bytes,
-                         };
-                        
-                        return Command::perform(
-                            async move {
-                                let _ = tab_manager.update_page_content(tab_id, content).await;
-                            },
-                            {
-                                let tab_id_copy = tab_id;
-                                move |_| Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle)
-                            }
+
+                        // Update tab with loaded content (title/metadata).
+                        let tab_manager = self.tab_manager.clone();
+                        let content = PageContent::Loaded {
+                            url: page_data.url.clone(),
+                            title: page_data.title.clone(),
+                            content: page_data.content.clone(),
+                            element_count: page_data.element_count,
+                            size_bytes: page_data.size_bytes,
+                        };
+
+                        let raw_html = page_data.raw_html.clone();
+                        let render_url = page_data.url.clone();
+                        let viewport_width = self.viewport_info.width.max(320.0);
+
+                        log::info!(
+                            "🔒 Handing {} bytes to the ZKVM boundary for tab {}",
+                            raw_html.len(),
+                            tab_id
                         );
+
+                        return Command::batch([
+                            // Persist loaded content + flip loading state to Idle.
+                            Command::perform(
+                                async move {
+                                    let _ = tab_manager.update_page_content(tab_id, content).await;
+                                },
+                                move |_| Message::LoadingStateUpdate(tab_id, LoadingState::Idle),
+                            ),
+                            // Render the page INSIDE the tab's zero-knowledge boundary.
+                            Command::perform(
+                                Self::render_via_zkvm(tab_id, render_url, raw_html, viewport_width),
+                                |(tid, rendered)| Message::ZkVmRendered(tid, rendered),
+                            ),
+                        ]);
                     }
                     Err(error) => {
                         log::error!("❌ Page loading failed: {} - {}", error.url, error.message);
-                        
+
                         // Store error state for user feedback
                         self.error_states.insert(tab_id, error.message.clone());
-                        
-                                                 // Update tab with error content
-                         let tab_manager = self.tab_manager.clone();
-                         let error_content = PageContent::Error {
-                             url: error.url.clone(),
-                             error: error.message.clone(),
-                         };
-                        
+
+                        // Update tab with error content
+                        let tab_manager = self.tab_manager.clone();
+                        let error_content = PageContent::Error {
+                            url: error.url.clone(),
+                            error: error.message.clone(),
+                        };
+
                         return Command::perform(
                             async move {
-                                let _ = tab_manager.update_page_content(tab_id, error_content).await;
+                                let _ =
+                                    tab_manager.update_page_content(tab_id, error_content).await;
                             },
                             {
                                 let tab_id_copy = tab_id;
-                                move |_| Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle)
-                            }
+                                move |_| {
+                                    Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle)
+                                }
+                            },
                         );
-                     }
-                 }
-             }
-            
-            Message::NewTab { tab_type, initial_url } => {
+                    }
+                }
+            }
+
+            Message::NewTab {
+                tab_type,
+                initial_url,
+            } => {
                 log::info!("📑 Creating new tab: {:?}", tab_type);
-                
+
                 let tab_manager = self.tab_manager.clone();
-                let url = initial_url.as_ref().map(|u| u.clone()).unwrap_or_else(|| "about:blank".to_string());
+                let url = initial_url
+                    .as_ref()
+                    .map(|u| u.clone())
+                    .unwrap_or_else(|| "about:blank".to_string());
                 let initial_url_copy = initial_url.clone(); // Clone for the closure
-                
+
                 return Command::perform(
-                    async move {
-                        tab_manager.open_tab(url.clone(), tab_type).await
-                    },
+                    async move { tab_manager.open_tab(url.clone(), tab_type).await },
                     move |result| match result {
                         Ok(tab_id) => {
                             log::info!("✅ Tab created successfully: {}", tab_id);
-                            Message::TabOpened { 
-                                tab_id, 
-                                initial_url: initial_url_copy 
+                            Message::TabOpened {
+                                tab_id,
+                                initial_url: initial_url_copy,
                             }
                         }
                         Err(e) => {
                             log::error!("❌ Failed to create tab: {}", e);
                             Message::InitializationError(format!("Failed to create tab: {}", e))
                         }
-                    }
+                    },
                 );
             }
-            
+
             Message::CloseTab(tab_id) => {
                 log::info!("🗑️ Closing tab: {}", tab_id);
-                
+
                 // Clean up state
                 self.error_states.remove(&tab_id);
                 self.loading_states.remove(&tab_id);
                 self.tab_render_data.remove(&tab_id);
                 self.tab_scroll_states.remove(&tab_id);
                 self.tab_zoom_levels.remove(&tab_id);
-                
+
                 let tab_manager = self.tab_manager.clone();
                 return Command::perform(
-                    async move {
-                        tab_manager.close_tab(tab_id).await
-                    },
+                    async move { tab_manager.close_tab(tab_id).await },
                     move |result| match result {
                         Ok(_) => {
                             log::info!("✅ Tab closed successfully");
-                            Message::LoadingStateUpdate(tab_id, LoadingState::Idle) // Dummy message
+                            Message::LoadingStateUpdate(tab_id, LoadingState::Idle)
+                            // Dummy message
                         }
                         Err(e) => {
                             log::error!("❌ Failed to close tab: {}", e);
                             Message::InitializationError(format!("Failed to close tab: {}", e))
                         }
-                    }
+                    },
                 );
             }
-            
+
             Message::SwitchTab(tab_id) => {
                 log::info!("🔄 Switching to tab: {}", tab_id);
-                
+
                 // Update renderer with the stored DOM/stylesheet for this tab
                 if let Some((dom, stylesheet)) = self.tab_render_data.get(&tab_id) {
-                    match self.renderer.update_content(dom.clone(), stylesheet.clone()) {
+                    match self
+                        .renderer
+                        .update_content(dom.clone(), stylesheet.clone())
+                    {
                         Ok(_) => {
                             log::info!("✅ Renderer updated with content for tab {}", tab_id);
-                        },
+                        }
                         Err(e) => {
                             log::warn!("Failed to update renderer when switching tab: {}", e);
                         }
@@ -767,67 +767,71 @@ impl Application for CitadelBrowser {
                 } else {
                     log::info!("No render data stored for tab {}", tab_id);
                 }
-                
+
                 let tab_manager = self.tab_manager.clone();
                 let tab_id_copy = tab_id; // Copy the UUID
                 return Command::perform(
-                    async move {
-                        tab_manager.switch_tab(tab_id_copy).await
-                    },
+                    async move { tab_manager.switch_tab(tab_id_copy).await },
                     move |result| match result {
                         Ok(_) => {
                             log::info!("✅ Tab switched successfully");
-                            Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle) // Dummy message
+                            Message::LoadingStateUpdate(tab_id_copy, LoadingState::Idle)
+                            // Dummy message
                         }
                         Err(e) => {
                             log::error!("❌ Failed to switch tab: {}", e);
                             Message::InitializationError(format!("Tab switch error: {}", e))
                         }
-                    }
+                    },
                 );
             }
-            
+
             Message::UpdatePrivacy(level) => {
                 log::info!("🔒 Updating privacy level to: {:?}", level);
                 self.network_config.privacy_level = level;
-                
+
                 // TODO: Update engine configuration and reload if necessary
                 Command::none()
             }
-            
+
             Message::EngineInitialized(engine) => {
                 log::info!("🎉 Engine initialized successfully");
                 self.engine = Some(engine);
                 Command::none()
             }
-            
+
             Message::InitializationError(error) => {
                 log::error!("💥 Initialization error: {}", error);
                 // TODO: Show error in UI
                 Command::none()
             }
-            
+
             Message::LoadingStateUpdate(tab_id, state) => {
                 log::debug!("📊 Loading state update for tab {}: {:?}", tab_id, state);
                 self.loading_states.insert(tab_id, state);
                 Command::none()
             }
-            
+
             Message::ClearError(tab_id) => {
                 log::info!("🧹 Clearing error for tab: {}", tab_id);
                 self.error_states.remove(&tab_id);
                 Command::none()
             }
-            
+
             Message::RefreshTab => {
                 log::info!("🔄 Refreshing current tab");
-                
-                if let Some(active_tab) = self.tab_manager.get_tab_states().iter().find(|tab| tab.is_active) {
+
+                if let Some(active_tab) = self
+                    .tab_manager
+                    .get_tab_states()
+                    .iter()
+                    .find(|tab| tab.is_active)
+                {
                     // Get current URL from tab content
                     match &active_tab.content {
-                        PageContent::Loaded { url, .. } |
-                        PageContent::Loading { url } |
-                        PageContent::Error { url, .. } => {
+                        PageContent::Loaded { url, .. }
+                        | PageContent::Loading { url }
+                        | PageContent::Error { url, .. } => {
                             return self.update(Message::Navigate(url.clone()));
                         }
                         PageContent::Empty => {
@@ -836,52 +840,56 @@ impl Application for CitadelBrowser {
                         }
                     }
                 }
-                
+
                 Command::none()
             }
-            
+
             Message::StopLoading(tab_id) => {
                 log::info!("⏹️ Stopping loading for tab: {}", tab_id);
-                
+
                 // Clear loading state
                 self.loading_states.remove(&tab_id);
-                
+
                 // TODO: Cancel ongoing requests
                 Command::none()
             }
-            
-            Message::ZkVmOutput(output) => {
-                use zkvm_receiver::ZkVmOutput;
-                
-                match output {
-                    ZkVmOutput::RenderedContent { tab_id, content: _ } => {
-                        log::info!("📦 Received rendered content from ZKVM for tab {}", tab_id);
-                        
-                        // Update the renderer with the sanitized content
-                        // In a real implementation, we would use the rendered content
-                        // to update the display
-                        
-                        // Clear loading state
-                        self.loading_states.insert(tab_id, LoadingState::Idle);
-                        
-                        Command::none()
+
+            Message::ZkVmRendered(tab_id, rendered) => {
+                match rendered {
+                    Some(content) => {
+                        log::info!(
+                            "🎨 ZKVM render for tab {}: {} display items, {}px tall ({} elements blocked)",
+                            tab_id,
+                            content.display_list.len(),
+                            content.height as u32,
+                            content.security_metadata.blocked_elements,
+                        );
+                        // Paint ONLY the sanitized display list from the boundary.
+                        self.renderer.set_zkvm_content(content);
+                        self.update_scroll_state_for_content(tab_id);
+                        self.error_states.remove(&tab_id);
                     }
-                    ZkVmOutput::Error { tab_id, error } => {
-                        log::error!("❌ ZKVM error for tab {}: {}", tab_id, error);
-                        self.error_states.insert(tab_id, error);
-                        self.loading_states.insert(tab_id, LoadingState::Idle);
-                        
-                        Command::none()
+                    None => {
+                        log::error!("❌ ZKVM render failed for tab {}", tab_id);
+                        self.error_states.insert(
+                            tab_id,
+                            "Failed to render page inside the zero-knowledge boundary".to_string(),
+                        );
                     }
                 }
+                self.loading_states.insert(tab_id, LoadingState::Idle);
+                Command::none()
             }
-            
-            Message::TabOpened { tab_id, initial_url } => {
+
+            Message::TabOpened {
+                tab_id,
+                initial_url,
+            } => {
                 log::info!("🔗 Tab {} opened", tab_id);
-                
+
                 // TODO: Get channel from tab manager and setup receiver
                 // For now, just navigate if URL provided
-                
+
                 // Navigate if initial URL provided
                 if let Some(url) = initial_url {
                     self.update(Message::Navigate(url))
@@ -889,221 +897,265 @@ impl Application for CitadelBrowser {
                     Command::none()
                 }
             }
-            
+
             Message::FormInteraction(form_message) => {
                 log::info!("📝 Form interaction: {:?}", form_message);
-                
+
                 // Handle form interaction in the renderer
                 self.renderer.handle_form_message(form_message.clone());
-                
+
                 // Check if this triggers a form submission
-                if let Some(submission) = self.renderer.get_form_state().pending_submission.clone() {
+                if let Some(submission) = self.renderer.get_form_state().pending_submission.clone()
+                {
                     return self.update(Message::FormSubmit(submission));
                 }
-                
+
                 Command::none()
             }
-            
+
             Message::FormSubmit(submission) => {
-                log::info!("📤 Form submission request: {} -> {}", submission.form_id, submission.action);
-                
+                log::info!(
+                    "📤 Form submission request: {} -> {}",
+                    submission.form_id,
+                    submission.action
+                );
+
                 // Validate form submission security
                 if !self.validate_form_security(&submission) {
                     log::warn!("🛡️ Form submission blocked for security reasons");
                     return Command::none();
                 }
-                
+
                 // Process form submission through the engine
                 if let Some(engine) = &self.engine {
                     let engine_clone = engine.clone();
                     return Command::perform(
-                        async move {
-                            engine_clone.submit_form(submission).await
-                        },
+                        async move { engine_clone.submit_form(submission).await },
                         |result| match result {
                             Ok(response_url) => {
-                                log::info!("✅ Form submitted successfully, navigating to response");
+                                log::info!(
+                                    "✅ Form submitted successfully, navigating to response"
+                                );
                                 Message::Navigate(response_url)
                             }
                             Err(e) => {
                                 log::error!("❌ Form submission failed: {}", e);
-                                Message::InitializationError(format!("Form submission failed: {}", e))
+                                Message::InitializationError(format!(
+                                    "Form submission failed: {}",
+                                    e
+                                ))
                             }
-                        }
+                        },
                     );
                 } else {
                     log::error!("❌ Cannot submit form: Engine not initialized");
                     return Command::none();
                 }
             }
-            
+
             // Viewport and scrolling message handlers
             Message::ZoomIn => {
                 if let Some(active_tab) = self.get_active_tab_id() {
-                    let current_zoom = self.tab_zoom_levels.get(&active_tab).copied().unwrap_or(ZoomLevel::Percent100);
+                    let current_zoom = self
+                        .tab_zoom_levels
+                        .get(&active_tab)
+                        .copied()
+                        .unwrap_or(ZoomLevel::Percent100);
                     if let Some(new_zoom) = current_zoom.next() {
                         self.tab_zoom_levels.insert(active_tab, new_zoom);
                         self.renderer.set_zoom_level(new_zoom.as_factor());
                         log::info!("🔍 Zoomed in to {}%", new_zoom.as_percentage());
-                        
+
                         // Update viewport and recompute layout if needed
                         self.update_viewport_for_zoom(new_zoom);
                     }
                 }
                 Command::none()
             }
-            
+
             Message::ZoomOut => {
                 if let Some(active_tab) = self.get_active_tab_id() {
-                    let current_zoom = self.tab_zoom_levels.get(&active_tab).copied().unwrap_or(ZoomLevel::Percent100);
+                    let current_zoom = self
+                        .tab_zoom_levels
+                        .get(&active_tab)
+                        .copied()
+                        .unwrap_or(ZoomLevel::Percent100);
                     if let Some(new_zoom) = current_zoom.previous() {
                         self.tab_zoom_levels.insert(active_tab, new_zoom);
                         self.renderer.set_zoom_level(new_zoom.as_factor());
                         log::info!("🔍 Zoomed out to {}%", new_zoom.as_percentage());
-                        
+
                         // Update viewport and recompute layout if needed
                         self.update_viewport_for_zoom(new_zoom);
                     }
                 }
                 Command::none()
             }
-            
+
             Message::ZoomReset => {
                 if let Some(active_tab) = self.get_active_tab_id() {
-                    self.tab_zoom_levels.insert(active_tab, ZoomLevel::Percent100);
+                    self.tab_zoom_levels
+                        .insert(active_tab, ZoomLevel::Percent100);
                     self.renderer.set_zoom_level(1.0);
                     log::info!("🔍 Reset zoom to 100%");
-                    
+
                     // Update viewport and recompute layout
                     self.update_viewport_for_zoom(ZoomLevel::Percent100);
                 }
                 Command::none()
             }
-            
+
             Message::ZoomToLevel(zoom_level) => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     self.tab_zoom_levels.insert(active_tab, zoom_level);
                     self.renderer.set_zoom_level(zoom_level.as_factor());
                     log::info!("🔍 Set zoom to {}%", zoom_level.as_percentage());
-                    
+
                     // Update viewport and recompute layout
                     self.update_viewport_for_zoom(zoom_level);
                 }
                 Command::none()
             }
-            
+
             Message::ScrollUp => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.scroll_by(0.0, -50.0); // Scroll up by 50px
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
                     log::debug!("⬆️ Scrolled up to ({}, {})", scroll_state.x, scroll_state.y);
                 }
                 Command::none()
             }
-            
+
             Message::ScrollDown => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.scroll_by(0.0, 50.0); // Scroll down by 50px
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
-                    log::debug!("⬇️ Scrolled down to ({}, {})", scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!(
+                        "⬇️ Scrolled down to ({}, {})",
+                        scroll_state.x,
+                        scroll_state.y
+                    );
                 }
                 Command::none()
             }
-            
+
             Message::ScrollLeft => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.scroll_by(-50.0, 0.0); // Scroll left by 50px
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
-                    log::debug!("⬅️ Scrolled left to ({}, {})", scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!(
+                        "⬅️ Scrolled left to ({}, {})",
+                        scroll_state.x,
+                        scroll_state.y
+                    );
                 }
                 Command::none()
             }
-            
+
             Message::ScrollRight => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.scroll_by(50.0, 0.0); // Scroll right by 50px
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
-                    log::debug!("➡️ Scrolled right to ({}, {})", scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!(
+                        "➡️ Scrolled right to ({}, {})",
+                        scroll_state.x,
+                        scroll_state.y
+                    );
                 }
                 Command::none()
             }
-            
+
             Message::PageUp => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.page_up();
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
                     log::debug!("📄⬆️ Page up to ({}, {})", scroll_state.x, scroll_state.y);
                 }
                 Command::none()
             }
-            
+
             Message::PageDown => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.page_down();
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
                     log::debug!("📄⬇️ Page down to ({}, {})", scroll_state.x, scroll_state.y);
                 }
                 Command::none()
             }
-            
+
             Message::Home => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.home();
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
                     log::debug!("🏠 Scrolled to home (0, 0)");
                 }
                 Command::none()
             }
-            
+
             Message::End => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.end();
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
-                    log::debug!("🔚 Scrolled to end ({}, {})", scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
+                    log::debug!(
+                        "🔚 Scrolled to end ({}, {})",
+                        scroll_state.x,
+                        scroll_state.y
+                    );
                 }
                 Command::none()
             }
-            
+
             Message::ScrollTo { x, y } => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
                     scroll_state.scroll_to(x, y);
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
                     log::debug!("📍 Scrolled to ({}, {})", scroll_state.x, scroll_state.y);
                 }
                 Command::none()
             }
-            
+
             Message::ViewportResized { width, height } => {
                 log::info!("📐 Viewport resized to {}x{}", width, height);
                 self.viewport_info.width = width;
                 self.viewport_info.height = height;
-                
+
                 // Update renderer viewport
                 self.renderer.update_viewport_size(width, height);
-                
+
                 // Update scroll states for all tabs
                 let content_size = self.renderer.get_content_size();
                 for scroll_state in self.tab_scroll_states.values_mut() {
                     scroll_state.viewport_width = width;
                     scroll_state.viewport_height = height;
-                    
+
                     // Recompute scroll bounds with new viewport
-                    scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
-                    scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
+                    scroll_state.max_x =
+                        (content_size.width - scroll_state.viewport_width).max(0.0);
+                    scroll_state.max_y =
+                        (content_size.height - scroll_state.viewport_height).max(0.0);
                 }
-                
+
                 Command::none()
             }
-            
+
             Message::MouseWheel { delta_x, delta_y } => {
                 if let Some(active_tab) = self.get_active_tab_id() {
                     let scroll_state = self.tab_scroll_states.entry(active_tab).or_default();
@@ -1111,10 +1163,16 @@ impl Application for CitadelBrowser {
                     // Apply mouse wheel sensitivity
                     let sensitivity = 3.0;
                     scroll_state.scroll_by(delta_x * sensitivity, delta_y * sensitivity);
-                    self.renderer.set_scroll_position(scroll_state.x, scroll_state.y);
+                    self.renderer
+                        .set_scroll_position(scroll_state.x, scroll_state.y);
 
-                    log::debug!("🖱️ Mouse wheel scroll: delta=({}, {}), pos=({}, {})",
-                               delta_x, delta_y, scroll_state.x, scroll_state.y);
+                    log::debug!(
+                        "🖱️ Mouse wheel scroll: delta=({}, {}), pos=({}, {})",
+                        delta_x,
+                        delta_y,
+                        scroll_state.x,
+                        scroll_state.y
+                    );
                 }
                 Command::none()
             }
@@ -1145,7 +1203,7 @@ impl Application for CitadelBrowser {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         self.ui.view(
             &self.tab_manager,
             &self.network_config,
@@ -1170,43 +1228,139 @@ impl Application for CitadelBrowser {
 }
 
 impl CitadelBrowser {
+    /// Render a page inside the tab's zero-knowledge boundary.
+    ///
+    /// Spins up an isolated renderer task bound to a fresh AES-256-GCM encrypted
+    /// channel, sends ONLY the raw untrusted bytes across, and awaits the
+    /// sanitized display list. The host never parses the markup for display.
+    async fn render_via_zkvm(
+        tab_id: uuid::Uuid,
+        url: String,
+        raw_html: String,
+        viewport_width: f32,
+    ) -> (uuid::Uuid, Option<citadel_tabs::RenderedContent>) {
+        use citadel_zkvm::{Channel, ChannelMessage};
+
+        let (mut host_side, vm_side) = match Channel::new() {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::error!("🚨 ZKVM channel creation failed for tab {}: {}", tab_id, e);
+                return (tab_id, None);
+            }
+        };
+
+        // The isolated renderer owns the VM end; it shares nothing else with the host.
+        tokio::spawn(async move {
+            if let Err(e) = citadel_tabs::zkvm_renderer::spawn_zkvm_renderer(vm_side).await {
+                log::error!("🚨 ZKVM renderer task error: {}", e);
+            }
+        });
+
+        let request = citadel_tabs::RenderRequest {
+            url,
+            html: raw_html,
+            viewport_width,
+        };
+        let params = match serde_json::to_string(&request) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("🚨 ZKVM request serialize failed: {}", e);
+                return (tab_id, None);
+            }
+        };
+
+        if let Err(e) = host_side
+            .send(ChannelMessage::Control {
+                command: "render_page".to_string(),
+                params,
+            })
+            .await
+        {
+            log::error!("🚨 ZKVM boundary send failed for tab {}: {}", tab_id, e);
+            return (tab_id, None);
+        }
+
+        match tokio::time::timeout(std::time::Duration::from_secs(15), host_side.receive()).await {
+            Ok(Ok(ChannelMessage::Control { command, params }))
+                if command == "rendered_content" =>
+            {
+                match serde_json::from_str::<citadel_tabs::RenderedContent>(&params) {
+                    Ok(content) => (tab_id, Some(content)),
+                    Err(e) => {
+                        log::error!("🚨 ZKVM rendered_content parse failed: {}", e);
+                        (tab_id, None)
+                    }
+                }
+            }
+            Ok(Ok(other)) => {
+                log::error!("🚨 ZKVM returned unexpected message: {:?}", other);
+                (tab_id, None)
+            }
+            Ok(Err(e)) => {
+                log::error!("🚨 ZKVM boundary receive error for tab {}: {}", tab_id, e);
+                (tab_id, None)
+            }
+            Err(_) => {
+                log::error!("🚨 ZKVM render timed out for tab {}", tab_id);
+                (tab_id, None)
+            }
+        }
+    }
+
     /// Validate form submission security
     fn validate_form_security(&self, submission: &FormSubmission) -> bool {
-        log::info!("🛡️ Validating form submission security for: {}", submission.action);
-        
+        log::info!(
+            "🛡️ Validating form submission security for: {}",
+            submission.action
+        );
+
         // Block submissions to non-HTTPS URLs (except localhost for development)
-        if !submission.action.starts_with("https://") &&
-           !submission.action.starts_with("http://localhost") &&
-           !submission.action.starts_with("http://127.0.0.1") &&
-           submission.action != "#" {
-            log::warn!("🛡️ Blocking insecure form submission to: {}", submission.action);
+        if !submission.action.starts_with("https://")
+            && !submission.action.starts_with("http://localhost")
+            && !submission.action.starts_with("http://127.0.0.1")
+            && submission.action != "#"
+        {
+            log::warn!(
+                "🛡️ Blocking insecure form submission to: {}",
+                submission.action
+            );
             return false;
         }
-        
+
         // Validate HTTP method
         if !matches!(submission.method.as_str(), "GET" | "POST") {
-            log::warn!("🛡️ Blocking form submission with unsupported method: {}", submission.method);
+            log::warn!(
+                "🛡️ Blocking form submission with unsupported method: {}",
+                submission.method
+            );
             return false;
         }
-        
+
         // Check for potentially sensitive data in form fields
         for (field_name, field_value) in &submission.data {
-            if field_name.to_lowercase().contains("password") && !submission.action.starts_with("https://") {
+            if field_name.to_lowercase().contains("password")
+                && !submission.action.starts_with("https://")
+            {
                 log::warn!("🛡️ Blocking password submission over insecure connection");
                 return false;
             }
-            
+
             // Prevent extremely large form data (potential DoS)
-            if field_value.len() > 1_000_000 { // 1MB limit per field
-                log::warn!("🛡️ Blocking form submission with oversized field: {} ({} bytes)", field_name, field_value.len());
+            if field_value.len() > 1_000_000 {
+                // 1MB limit per field
+                log::warn!(
+                    "🛡️ Blocking form submission with oversized field: {} ({} bytes)",
+                    field_name,
+                    field_value.len()
+                );
                 return false;
             }
         }
-        
+
         log::info!("✅ Form submission security validation passed");
         true
     }
-    
+
     /// Get a clone of the privacy event sender for passing to subsystems.
     #[allow(dead_code)] // Will be used when wiring engine to privacy channel
     pub fn privacy_sender(&self) -> PrivacyEventSender {
@@ -1215,62 +1369,63 @@ impl CitadelBrowser {
 
     /// Get the active tab ID
     fn get_active_tab_id(&self) -> Option<uuid::Uuid> {
-        self.tab_manager.get_tab_states()
+        self.tab_manager
+            .get_tab_states()
             .iter()
             .find(|tab| tab.is_active)
             .map(|tab| tab.id)
     }
-    
+
     /// Get the active tab's scroll state
     fn get_active_scroll_state(&self) -> Option<&ScrollState> {
         self.get_active_tab_id()
             .and_then(|tab_id| self.tab_scroll_states.get(&tab_id))
     }
-    
+
     /// Update viewport for zoom changes
     fn update_viewport_for_zoom(&mut self, zoom_level: ZoomLevel) {
         self.viewport_info.zoom_level = zoom_level;
-        
+
         // Calculate effective viewport size with zoom
         let effective_width = self.viewport_info.width / zoom_level.as_factor();
         let effective_height = self.viewport_info.height / zoom_level.as_factor();
-        
+
         // Update renderer with new effective viewport
-        self.renderer.update_viewport_size(effective_width, effective_height);
-        
+        self.renderer
+            .update_viewport_size(effective_width, effective_height);
+
         // Update scroll bounds for active tab
         if let Some(active_tab) = self.get_active_tab_id() {
             if let Some(scroll_state) = self.tab_scroll_states.get_mut(&active_tab) {
                 scroll_state.viewport_width = effective_width;
                 scroll_state.viewport_height = effective_height;
-                
+
                 // Get content bounds from renderer
                 let content_size = self.renderer.get_content_size();
                 scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
                 scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
-                
+
                 // Ensure scroll position is still valid after zoom
                 scroll_state.scroll_to(scroll_state.x, scroll_state.y);
             }
         }
     }
-    
-    
+
     /// Initialize scroll state for a new tab
     fn initialize_tab_scroll_state(&mut self, tab_id: uuid::Uuid) {
         let mut scroll_state = ScrollState::default();
         scroll_state.viewport_width = self.viewport_info.width;
         scroll_state.viewport_height = self.viewport_info.height;
-        
+
         // Get content bounds from renderer
         let content_size = self.renderer.get_content_size();
         scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
         scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
-        
+
         self.tab_scroll_states.insert(tab_id, scroll_state);
         self.tab_zoom_levels.insert(tab_id, ZoomLevel::Percent100);
     }
-    
+
     /// Update scroll state when content changes
     fn update_scroll_state_for_content(&mut self, tab_id: uuid::Uuid) {
         if let Some(scroll_state) = self.tab_scroll_states.get_mut(&tab_id) {
@@ -1278,35 +1433,57 @@ impl CitadelBrowser {
             let content_size = self.renderer.get_content_size();
             scroll_state.max_x = (content_size.width - scroll_state.viewport_width).max(0.0);
             scroll_state.max_y = (content_size.height - scroll_state.viewport_height).max(0.0);
-            
+
             // Ensure current scroll position is still valid
             scroll_state.scroll_to(scroll_state.x, scroll_state.y);
         }
     }
-    
+
     /// Handle keyboard shortcuts for scrolling and zoom
     #[allow(dead_code)] // Will be used when implementing keyboard navigation
-    pub fn handle_keyboard_event(&mut self, key: &iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) -> Command<Message> {
+    pub fn handle_keyboard_event(
+        &mut self,
+        key: &iced::keyboard::Key,
+        modifiers: iced::keyboard::Modifiers,
+    ) -> Command<Message> {
         match (key.as_ref(), modifiers.control()) {
             // Zoom shortcuts
-            (Key::Character("=") | Key::Character("+"), true) => Command::perform(async {}, |_| Message::ZoomIn),
+            (Key::Character("=") | Key::Character("+"), true) => {
+                Command::perform(async {}, |_| Message::ZoomIn)
+            }
             (Key::Character("-"), true) => Command::perform(async {}, |_| Message::ZoomOut),
             (Key::Character("0"), true) => Command::perform(async {}, |_| Message::ZoomReset),
-            
+
             // Scroll shortcuts
-            (Key::Named(iced::keyboard::key::Named::ArrowUp), false) => Command::perform(async {}, |_| Message::ScrollUp),
-            (Key::Named(iced::keyboard::key::Named::ArrowDown), false) => Command::perform(async {}, |_| Message::ScrollDown),
-            (Key::Named(iced::keyboard::key::Named::ArrowLeft), false) => Command::perform(async {}, |_| Message::ScrollLeft),
-            (Key::Named(iced::keyboard::key::Named::ArrowRight), false) => Command::perform(async {}, |_| Message::ScrollRight),
-            (Key::Named(iced::keyboard::key::Named::PageUp), false) => Command::perform(async {}, |_| Message::PageUp),
-            (Key::Named(iced::keyboard::key::Named::PageDown), false) => Command::perform(async {}, |_| Message::PageDown),
-            (Key::Named(iced::keyboard::key::Named::Home), false) => Command::perform(async {}, |_| Message::Home),
-            (Key::Named(iced::keyboard::key::Named::End), false) => Command::perform(async {}, |_| Message::End),
-            
+            (Key::Named(iced::keyboard::key::Named::ArrowUp), false) => {
+                Command::perform(async {}, |_| Message::ScrollUp)
+            }
+            (Key::Named(iced::keyboard::key::Named::ArrowDown), false) => {
+                Command::perform(async {}, |_| Message::ScrollDown)
+            }
+            (Key::Named(iced::keyboard::key::Named::ArrowLeft), false) => {
+                Command::perform(async {}, |_| Message::ScrollLeft)
+            }
+            (Key::Named(iced::keyboard::key::Named::ArrowRight), false) => {
+                Command::perform(async {}, |_| Message::ScrollRight)
+            }
+            (Key::Named(iced::keyboard::key::Named::PageUp), false) => {
+                Command::perform(async {}, |_| Message::PageUp)
+            }
+            (Key::Named(iced::keyboard::key::Named::PageDown), false) => {
+                Command::perform(async {}, |_| Message::PageDown)
+            }
+            (Key::Named(iced::keyboard::key::Named::Home), false) => {
+                Command::perform(async {}, |_| Message::Home)
+            }
+            (Key::Named(iced::keyboard::key::Named::End), false) => {
+                Command::perform(async {}, |_| Message::End)
+            }
+
             _ => Command::none(),
         }
     }
-    
+
     /// Normalize and validate URLs with security considerations
     fn normalize_url(&self, url_str: &str) -> String {
         let trimmed = url_str.trim();
@@ -1316,7 +1493,11 @@ impl CitadelBrowser {
         }
 
         // If it's already a full URL, let it be.
-        if trimmed.starts_with("http://") || trimmed.starts_with("https://") || trimmed.starts_with("about:") || trimmed.starts_with("file://") {
+        if trimmed.starts_with("http://")
+            || trimmed.starts_with("https://")
+            || trimmed.starts_with("about:")
+            || trimmed.starts_with("file://")
+        {
             return trimmed.to_string();
         }
 
@@ -1326,7 +1507,7 @@ impl CitadelBrowser {
                 return url.to_string();
             }
         }
-        
+
         // If not a file, treat as a search query or domain.
         if !trimmed.contains('.') && !trimmed.contains('/') {
             return format!("https://duckduckgo.com/?q={}", urlencoding::encode(trimmed));
@@ -1335,64 +1516,73 @@ impl CitadelBrowser {
         // Default to https for things that look like domains.
         format!("https://{}", trimmed)
     }
-    
+
     /// Perform periodic memory cleanup and performance monitoring
     fn periodic_memory_cleanup(&mut self) {
         let now = std::time::Instant::now();
-        
+
         // Perform cleanup every 30 seconds
         if now.duration_since(self.last_memory_cleanup) >= std::time::Duration::from_secs(30) {
             self.last_memory_cleanup = now;
-            
+
             // TODO: Fix circular import and re-enable performance monitoring
             // Check memory pressure and trigger cleanup if needed
             // let memory_pressure = self.performance_monitor.get_memory_pressure();
-            
+
             // For now, just do basic cleanup
             self.cleanup_expired_data();
-            
+
             // Also cleanup renderer caches
             self.renderer.force_cleanup("medium");
-            
+
             // TODO: Re-enable memory metrics
             // self.update_memory_metrics();
         }
     }
-    
+
     /// Clean up old tab render data
     #[allow(dead_code)] // Will be used when implementing memory management
     fn cleanup_old_tab_data(&mut self) {
-        let active_tabs: std::collections::HashSet<uuid::Uuid> = 
-            self.tab_manager.get_tab_states().iter().map(|tab| tab.id).collect();
-        
+        let active_tabs: std::collections::HashSet<uuid::Uuid> = self
+            .tab_manager
+            .get_tab_states()
+            .iter()
+            .map(|tab| tab.id)
+            .collect();
+
         // Remove render data for closed tabs
-        self.tab_render_data.retain(|tab_id, _| active_tabs.contains(tab_id));
-        self.tab_scroll_states.retain(|tab_id, _| active_tabs.contains(tab_id));
-        self.tab_zoom_levels.retain(|tab_id, _| active_tabs.contains(tab_id));
-        self.error_states.retain(|tab_id, _| active_tabs.contains(tab_id));
-        self.loading_states.retain(|tab_id, _| active_tabs.contains(tab_id));
-        
+        self.tab_render_data
+            .retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.tab_scroll_states
+            .retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.tab_zoom_levels
+            .retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.error_states
+            .retain(|tab_id, _| active_tabs.contains(tab_id));
+        self.loading_states
+            .retain(|tab_id, _| active_tabs.contains(tab_id));
+
         log::debug!("Cleaned up render data for closed tabs");
     }
-    
+
     /// Emergency memory cleanup for critical memory pressure
     #[allow(dead_code)] // Will be used when implementing memory pressure handling
     #[allow(dead_code)] // Will be used when implementing memory pressure handling
     fn emergency_memory_cleanup(&mut self) {
         log::warn!("Performing emergency memory cleanup");
-        
+
         // Clear all caches and non-essential data
         self.tab_render_data.clear();
         self.error_states.clear();
-        
+
         // Keep only active tab scroll state and zoom level
         if let Some(active_tab) = self.get_active_tab_id() {
             let active_scroll = self.tab_scroll_states.remove(&active_tab);
             let active_zoom = self.tab_zoom_levels.remove(&active_tab);
-            
+
             self.tab_scroll_states.clear();
             self.tab_zoom_levels.clear();
-            
+
             if let Some(scroll) = active_scroll {
                 self.tab_scroll_states.insert(active_tab, scroll);
             }
@@ -1403,27 +1593,36 @@ impl CitadelBrowser {
             self.tab_scroll_states.clear();
             self.tab_zoom_levels.clear();
         }
-        
+
         log::warn!("Emergency memory cleanup completed");
     }
-    
+
     /// Clean up expired data during normal operation
     fn cleanup_expired_data(&mut self) {
         // This is called during normal operation to clean up expired data
         // Implementation would check timestamps and remove old data
-        
+
         // For now, just ensure we don't have too many error states
         if self.error_states.len() > 50 {
-            let active_tabs: std::collections::HashSet<uuid::Uuid> = 
-                self.tab_manager.get_tab_states().iter().map(|tab| tab.id).collect();
-            
-            self.error_states.retain(|tab_id, _| active_tabs.contains(tab_id));
+            let active_tabs: std::collections::HashSet<uuid::Uuid> = self
+                .tab_manager
+                .get_tab_states()
+                .iter()
+                .map(|tab| tab.id)
+                .collect();
+
+            self.error_states
+                .retain(|tab_id, _| active_tabs.contains(tab_id));
         }
-        
+
         // Clean up old loading states - remove Idle states that are old
         // (We don't need to track timestamps for this simple case)
         // Just keep a reasonable number of idle states
-        let idle_count = self.loading_states.values().filter(|state| matches!(state, LoadingState::Idle)).count();
+        let idle_count = self
+            .loading_states
+            .values()
+            .filter(|state| matches!(state, LoadingState::Idle))
+            .count();
         if idle_count > 10 {
             // Remove some idle states, keeping active ones
             let mut removed_count = 0;
@@ -1437,7 +1636,7 @@ impl CitadelBrowser {
             });
         }
     }
-    
+
     /// Update memory usage metrics
     #[allow(dead_code)] // Will be used when implementing memory monitoring
     fn update_memory_metrics(&mut self) {
@@ -1446,13 +1645,14 @@ impl CitadelBrowser {
         let scroll_state_memory = self.tab_scroll_states.len() * std::mem::size_of::<ScrollState>();
         let error_state_memory = self.error_states.len() * 1024; // Estimate 1KB per error
         let loading_state_memory = self.loading_states.len() * std::mem::size_of::<LoadingState>();
-        
-        let _total_app_memory = tab_data_memory + scroll_state_memory + error_state_memory + loading_state_memory;
-        
+
+        let _total_app_memory =
+            tab_data_memory + scroll_state_memory + error_state_memory + loading_state_memory;
+
         // TODO: Re-enable performance monitoring
         // self.performance_monitor.update_memory_usage("app", total_app_memory);
     }
-    
+
     /// Get performance statistics for debugging (TODO: Fix circular import)
     #[allow(dead_code)] // Will be used when implementing performance monitoring
     pub fn get_performance_stats(&self) -> String {

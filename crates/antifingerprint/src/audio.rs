@@ -4,7 +4,7 @@
 //! This module implements protections against audio-based fingerprinting by adding
 //! subtle noise to audio operations.
 
-use crate::{FingerprintManager, FingerprintError, metrics::ProtectionType};
+use crate::{metrics::ProtectionType, FingerprintError, FingerprintManager};
 use rand::SeedableRng;
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ impl AudioProtection {
     /// Create a new audio protection instance
     pub fn new(manager: FingerprintManager) -> Self {
         let enabled = manager.protection_config().audio_noise;
-        
+
         Self {
             manager,
             enabled,
@@ -33,20 +33,20 @@ impl AudioProtection {
             metrics: None,
         }
     }
-    
+
     /// Create a new audio protection instance with custom noise factor
     pub fn with_noise_factor(manager: FingerprintManager, noise_factor: f32) -> Self {
         let mut protection = Self::new(manager);
         protection.noise_factor = noise_factor.clamp(0.0, 1.0);
         protection
     }
-    
+
     /// Attach metrics tracking to this protection
     pub fn with_metrics(mut self, metrics: Arc<crate::metrics::FingerprintMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
     }
-    
+
     /// Record a protection event
     fn record_protection(&self, domain: &str, is_blocked: bool) {
         if let Some(metrics) = &self.metrics {
@@ -57,9 +57,13 @@ impl AudioProtection {
             }
         }
     }
-    
+
     /// Apply noise to audio buffer data
-    pub fn protect_audio_buffer(&self, buffer: &mut [f32], domain: &str) -> Result<(), FingerprintError> {
+    pub fn protect_audio_buffer(
+        &self,
+        buffer: &mut [f32],
+        domain: &str,
+    ) -> Result<(), FingerprintError> {
         if !self.enabled {
             return Ok(());
         }
@@ -68,18 +72,25 @@ impl AudioProtection {
         self.record_protection(domain, false);
 
         // Emit privacy event
-        self.manager.emit_neutralized("AudioContext.getChannelData", "noise injection");
+        self.manager
+            .emit_neutralized("AudioContext.getChannelData", "noise injection");
 
         // Add very subtle noise to audio samples
         for sample in buffer.iter_mut() {
-            *sample = self.manager.apply_noise_f32(*sample, self.noise_factor as f64, domain);
+            *sample = self
+                .manager
+                .apply_noise_f32(*sample, self.noise_factor as f64, domain);
         }
 
         Ok(())
     }
-    
+
     /// Normalize frequency data to prevent analyzer-based fingerprinting
-    pub fn protect_frequency_data(&self, data: &mut [u8], domain: &str) -> Result<(), FingerprintError> {
+    pub fn protect_frequency_data(
+        &self,
+        data: &mut [u8],
+        domain: &str,
+    ) -> Result<(), FingerprintError> {
         if !self.enabled {
             return Ok(());
         }
@@ -94,7 +105,8 @@ impl AudioProtection {
         // Apply noise directly in the u8 range for frequency data
         // Use a std_dev that produces subtle but visible changes (approx 1 level)
         let std_dev = (self.noise_factor * 255.0).max(0.8) as f64;
-        let normal = rand_distr::Normal::new(0.0, std_dev).unwrap_or(rand_distr::Normal::new(0.0, 0.8).unwrap());
+        let normal = rand_distr::Normal::new(0.0, std_dev)
+            .unwrap_or(rand_distr::Normal::new(0.0, 0.8).unwrap());
 
         for value in data.iter_mut() {
             let raw_noise = rand_distr::Distribution::sample(&normal, &mut rng);
@@ -102,7 +114,11 @@ impl AudioProtection {
             let clamped = raw_noise.clamp(-2.49, 2.49).round() as i16;
             // Ensure non-zero noise so protection is always active
             let noise = if clamped == 0 {
-                if domain_seed % 2 == 0 { 1 } else { -1 }
+                if domain_seed % 2 == 0 {
+                    1
+                } else {
+                    -1
+                }
             } else {
                 clamped
             };
@@ -111,7 +127,7 @@ impl AudioProtection {
 
         Ok(())
     }
-    
+
     /// Get normalized audio parameter values
     pub fn normalize_audio_params(&self, origin: &str) -> AudioParamValues {
         if !self.enabled {
@@ -122,11 +138,12 @@ impl AudioProtection {
         self.record_protection(origin, false);
 
         // Emit privacy event
-        self.manager.emit_neutralized("AudioContext.sampleRate", "fixed value returned");
+        self.manager
+            .emit_neutralized("AudioContext.sampleRate", "fixed value returned");
 
         // Calculate a deterministic seed for the domain
         let _domain_seed = self.manager.domain_seed(origin);
-        
+
         // Create deterministic but non-unique audio params
         AudioParamValues {
             sample_rate: 44100.0, // Standard sample rate
@@ -136,24 +153,24 @@ impl AudioProtection {
             max_channel_count: 2, // Limit reported channels to 2
         }
     }
-    
+
     /// Check if this domain should use WebAudio API mocking
     pub fn should_mock_audio_api(&self, domain: &str) -> bool {
         if !self.enabled {
             return false;
         }
-        
+
         // Record this as a blocked (not just normalized) attempt
         self.record_protection(domain, true);
-        
+
         // Determine if we should completely mock audio for this domain
         // based on domain reputation or other factors
         let domain_lower = domain.to_lowercase();
-        
+
         // Check for known fingerprinting domains
-        domain_lower.contains("fingerprint") || 
-        domain_lower.contains("amplitude") || 
-        domain_lower.contains("analytics")
+        domain_lower.contains("fingerprint")
+            || domain_lower.contains("amplitude")
+            || domain_lower.contains("analytics")
     }
 }
 
@@ -188,77 +205,81 @@ impl Default for AudioParamValues {
 mod tests {
     use super::*;
     use crate::SecurityContext;
-    
+
     fn create_test_audio_protection() -> AudioProtection {
         let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         AudioProtection::new(manager)
     }
-    
+
     #[test]
     fn test_audio_buffer_protection() {
         let protection = create_test_audio_protection();
-        
+
         // Create a test audio buffer
         let mut buffer = [0.0, 0.5, -0.5, 0.0, 0.25, -0.25];
         let original = buffer.clone();
-        
+
         // Apply protection
-        protection.protect_audio_buffer(&mut buffer, "example.com").unwrap();
-        
+        protection
+            .protect_audio_buffer(&mut buffer, "example.com")
+            .unwrap();
+
         // Values should be slightly modified
         for i in 0..buffer.len() {
             assert_ne!(buffer[i], original[i]);
-            
+
             // Changes should be subtle
             assert!((buffer[i] - original[i]).abs() < 0.001);
         }
     }
-    
+
     #[test]
     fn test_frequency_data_protection() {
         let protection = create_test_audio_protection();
-        
+
         // Create a test frequency data buffer
         let mut data = [0, 64, 128, 192, 255];
         let original = data.clone();
-        
+
         // Apply protection
-        protection.protect_frequency_data(&mut data, "example.com").unwrap();
-        
+        protection
+            .protect_frequency_data(&mut data, "example.com")
+            .unwrap();
+
         // Values should be modified
         assert!(data.iter().zip(original.iter()).any(|(a, b)| a != b));
-        
+
         // But changes should be subtle
         for i in 0..data.len() {
             assert!((data[i] as i32 - original[i] as i32).abs() < 3);
         }
     }
-    
+
     #[test]
     fn test_audio_param_normalization() {
         let protection = create_test_audio_protection();
-        
+
         // Get normalized parameters
         let params = protection.normalize_audio_params("example.com");
-        
+
         // Check that values are standardized
         assert_eq!(params.sample_rate, 44100.0);
         assert_eq!(params.channel_count, 2);
         assert_eq!(params.buffer_size, 1024);
     }
-    
+
     #[test]
     fn test_known_fingerprinting_domains() {
         let protection = create_test_audio_protection();
-        
+
         // Known fingerprinting domains should be mocked
         assert!(protection.should_mock_audio_api("fingerprint.com"));
         assert!(protection.should_mock_audio_api("analytics.example.com"));
         assert!(protection.should_mock_audio_api("amplitude.tracking.com"));
-        
+
         // Regular domains should not be mocked
         assert!(!protection.should_mock_audio_api("example.com"));
         assert!(!protection.should_mock_audio_api("trusted-site.org"));
     }
-} 
+}
