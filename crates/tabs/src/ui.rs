@@ -58,7 +58,7 @@ impl TabBar {
         }
     }
     
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let tabs = self.manager.get_tab_states();
         
         let tab_row = Row::new()
@@ -81,7 +81,7 @@ impl TabBar {
         container(content).into()
     }
     
-    fn tab_view(&self, tab: &TabState) -> Element<Message> {
+    fn tab_view(&self, tab: &TabState) -> Element<'_, Message> {
         let title = text(&tab.title)
             .size(14);
             
@@ -118,7 +118,7 @@ impl TabBar {
             .into()
     }
     
-    fn conversion_dialog_view(&self, tab_id: Uuid) -> Element<Message> {
+    fn conversion_dialog_view(&self, tab_id: Uuid) -> Element<'_, Message> {
         let title = text("Convert to Container Tab?")
             .size(20);
             

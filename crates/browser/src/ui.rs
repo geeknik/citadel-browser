@@ -30,6 +30,26 @@ impl StyleSheet for InfoBarStyle {
     }
 }
 
+/// Light "page canvas" for ZKVM-rendered pages. The sanitized display list from
+/// the isolation boundary carries web colours (dark text), so the page area needs a
+/// light surface to be legible over Citadel's dark chrome — and it matches how the
+/// page actually looks. This must live at the bounded UI level (not inside the
+/// scrollable) so its `Fill` background actually paints the whole pane.
+#[derive(Clone, Copy, Debug)]
+struct PageCanvasStyle;
+
+impl StyleSheet for PageCanvasStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> Appearance {
+        Appearance {
+            background: Some(Background::Color(Color::from_rgb(0.97, 0.97, 0.98))),
+            text_color: Some(Color::from_rgb(0.1, 0.1, 0.1)),
+            ..Default::default()
+        }
+    }
+}
+
 /// Custom style for the privacy scoreboard panel
 #[derive(Clone, Copy, Debug)]
 struct PrivacyPanelStyle;
@@ -192,7 +212,7 @@ impl CitadelUI {
         _tab_manager: &Arc<TabManager>,
         network_config: &NetworkConfig,
         viewport_info: &ViewportInfo,
-    ) -> Element<Message> {
+    ) -> Element<'_, Message> {
         let navigation_buttons = Row::new()
             .push(button("←").padding(8))
             .push(button("→").padding(8))
@@ -235,7 +255,7 @@ impl CitadelUI {
     }
 
     /// Create privacy level indicator
-    fn create_privacy_indicator(&self, network_config: &NetworkConfig) -> Element<Message> {
+    fn create_privacy_indicator(&self, network_config: &NetworkConfig) -> Element<'_, Message> {
         let (indicator_text, indicator_color) = match network_config.privacy_level {
             PrivacyLevel::Maximum => ("🛡️ MAX", Color::from_rgb(0.0, 0.8, 0.0)),
             PrivacyLevel::High => ("🛡️ HIGH", Color::from_rgb(0.0, 0.6, 0.8)),
@@ -267,7 +287,7 @@ impl CitadelUI {
     }
     
     /// Create the tabs bar
-    fn create_tabs_bar(&self, tab_manager: &Arc<TabManager>) -> Element<Message> {
+    fn create_tabs_bar(&self, tab_manager: &Arc<TabManager>) -> Element<'_, Message> {
         let tab_states = tab_manager.get_tab_states();
         
         let mut tab_buttons = Row::new().spacing(2);
@@ -392,13 +412,18 @@ impl CitadelUI {
                         scroll_state
                     );
                     
-                    // Prioritize the rendered content with comprehensive header
+                    // Prioritize the rendered content with comprehensive header.
+                    // The page region sits on a light canvas that fills the pane so
+                    // the ZKVM-sanitized (dark) text is legible.
                     let full_content = Column::new()
                         .push(container(header_elements)
                             .width(Length::Fill)
                             .padding([5, 10, 5, 10])
                             .style(theme::Container::Custom(Box::new(InfoBarStyle))))
-                        .push(scrollable_content)
+                        .push(container(scrollable_content)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .style(theme::Container::Custom(Box::new(PageCanvasStyle))))
                         .spacing(0);
                     
                     container(full_content)
@@ -496,7 +521,7 @@ impl CitadelUI {
     }
     
     /// Create zoom controls for the toolbar
-    fn create_zoom_controls(&self, viewport_info: &ViewportInfo) -> Element<Message> {
+    fn create_zoom_controls(&self, viewport_info: &ViewportInfo) -> Element<'_, Message> {
         let zoom_out_button = button("🔍−")
             .padding(4)
             .on_press(Message::ZoomOut)
@@ -573,7 +598,7 @@ impl CitadelUI {
     }
     
     /// Create scroll position indicators
-    fn create_scroll_indicators(&self, scroll_state: &ScrollState) -> Element<Message> {
+    fn create_scroll_indicators(&self, scroll_state: &ScrollState) -> Element<'_, Message> {
         let scroll_info = if scroll_state.max_x > 0.0 || scroll_state.max_y > 0.0 {
             let h_percent = if scroll_state.max_x > 0.0 {
                 (scroll_state.x / scroll_state.max_x * 100.0).round() as u16
@@ -611,7 +636,7 @@ impl CitadelUI {
     
     /// Create keyboard navigation hints
     #[allow(dead_code)] // Will be used when implementing navigation hints
-    fn create_navigation_hints(&self) -> Element<Message> {
+    fn create_navigation_hints(&self) -> Element<'_, Message> {
         let hints_text = "⌨️ Ctrl+/- Zoom • ↑↓←→ Scroll • PgUp/PgDn • Home/End";
         
         container(
@@ -627,7 +652,7 @@ impl CitadelUI {
     
     /// Create responsive viewport info display
     #[allow(dead_code)] // Will be used when implementing viewport info display
-    fn create_viewport_info(&self, viewport_info: &ViewportInfo) -> Element<Message> {
+    fn create_viewport_info(&self, viewport_info: &ViewportInfo) -> Element<'_, Message> {
         let viewport_text = format!(
             "📐 {}x{} @ {}% (DPR: {:.1})",
             viewport_info.width as u16,

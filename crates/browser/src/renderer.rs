@@ -260,6 +260,10 @@ pub struct CitadelRenderer {
     frame_batching_enabled: bool,
     /// Pending widget updates for batching
     pending_widget_updates: Vec<u32>,
+    /// Sanitized display list received from the tab's ZKVM isolation boundary.
+    /// When present, the host paints THIS (never the raw DOM) — the zero-knowledge
+    /// rendering path.
+    zkvm_content: Option<citadel_tabs::RenderedContent>,
 }
 
 impl CitadelRenderer {
@@ -294,9 +298,59 @@ impl CitadelRenderer {
             last_layout_hash: None,
             frame_batching_enabled: true,
             pending_widget_updates: Vec::new(),
+            zkvm_content: None,
         }
     }
-    
+
+    /// Install the sanitized display list produced by the tab's ZKVM boundary.
+    /// The host renders this instead of the raw DOM — the page bytes never reach
+    /// the host renderer.
+    pub fn set_zkvm_content(&mut self, content: citadel_tabs::RenderedContent) {
+        self.content_size = ContentSize {
+            width: content.width,
+            height: content.height,
+        };
+        self.zkvm_content = Some(content);
+    }
+
+    /// Drop any ZKVM display list (e.g. on navigation / new tab).
+    pub fn clear_zkvm_content(&mut self) {
+        self.zkvm_content = None;
+    }
+
+    /// Paint a ZKVM-sanitized display list into iced widgets.
+    ///
+    /// Operates purely on the positioned, sanitized runs that crossed the
+    /// isolation boundary — there is no DOM or stylesheet involved.
+    fn render_zkvm_display_list(&self, content: &citadel_tabs::RenderedContent) -> Element<'_, Message> {
+        use citadel_tabs::DisplayKind;
+        let mut col = Column::new().spacing(14).padding(40).width(Length::Fill);
+
+        for item in &content.display_list {
+            let color = Color::from_rgb8(item.color[0], item.color[1], item.color[2]);
+            let label = match (item.kind, &item.href) {
+                (DisplayKind::Link, Some(href)) => format!("{}  ({})", item.text, href),
+                _ => item.text.clone(),
+            };
+            let mut widget: iced::widget::Text<iced::Theme> =
+                text(label).size(item.font_size).style(color);
+            if item.bold {
+                widget = widget.font(Font { weight: iced::font::Weight::Bold, ..Font::DEFAULT });
+            }
+            col = col.push(widget);
+        }
+
+        // Return the sanitized runs sized to content. The host UI wraps this in a
+        // scrollable AND in a light "page canvas" container (see ui.rs) — the light
+        // background MUST live at that bounded level, not here inside the scrollable,
+        // or `Length::Fill` collapses and the background never paints. The VM's text
+        // colours are web colours (dark), legible on that light canvas.
+        container(col)
+            .width(Length::Fill)
+            .into()
+    }
+
+
     /// Create renderer with performance monitor (TODO: Fix circular import)
     // pub fn new_with_performance_monitor(performance_monitor: Arc<PerformanceMonitor>) -> Self {
     //     let mut renderer = Self::new();
@@ -317,12 +371,12 @@ impl CitadelRenderer {
     ) -> Result<(), String> {
         let start_time = Instant::now();
         
-        println!("📥 CitadelRenderer::update_content() called");
-        println!("  DOM rules: {}", stylesheet.rules.len());
+        log::trace!("📥 CitadelRenderer::update_content() called");
+        log::trace!("  DOM rules: {}", stylesheet.rules.len());
         let text_content = dom.get_text_content();
-        println!("  DOM text length: {} chars", text_content.len());
+        log::trace!("  DOM text length: {} chars", text_content.len());
         if text_content.len() > 0 {
-            println!("  Text preview: '{}'", &text_content[..std::cmp::min(100, text_content.len())]);
+            log::trace!("  Text preview: '{}'", &text_content[..std::cmp::min(100, text_content.len())]);
         }
 
         // Check if we can do incremental update
@@ -527,11 +581,21 @@ impl CitadelRenderer {
     }
     
     /// Render the current content using computed layout positions
-    pub fn render(&self) -> Element<Message> {
-        println!("🎨 CitadelRenderer::render() called");
-        println!("  DOM present: {}", self.current_dom.is_some());
-        println!("  Stylesheet present: {}", self.current_stylesheet.is_some());
-        println!("  Layout present: {}", self.current_layout.is_some());
+    pub fn render(&self) -> Element<'_, Message> {
+        // Zero-knowledge path: if the tab's ZKVM boundary returned a sanitized
+        // display list, paint that and nothing else. The raw DOM is never touched.
+        if let Some(content) = &self.zkvm_content {
+            return self.render_zkvm_display_list(content);
+        }
+
+        // DEPRECATED legacy path (everything below): the host-side DOM→Taffy→iced
+        // renderer. It is only reached as a fallback before the ZKVM display list
+        // arrives. Slated for removal in Stage B, when faithful CSS layout moves
+        // inside the ZKVM boundary and the host paints only the display list.
+        log::trace!("🎨 CitadelRenderer::render() called");
+        log::trace!("  DOM present: {}", self.current_dom.is_some());
+        log::trace!("  Stylesheet present: {}", self.current_stylesheet.is_some());
+        log::trace!("  Layout present: {}", self.current_layout.is_some());
         
         // Log detailed content information
         if let Some(dom) = &self.current_dom {
@@ -552,8 +616,8 @@ impl CitadelRenderer {
         
         match (&self.current_dom, &self.current_stylesheet, &self.current_layout) {
             (Some(dom), Some(stylesheet), Some(layout_result)) => {
-                println!("🎨 Rendering with computed layout: {} positioned elements", layout_result.node_layouts.len());
-                println!("📊 Stylesheet has {} rules", stylesheet.rules.len());
+                log::trace!("🎨 Rendering with computed layout: {} positioned elements", layout_result.node_layouts.len());
+                log::trace!("📊 Stylesheet has {} rules", stylesheet.rules.len());
                 
                 // Render properly processed content from ZKVM pipeline
                 log::info!("🎨 Rendering content processed through ZKVM security boundary");
@@ -1103,9 +1167,9 @@ impl CitadelRenderer {
                     }
                 } else {
                     // Debug: Log what widgets we're adding
-                    println!("  📦 Adding {} child widgets to {}", children_widgets.len(), tag_name);
+                    log::trace!("  📦 Adding {} child widgets to {}", children_widgets.len(), tag_name);
                     for (i, _) in children_widgets.iter().enumerate() {
-                        println!("    - Child widget {} added to {}", i, tag_name);
+                        log::trace!("    - Child widget {} added to {}", i, tag_name);
                     }
                     Column::with_children(children_widgets)
                         .spacing(5)
@@ -1143,7 +1207,7 @@ impl CitadelRenderer {
             "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "a" | "span" | "em" | "strong" | "b" | "i" | "blockquote" | "pre" => {
                 // Always try to extract text content first
                 let text_content = self.extract_text_content(node, dom);
-                println!("🔍 {} element text extraction: '{}' ({} chars)", tag_name, text_content, text_content.len());
+                log::trace!("🔍 {} element text extraction: '{}' ({} chars)", tag_name, text_content, text_content.len());
                 
                 // If we have actual text content, render it
                 if !text_content.is_empty() {
@@ -1158,7 +1222,7 @@ impl CitadelRenderer {
                     };
                     let color = self.get_text_color_from_style(&computed_style);
                     
-                    println!("✅ Creating text widget for {}: '{}' (size: {}, color: {:?})", tag_name, text_content, font_size, color);
+                    log::trace!("✅ Creating text widget for {}: '{}' (size: {}, color: {:?})", tag_name, text_content, font_size, color);
                     
                     let text_widget = if tag_name == "a" {
                         if let Some(href) = element.get_attribute("href") {

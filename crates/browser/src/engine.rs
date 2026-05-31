@@ -74,6 +74,7 @@ impl BrowserEngine {
                 retry_possible: true,
             })?;
 
+            let raw_html = content.clone();
             let (title, content, element_count, security_warnings, dom, stylesheet) = self.parse_html_content_enhanced(&content, url.as_str()).await.map_err(|e| LoadingError {
                 error_type: ErrorType::Content,
                 message: e,
@@ -94,6 +95,7 @@ impl BrowserEngine {
                 security_warnings,
                 dom: Some(dom),
                 stylesheet: Some(stylesheet),
+                raw_html,
             });
         }
 
@@ -181,6 +183,7 @@ impl BrowserEngine {
             security_warnings,
             dom: Some(dom),
             stylesheet: Some(stylesheet),
+            raw_html: response.clone(),
         })
     }
     

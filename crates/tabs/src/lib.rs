@@ -22,7 +22,7 @@ pub use ui::{TabBar, Message as TabMessage};
 // Re-export the Send-safe tab manager for browser use
 pub use send_safe_tab_manager::SendSafeTabManager;
 // Re-export zkvm_renderer types
-pub use zkvm_renderer::RenderedContent;
+pub use zkvm_renderer::{RenderedContent, RenderRequest, DisplayItem, DisplayKind, SecurityMetadata, render_in_isolation};
 
 /// Errors that can occur during tab operations
 #[derive(Error, Debug)]

@@ -49,7 +49,7 @@ This project is in the early stages of development and is not yet ready for prod
 - ✅ Privacy-enhancing request headers
 - ✅ Tracking parameter removal from URLs
 - ✅ Header fingerprint randomization
-- ✅ **JavaScript engine integration with rquickjs**
+- ✅ **JavaScript engine integration with Boa (pure-Rust)**
 - ✅ **DOM bindings for JavaScript execution**
 - ✅ **Security policies for script execution and CSP compliance**
 - ✅ **JavaScript engine tests with DOM integration (all passing)**
@@ -103,7 +103,7 @@ Citadel is built with these core components, all implemented with Rust's strong 
 - Security-first input handling designed to fail closed rather than open when encountering edge cases
 
 ### 𝗝𝗮𝘃𝗮𝗦𝗰𝗿𝗶𝗽𝘁 𝗘𝗻𝗴𝗶𝗻𝗲 ✅
-- **Integrated rquickjs engine** with hardcore sandbox environment and surgically removed tracking APIs
+- **Integrated Boa engine (pure Rust)** with hardcore sandbox environment and surgically removed tracking APIs
 - **DOM bindings implemented** with security policies and CSP compliance enforcement
 - **Privacy-preserving execution** with zero external data transmission capabilities for scripts
 - **Comprehensive test suite** with DOM integration and security validation (all tests passing)
@@ -231,7 +231,7 @@ citadel-browser-rust/
 │   │   ├── examples/      # Usage examples
 │   │   └── tests/         # Integration tests
 │   ├── parser/            # HTML/CSS/JS parsing components with integrated JS engine
-│   │   ├── src/js/        # JavaScript engine integration (rquickjs)
+│   │   ├── src/js/        # JavaScript engine integration (Boa, pure Rust)
 │   ├── privacy/           # (Coming soon) Privacy enhancement system
 │   ├── security/          # (Coming soon) Security enforcement system
 │   └── ui/                # (Coming soon) User interface components
