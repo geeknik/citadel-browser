@@ -3,8 +3,6 @@ use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use hickory_resolver::TokioResolver;
-use reqwest::Client;
 use serde_json::Value;
 use url::Url;
 
@@ -56,12 +54,6 @@ pub struct CitadelDnsResolver {
 
     /// Current DNS resolution mode
     mode: DnsMode,
-
-    /// Underlying async resolver for system DNS
-    system_resolver: Option<TokioResolver>,
-
-    /// HTTP client for DoH requests
-    http_client: Client,
 
     /// Default TTL for cached entries
     default_ttl: Duration,
@@ -120,29 +112,11 @@ impl CitadelDnsResolver {
     /// Create a new resolver with default privacy-preserving settings (LocalCache mode)
     pub async fn new() -> Result<Self, NetworkError> {
         log::info!("🔧 Creating CitadelDnsResolver with default LocalCache mode");
-        log::info!("🛡️ User sovereignty: Local DNS cache with system fallback");
-
-        // Create system resolver with privacy-preserving defaults
-        let system_resolver = match Self::create_system_resolver().await {
-            Ok(resolver) => Some(resolver),
-            Err(e) => {
-                log::warn!("⚠️ Could not create system resolver: {}, continuing with limited functionality", e);
-                None
-            }
-        };
-
-        // Create HTTP client for DoH with privacy settings
-        let http_client = Client::builder()
-            .timeout(Duration::from_secs(5))
-            .user_agent("Citadel-Browser/0.0.1-alpha")
-            .build()
-            .map_err(|e| NetworkError::DnsError(format!("Failed to create HTTP client: {}", e)))?;
+        log::info!("🛡️ User sovereignty: Local DNS cache with std system resolution");
 
         Ok(Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
             mode: DnsMode::LocalCache,
-            system_resolver,
-            http_client,
             default_ttl: Duration::from_secs(3600), // 1 hour default TTL
             dns_queries_blocked: Arc::new(RwLock::new(0)),
             dns_cache_hits: Arc::new(RwLock::new(0)),
@@ -182,18 +156,6 @@ impl CitadelDnsResolver {
         Ok(resolver)
     }
 
-    /// Create a system resolver with privacy-preserving configuration
-    async fn create_system_resolver() -> Result<TokioResolver, NetworkError> {
-        // hickory-resolver 0.26.1 API: build() is now fallible.
-        let resolver = TokioResolver::builder_tokio()
-            .map_err(|e| {
-                NetworkError::DnsError(format!("Failed to create resolver builder: {}", e))
-            })?
-            .build()
-            .map_err(|e| NetworkError::DnsError(format!("Failed to build resolver: {}", e)))?;
-
-        Ok(resolver)
-    }
 
     /// Resolve a hostname to IP addresses with privacy protections
     pub async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>, NetworkError> {
@@ -262,30 +224,26 @@ impl CitadelDnsResolver {
 
     /// Resolve hostname using system DNS resolver
     async fn resolve_with_system(&self, hostname: &str) -> Result<Vec<IpAddr>, NetworkError> {
-        if let Some(ref resolver) = self.system_resolver {
-            match resolver.lookup_ip(hostname).await {
-                Ok(lookup) => {
-                    let addresses: Vec<IpAddr> = lookup.iter().collect();
-                    log::debug!(
-                        "🏠 System DNS resolved {} to {} addresses",
-                        hostname,
-                        addresses.len()
-                    );
-                    Ok(addresses)
-                }
-                Err(e) => {
-                    log::error!("❌ System DNS resolution failed for {}: {}", hostname, e);
-                    Err(NetworkError::DnsError(format!(
-                        "System DNS resolution failed: {}",
-                        e
-                    )))
-                }
-            }
-        } else {
-            Err(NetworkError::DnsError(
-                "System resolver not available".to_string(),
-            ))
+        // std/tokio system resolver (getaddrinfo). Port 0 — we only want addresses.
+        let addresses: Vec<IpAddr> = tokio::net::lookup_host((hostname, 0))
+            .await
+            .map_err(|e| {
+                NetworkError::DnsError(format!("System DNS resolution failed for {hostname}: {e}"))
+            })?
+            .map(|sock| sock.ip())
+            .collect();
+
+        if addresses.is_empty() {
+            return Err(NetworkError::DnsError(format!(
+                "no addresses found for {hostname}"
+            )));
         }
+        log::debug!(
+            "🏠 System DNS resolved {} to {} addresses",
+            hostname,
+            addresses.len()
+        );
+        Ok(addresses)
     }
 
     /// Resolve hostname using DNS over HTTPS (DoH)
@@ -342,31 +300,29 @@ impl CitadelDnsResolver {
         doh_url: &str,
         record_type: &str,
     ) -> Result<Vec<IpAddr>, NetworkError> {
-        // Build DoH query URL
+        // Build the DoH query URL (RFC 8484 JSON endpoint).
         let query_url = format!("{}?name={}&type={}", doh_url, hostname, record_type);
+        let url = Url::parse(&query_url)
+            .map_err(|e| NetworkError::DnsError(format!("Invalid DoH query URL: {e}")))?;
 
-        // Make HTTPS request with privacy-preserving headers
-        let response = self
-            .http_client
-            .get(&query_url)
-            .header("Accept", "application/dns-json")
-            .header("User-Agent", "Citadel-Browser/0.0.1-alpha")
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await
-            .map_err(|e| {
-                NetworkError::DnsError(format!("DoH {} query failed: {}", record_type, e))
-            })?;
+        // Fetch via the in-house HTTPS client (no reqwest).
+        let headers = vec![
+            ("Accept".to_string(), "application/dns-json".to_string()),
+            (
+                "User-Agent".to_string(),
+                "Citadel-Browser/0.0.1-alpha".to_string(),
+            ),
+        ];
+        let response = crate::http::fetch(&url, &headers).await?;
 
-        if !response.status().is_success() {
+        if !(200..300).contains(&response.status) {
             return Err(NetworkError::DnsError(format!(
                 "DoH {} query failed with status: {}",
-                record_type,
-                response.status()
+                record_type, response.status
             )));
         }
 
-        let json: Value = response.json().await.map_err(|e| {
+        let json: Value = serde_json::from_slice(&response.body).map_err(|e| {
             NetworkError::DnsError(format!(
                 "DoH {} response parsing failed: {}",
                 record_type, e
