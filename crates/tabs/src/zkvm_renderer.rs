@@ -69,6 +69,18 @@ pub struct DisplayItem {
     pub bold: bool,
     /// RGB colour for the run.
     pub color: [u8; 3],
+    /// Block background colour (RGB), if the element sets one.
+    pub background: Option<[u8; 3]>,
+    /// Block border colour (RGB), if the element sets a visible border.
+    pub border_color: Option<[u8; 3]>,
+    /// Block border width in logical pixels (0 = no border).
+    pub border_width: f32,
+    /// Inner padding in logical pixels (inside the background/border).
+    pub padding: f32,
+    /// Outer top margin in logical pixels (transparent gap above the box).
+    pub margin_top: f32,
+    /// Outer bottom margin in logical pixels (transparent gap below the box).
+    pub margin_bottom: f32,
 }
 
 /// Security metadata describing what the isolation boundary blocked.
@@ -441,30 +453,45 @@ fn length_to_px(length: &LengthValue, vw: f32, vh: f32) -> Option<f32> {
     })
 }
 
-/// Resolve the visual style for a block element: CSS cascade overrides tag defaults.
+/// Resolve the visual + box style for a block element: CSS cascade overrides
+/// tag defaults.
 fn resolve_block_style(
     ctx: &StyleCtx,
     tag: &str,
     classes: &[String],
     id: Option<&str>,
     inherited_bold: bool,
-) -> (f32, bool, [u8; 3], DisplayKind) {
-    let (def_size, def_bold, def_color, kind) = style_for(tag, inherited_bold);
-    let computed = ctx.sheet.compute_styles(tag, classes, id);
+) -> BlockStyle {
+    let mut s = default_block_style(tag, inherited_bold);
+    let c = ctx.sheet.compute_styles(tag, classes, id);
+    let px = |l: &LengthValue| length_to_px(l, ctx.vw, ctx.vh);
 
-    let font_size = computed
-        .font_size
-        .as_ref()
-        .and_then(|l| length_to_px(l, ctx.vw, ctx.vh))
-        .filter(|s| *s > 0.0)
-        .unwrap_or(def_size);
-    let bold = match computed.font_weight.as_deref() {
-        Some("bold" | "bolder" | "600" | "700" | "800" | "900") => true,
-        Some("normal" | "lighter" | "100" | "200" | "300" | "400") => false,
-        _ => def_bold,
-    };
-    let color = computed.color.as_ref().and_then(color_to_rgb).unwrap_or(def_color);
-    (font_size, bold, color, kind)
+    if let Some(fs) = c.font_size.as_ref().and_then(|l| px(l)).filter(|v| *v > 0.0) {
+        s.font_size = fs;
+    }
+    match c.font_weight.as_deref() {
+        Some("bold" | "bolder" | "600" | "700" | "800" | "900") => s.bold = true,
+        Some("normal" | "lighter" | "100" | "200" | "300" | "400") => s.bold = false,
+        _ => {}
+    }
+    if let Some(col) = c.color.as_ref().and_then(color_to_rgb) {
+        s.color = col;
+    }
+    s.background = c.background_color.as_ref().and_then(color_to_rgb);
+    s.border_color = c.border_color.as_ref().and_then(color_to_rgb);
+    if let Some(bw) = c.border_width.as_ref().and_then(|l| px(l)) {
+        s.border_width = bw.max(0.0);
+    }
+    if let Some(p) = c.padding_top.as_ref().and_then(|l| px(l)) {
+        s.padding = p.max(0.0);
+    }
+    if let Some(m) = c.margin_top.as_ref().and_then(|l| px(l)) {
+        s.margin_top = m.max(0.0);
+    }
+    if let Some(m) = c.margin_bottom.as_ref().and_then(|l| px(l)) {
+        s.margin_bottom = m.max(0.0);
+    }
+    s
 }
 
 /// Collapse all runs of ASCII/Unicode whitespace to single spaces and trim.
@@ -513,44 +540,72 @@ fn sanitize_href(raw: Option<String>, blocked: &mut usize) -> Option<String> {
     Some(trimmed.to_string())
 }
 
-/// Style tuple `(font_size, bold, rgb, kind)` derived from a block tag.
-fn style_for(tag: &str, inherited_bold: bool) -> (f32, bool, [u8; 3], DisplayKind) {
-    match tag {
-        "h1" => (32.0, true, [17, 17, 17], DisplayKind::Heading),
-        "h2" => (26.0, true, [17, 17, 17], DisplayKind::Heading),
-        "h3" => (22.0, true, [17, 17, 17], DisplayKind::Heading),
-        "h4" | "h5" | "h6" => (18.0, true, [17, 17, 17], DisplayKind::Heading),
-        "pre" | "code" => (14.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph),
-        _ => (16.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph),
+/// Resolved visual + box style for a block element.
+#[derive(Debug, Clone, Copy)]
+struct BlockStyle {
+    font_size: f32,
+    bold: bool,
+    color: [u8; 3],
+    kind: DisplayKind,
+    background: Option<[u8; 3]>,
+    border_color: Option<[u8; 3]>,
+    border_width: f32,
+    padding: f32,
+    margin_top: f32,
+    margin_bottom: f32,
+}
+
+/// Default block style from the tag alone (browser-like font sizes + margins),
+/// before CSS is applied. `margin` is used for both top and bottom.
+fn default_block_style(tag: &str, inherited_bold: bool) -> BlockStyle {
+    let (font_size, bold, color, kind, margin) = match tag {
+        "h1" => (32.0, true, [17, 17, 17], DisplayKind::Heading, 21.0),
+        "h2" => (26.0, true, [17, 17, 17], DisplayKind::Heading, 19.0),
+        "h3" => (22.0, true, [17, 17, 17], DisplayKind::Heading, 17.0),
+        "h4" | "h5" | "h6" => (18.0, true, [17, 17, 17], DisplayKind::Heading, 15.0),
+        "pre" | "code" => (14.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph, 12.0),
+        "li" => (16.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph, 4.0),
+        _ => (16.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph, 12.0),
+    };
+    BlockStyle {
+        font_size,
+        bold,
+        color,
+        kind,
+        background: None,
+        border_color: None,
+        border_width: 0.0,
+        padding: 0.0,
+        margin_top: margin,
+        margin_bottom: margin,
     }
 }
 
 /// Flush accumulated inline text as one block-level display item with a resolved
 /// (CSS-cascaded) style.
-fn flush_inline(
-    inline: &mut String,
-    out: &mut Vec<DisplayItem>,
-    font_size: f32,
-    bold: bool,
-    color: [u8; 3],
-    kind: DisplayKind,
-) {
+fn flush_inline(inline: &mut String, out: &mut Vec<DisplayItem>, style: &BlockStyle) {
     let text = collapse_ws(inline);
     inline.clear();
     if text.is_empty() {
         return;
     }
     out.push(DisplayItem {
-        kind,
+        kind: style.kind,
         text,
         href: None,
         x: 0.0,
         y: 0.0,
         width: 0.0,
         height: 0.0,
-        font_size,
-        bold,
-        color,
+        font_size: style.font_size,
+        bold: style.bold,
+        color: style.color,
+        background: style.background,
+        border_color: style.border_color,
+        border_width: style.border_width,
+        padding: style.padding,
+        margin_top: style.margin_top,
+        margin_bottom: style.margin_bottom,
     });
 }
 
@@ -590,6 +645,12 @@ fn push_link(handle: &NodeHandle, href: Option<String>, out: &mut Vec<DisplayIte
         font_size,
         bold: false,
         color,
+        background: None,
+        border_color: None,
+        border_width: 0.0,
+        padding: 0.0,
+        margin_top: 4.0,
+        margin_bottom: 4.0,
     });
 }
 
@@ -618,8 +679,8 @@ fn collect_blocks(
         NodeData::Text(t) => {
             let text = collapse_ws(t);
             if !text.is_empty() {
-                let (fs, b, c, k) = resolve_block_style(ctx, "p", &[], None, inherited_bold);
-                flush_inline(&mut text.clone(), out, fs, b, c, k);
+                let style = resolve_block_style(ctx, "p", &[], None, inherited_bold);
+                flush_inline(&mut text.clone(), out, &style);
             }
         }
         NodeData::Element(el) => {
@@ -639,8 +700,7 @@ fn collect_blocks(
             // Cascade this element's style once and reuse it for its inline runs.
             let classes = node.classes().unwrap_or_default();
             let id = node.element_id();
-            let (font_size, bold, color, kind) =
-                resolve_block_style(ctx, &tag, &classes, id.as_deref(), inherited_bold);
+            let style = resolve_block_style(ctx, &tag, &classes, id.as_deref(), inherited_bold);
             let mut inline = String::new();
 
             for child in node.children() {
@@ -657,22 +717,22 @@ fn collect_blocks(
                             continue;
                         }
                         if child_tag == "a" {
-                            flush_inline(&mut inline, out, font_size, bold, color, kind);
+                            flush_inline(&mut inline, out, &style);
                             let href = sanitize_href(child_el.get_attribute("href"), blocked);
                             push_link(child, href, out, ctx);
                         } else if INLINE_TAGS.contains(&child_tag.as_str()) {
                             collect_text(child, &mut inline);
                         } else {
                             // Block-level child: flush the current inline run, then recurse.
-                            flush_inline(&mut inline, out, font_size, bold, color, kind);
+                            flush_inline(&mut inline, out, &style);
                             drop(child_node);
-                            collect_blocks(child, out, blocked, bold, ctx);
+                            collect_blocks(child, out, blocked, style.bold, ctx);
                         }
                     }
                     _ => {}
                 }
             }
-            flush_inline(&mut inline, out, font_size, bold, color, kind);
+            flush_inline(&mut inline, out, &style);
         }
         _ => {}
     }
@@ -683,31 +743,31 @@ fn collect_blocks(
 /// Returns `(content_width, total_height)`.
 fn layout_blocks(items: &mut [DisplayItem], content_width: f32) -> (f32, f32) {
     let cw = content_width.max(120.0);
-    let pad: f32 = 16.0;
-    let mut y = pad;
+    let frame: f32 = 16.0;
+    let mut y = frame;
 
     for item in items.iter_mut() {
+        // Box decoration (padding + border) inset on each side.
+        let inset = item.padding + item.border_width;
+        let text_width = (cw - inset * 2.0).max(1.0);
+
         let line_height = item.font_size * 1.4;
         let avg_char = (item.font_size * 0.52).max(1.0);
-        let chars_per_line = ((cw / avg_char).floor() as usize).max(1);
+        let chars_per_line = ((text_width / avg_char).floor() as usize).max(1);
         let n_chars = item.text.chars().count().max(1);
         let lines = n_chars.div_ceil(chars_per_line).max(1);
-        let height = (lines as f32) * line_height + item.font_size * 0.4;
+        let text_height = (lines as f32) * line_height + item.font_size * 0.4;
+        let box_height = text_height + inset * 2.0;
 
+        y += item.margin_top;
         item.x = 0.0;
         item.y = y;
         item.width = cw;
-        item.height = height;
-
-        let gap = if item.kind == DisplayKind::Heading {
-            item.font_size * 0.5
-        } else {
-            item.font_size * 0.7
-        };
-        y += height + gap;
+        item.height = box_height;
+        y += box_height + item.margin_bottom;
     }
 
-    (cw, y + pad)
+    (cw, y + frame)
 }
 
 /// Create and run a ZKVM renderer task with full isolation.

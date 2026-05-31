@@ -286,3 +286,38 @@ fn css_cascade_drives_colors_background_and_width() {
         .expect("link present");
     assert_eq!(link.color, [0x38, 0x48, 0x8f], "a colour from CSS");
 }
+
+/// Stage B2: CSS box decoration (background / border / padding / margin) on a
+/// text-bearing block is carried on its display item.
+#[test]
+fn css_box_styling_is_applied_to_block() {
+    let html = r#"<!doctype html><html><head><style>
+        p.card {
+            background-color: #ffeecc;
+            border-width: 2px;
+            border-color: #884400;
+            padding: 12px;
+            margin-top: 20px;
+        }
+        </style></head><body>
+        <p class="card">Boxed paragraph</p>
+        </body></html>"#;
+
+    let r = render_in_isolation(&RenderRequest {
+        url: "https://boxes.example/".to_string(),
+        html: html.to_string(),
+        viewport_width: 1000.0,
+    });
+
+    let card = r
+        .display_list
+        .iter()
+        .find(|i| i.text.contains("Boxed paragraph"))
+        .expect("boxed paragraph present");
+
+    assert_eq!(card.background, Some([0xff, 0xee, 0xcc]), "block background from CSS");
+    assert_eq!(card.border_color, Some([0x88, 0x44, 0x00]), "block border colour from CSS");
+    assert!((card.border_width - 2.0).abs() < 0.5, "border width ~2px, got {}", card.border_width);
+    assert!((card.padding - 12.0).abs() < 0.5, "padding ~12px, got {}", card.padding);
+    assert!((card.margin_top - 20.0).abs() < 0.5, "margin-top ~20px, got {}", card.margin_top);
+}

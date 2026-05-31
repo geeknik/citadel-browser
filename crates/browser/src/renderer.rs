@@ -93,6 +93,40 @@ impl StyleSheet for EnhancedContainerStyle {
     }
 }
 
+/// Per-block box decoration (CSS background + border) for ZKVM display items.
+struct BlockBoxStyle {
+    background: Option<Color>,
+    border_color: Option<Color>,
+    border_width: f32,
+}
+
+impl BlockBoxStyle {
+    fn from_item(item: &citadel_tabs::DisplayItem) -> Self {
+        let rgb = |c: [u8; 3]| Color::from_rgb8(c[0], c[1], c[2]);
+        Self {
+            background: item.background.map(rgb),
+            border_color: item.border_color.map(rgb),
+            border_width: item.border_width,
+        }
+    }
+}
+
+impl StyleSheet for BlockBoxStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> Appearance {
+        Appearance {
+            background: self.background.map(Background::Color),
+            border: iced::Border {
+                color: self.border_color.unwrap_or(Color::TRANSPARENT),
+                width: self.border_width,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
 /// Position context for rendering positioned elements
 #[derive(Debug, Clone)]
 pub struct PositionContext {
@@ -327,9 +361,14 @@ impl CitadelRenderer {
         content: &citadel_tabs::RenderedContent,
     ) -> Element<'_, Message> {
         use citadel_tabs::DisplayKind;
-        let mut col = Column::new().spacing(14).padding(40).width(Length::Fill);
+        let mut col = Column::new().spacing(0).padding(16).width(Length::Fill);
 
         for item in &content.display_list {
+            // CSS top margin (transparent gap above the box).
+            if item.margin_top > 0.0 {
+                col = col.push(Space::with_height(Length::Fixed(item.margin_top)));
+            }
+
             let color = Color::from_rgb8(item.color[0], item.color[1], item.color[2]);
             let label = match (item.kind, &item.href) {
                 (DisplayKind::Link, Some(href)) => format!("{}  ({})", item.text, href),
@@ -343,7 +382,20 @@ impl CitadelRenderer {
                     ..Font::DEFAULT
                 });
             }
-            col = col.push(widget);
+
+            // Wrap in a box with CSS background / border / padding when present.
+            let has_box =
+                item.background.is_some() || item.border_width > 0.0 || item.padding > 0.0;
+            let block: Element<Message> = if has_box {
+                container(widget)
+                    .width(Length::Fill)
+                    .padding(item.padding.max(0.0) as u16)
+                    .style(theme::Container::Custom(Box::new(BlockBoxStyle::from_item(item))))
+                    .into()
+            } else {
+                container(widget).width(Length::Fill).into()
+            };
+            col = col.push(block);
         }
 
         // Center the content column at the CSS-derived content width (e.g. body
