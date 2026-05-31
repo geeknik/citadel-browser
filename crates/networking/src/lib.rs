@@ -3,6 +3,7 @@ pub mod cache;
 pub mod connection;
 pub mod dns;
 pub mod error;
+pub mod http;
 pub mod integrity;
 pub mod performance;
 pub mod privacy_engine;
@@ -22,6 +23,7 @@ pub use connection::Connection;
 /// Re-export common types for easier usage
 pub use dns::{CitadelDnsResolver, DnsMode, DohProviders};
 pub use error::NetworkError;
+pub use http::{fetch as https_fetch, HttpResponse};
 pub use integrity::{CSPViolation, HashAlgorithm, IntegrityResult, IntegrityValidator};
 pub use privacy_engine::{CitadelPrivacyEngine, PrivacyStats};
 pub use request::{Method, Request};
