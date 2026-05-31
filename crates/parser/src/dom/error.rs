@@ -13,6 +13,5 @@ pub enum DomError {
 
     #[error("Security violation: {0}")]
     SecurityViolation(String),
-
     // Add other DOM-specific errors as needed
-} 
+}

@@ -3,17 +3,17 @@
 //! This module provides secure JavaScript execution using Boa (pure Rust) with
 //! per-call context isolation and comprehensive security restrictions.
 
-pub mod engine;
 pub mod dom_bindings;
+pub mod engine;
 pub mod security;
 
 // Security tests are now inline in security.rs (19 tests covering all security operations)
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use boa_engine::{Context, Source, JsValue};
-use crate::security::SecurityContext;
 use crate::error::ParserResult;
+use crate::security::SecurityContext;
+use boa_engine::{Context, JsValue, Source};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Convert a Boa JsValue to a String representation.
 ///

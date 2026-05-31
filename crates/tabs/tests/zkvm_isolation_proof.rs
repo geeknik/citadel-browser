@@ -10,8 +10,8 @@
 //! They do NOT claim OS/hardware memory isolation — see the threat model.
 
 use citadel_tabs::{render_in_isolation, DisplayKind, RenderRequest};
-use citadel_zkvm::{Channel, ChannelMessage};
 use citadel_zkvm::channel::SecureChannel;
+use citadel_zkvm::{Channel, ChannelMessage};
 use std::time::Duration;
 
 fn req(html: &str) -> RenderRequest {
@@ -49,10 +49,23 @@ fn only_sanitized_display_list_crosses_the_boundary() {
     let crosses_boundary = serde_json::to_string(&rendered).expect("serialize");
 
     let must_not_leak = [
-        "EXFIL_TOKEN", "sk-live-abc123", "document.cookie", "evil.example",
-        "CSS_SECRET", "HIDDEN_COMMENT", "STEAL_HANDLER", "onclick",
-        "data-tracking-id", "USER-7788", "RUN_SECRET", "javascript:",
-        "<script", "<style", "<h1", "<p", "<!--",
+        "EXFIL_TOKEN",
+        "sk-live-abc123",
+        "document.cookie",
+        "evil.example",
+        "CSS_SECRET",
+        "HIDDEN_COMMENT",
+        "STEAL_HANDLER",
+        "onclick",
+        "data-tracking-id",
+        "USER-7788",
+        "RUN_SECRET",
+        "javascript:",
+        "<script",
+        "<style",
+        "<h1",
+        "<p",
+        "<!--",
     ];
     for needle in must_not_leak {
         assert!(
@@ -62,15 +75,30 @@ fn only_sanitized_display_list_crosses_the_boundary() {
     }
 
     // Visible text DID make it through (so this isn't trivially empty).
-    let texts: Vec<&str> = rendered.display_list.iter().map(|i| i.text.as_str()).collect();
+    let texts: Vec<&str> = rendered
+        .display_list
+        .iter()
+        .map(|i| i.text.as_str())
+        .collect();
     assert!(texts.iter().any(|t| t.contains("Visible Heading")));
     assert!(texts.iter().any(|t| t.contains("Visible paragraph")));
     // The safe link survives WITH its href; the dangerous one is present as text
     // only, href stripped.
-    let safe = rendered.display_list.iter().find(|i| i.text.contains("safe link")).unwrap();
+    let safe = rendered
+        .display_list
+        .iter()
+        .find(|i| i.text.contains("safe link"))
+        .unwrap();
     assert_eq!(safe.href.as_deref(), Some("https://ok.example/x"));
-    let danger = rendered.display_list.iter().find(|i| i.text.contains("danger link")).unwrap();
-    assert_eq!(danger.href, None, "javascript: href must not cross the boundary");
+    let danger = rendered
+        .display_list
+        .iter()
+        .find(|i| i.text.contains("danger link"))
+        .unwrap();
+    assert_eq!(
+        danger.href, None,
+        "javascript: href must not cross the boundary"
+    );
 }
 
 /// PROOF 2 — The renderer is a pure function with no cross-tab state.
@@ -96,8 +124,12 @@ fn renderer_is_pure_with_no_cross_tab_contamination() {
     assert!(want_a.iter().any(|t| t == "TAB-ALPHA"));
     assert!(want_b.iter().any(|t| t == "TAB-BRAVO"));
     // Cross-check: tab A's output never mentions tab B's content and vice versa.
-    assert!(!want_a.iter().any(|t| t.contains("BRAVO") || t.contains("bravo")));
-    assert!(!want_b.iter().any(|t| t.contains("ALPHA") || t.contains("alpha")));
+    assert!(!want_a
+        .iter()
+        .any(|t| t.contains("BRAVO") || t.contains("bravo")));
+    assert!(!want_b
+        .iter()
+        .any(|t| t.contains("ALPHA") || t.contains("alpha")));
 
     let mut handles = Vec::new();
     for n in 0..64 {
@@ -147,11 +179,17 @@ fn channel_payloads_are_encrypted_authenticated_and_per_tab() {
     if let Some(last) = tampered.last_mut() {
         *last ^= 0xFF;
     }
-    assert!(tab_a.decrypt(&tampered).is_err(), "AEAD must reject tampered ciphertext");
+    assert!(
+        tab_a.decrypt(&tampered).is_err(),
+        "AEAD must reject tampered ciphertext"
+    );
 
     // Cross-tab: a different tab's key cannot decrypt tab A's traffic.
     let tab_b = SecureChannel::new([0x22u8; 32]);
-    assert!(tab_b.decrypt(&sealed).is_err(), "another tab must not read this tab's channel");
+    assert!(
+        tab_b.decrypt(&sealed).is_err(),
+        "another tab must not read this tab's channel"
+    );
 }
 
 /// PROOF 4 — Tabs ride independent channels; one tab's VM never observes another
@@ -199,7 +237,10 @@ fn host_visible_type_carries_only_display_primitives() {
         "a script/style-only page must produce no visible runs, got {:?}",
         rendered.display_list
     );
-    assert!(rendered.security_metadata.blocked_elements >= 1, "boundary recorded the pruning");
+    assert!(
+        rendered.security_metadata.blocked_elements >= 1,
+        "boundary recorded the pruning"
+    );
 
     // Every field of RenderedContent is a display primitive or metadata — there is
     // no DOM handle, no raw html, no script field to carry tab internals.

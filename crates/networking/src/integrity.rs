@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use sha2::{Sha256, Sha384, Sha512, Digest};
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
+use sha2::{Digest, Sha256, Sha384, Sha512};
 use url::Url;
 
 use crate::error::NetworkError;
@@ -81,32 +81,30 @@ impl IntegrityValidator {
         let mut validator = Self::new();
         validator.strict_csp = true;
         validator.require_integrity = true;
-        
+
         // Set default strict CSP
-        validator.csp_directives.insert(
-            "default-src".to_string(),
-            vec!["'self'".to_string()]
-        );
-        validator.csp_directives.insert(
-            "script-src".to_string(),
-            vec!["'self'".to_string()]
-        );
+        validator
+            .csp_directives
+            .insert("default-src".to_string(), vec!["'self'".to_string()]);
+        validator
+            .csp_directives
+            .insert("script-src".to_string(), vec!["'self'".to_string()]);
         validator.csp_directives.insert(
             "style-src".to_string(),
-            vec!["'self'".to_string(), "'unsafe-inline'".to_string()]
+            vec!["'self'".to_string(), "'unsafe-inline'".to_string()],
         );
         validator.csp_directives.insert(
             "img-src".to_string(),
-            vec!["'self'".to_string(), "data:".to_string()]
+            vec!["'self'".to_string(), "data:".to_string()],
         );
-        
+
         validator
     }
 
     /// Set CSP directives from a Content-Security-Policy header
     pub fn set_csp_from_header(&mut self, csp_header: &str) {
         self.csp_directives.clear();
-        
+
         for directive in csp_header.split(';') {
             let directive = directive.trim();
             if let Some(space_pos) = directive.find(' ') {
@@ -115,7 +113,7 @@ impl IntegrityValidator {
                     .split_whitespace()
                     .map(|s| s.to_string())
                     .collect();
-                
+
                 self.csp_directives.insert(name, values);
             } else if !directive.is_empty() {
                 // Directive without values (like 'upgrade-insecure-requests')
@@ -128,7 +126,7 @@ impl IntegrityValidator {
     pub fn add_csp_directive(&mut self, directive: &str, values: Vec<&str>) {
         self.csp_directives.insert(
             directive.to_string(),
-            values.into_iter().map(|s| s.to_string()).collect()
+            values.into_iter().map(|s| s.to_string()).collect(),
         );
     }
 
@@ -193,7 +191,7 @@ impl IntegrityValidator {
     pub fn check_csp_violation(&self, url: &Url, resource_type: &str) -> Option<CSPViolation> {
         let directive_name = match resource_type {
             "script" => "script-src",
-            "style" => "style-src", 
+            "style" => "style-src",
             "image" => "img-src",
             "font" => "font-src",
             "object" => "object-src",
@@ -204,7 +202,9 @@ impl IntegrityValidator {
         };
 
         // Check specific directive first, fallback to default-src
-        let allowed_sources = self.csp_directives.get(directive_name)
+        let allowed_sources = self
+            .csp_directives
+            .get(directive_name)
             .or_else(|| self.csp_directives.get("default-src"));
 
         if let Some(sources) = allowed_sources {
@@ -259,15 +259,9 @@ impl IntegrityValidator {
                 false
             }
             "'none'" => false,
-            _ if source.starts_with("data:") => {
-                url.scheme() == "data"
-            }
-            _ if source.starts_with("https:") => {
-                url.scheme() == "https"
-            }
-            _ if source.starts_with("http:") => {
-                url.scheme() == "http"
-            }
+            _ if source.starts_with("data:") => url.scheme() == "data",
+            _ if source.starts_with("https:") => url.scheme() == "https",
+            _ if source.starts_with("http:") => url.scheme() == "http",
             _ if source.contains("://") => {
                 // Full URL match
                 url.as_str().starts_with(source)
@@ -319,7 +313,7 @@ impl IntegrityValidator {
             if ct.contains("application/octet-stream") && response.url().path().ends_with(".js") {
                 warnings.push("JavaScript served with generic binary content type".to_string());
             }
-            
+
             if ct.contains("text/html") && response.url().path().ends_with(".js") {
                 warnings.push("JavaScript file served with HTML content type".to_string());
             }
@@ -329,12 +323,12 @@ impl IntegrityValidator {
         let body = response.body();
         if body.len() > 0 {
             let body_str = String::from_utf8_lossy(body);
-            
+
             // Check for potential XSS payloads in responses
             if body_str.contains("<script") && !response.is_html() {
                 warnings.push("Script tags found in non-HTML response".to_string());
             }
-            
+
             // Check for potential data exfiltration patterns
             if body_str.contains("document.cookie") || body_str.contains("localStorage") {
                 warnings.push("Potential sensitive data access detected".to_string());
@@ -350,17 +344,26 @@ impl IntegrityValidator {
             HashAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();
                 hasher.update(content);
-                format!("sha256-{}", general_purpose::STANDARD.encode(hasher.finalize()))
+                format!(
+                    "sha256-{}",
+                    general_purpose::STANDARD.encode(hasher.finalize())
+                )
             }
             HashAlgorithm::Sha384 => {
                 let mut hasher = Sha384::new();
                 hasher.update(content);
-                format!("sha384-{}", general_purpose::STANDARD.encode(hasher.finalize()))
+                format!(
+                    "sha384-{}",
+                    general_purpose::STANDARD.encode(hasher.finalize())
+                )
             }
             HashAlgorithm::Sha512 => {
                 let mut hasher = Sha512::new();
                 hasher.update(content);
-                format!("sha512-{}", general_purpose::STANDARD.encode(hasher.finalize()))
+                format!(
+                    "sha512-{}",
+                    general_purpose::STANDARD.encode(hasher.finalize())
+                )
             }
         };
 
@@ -392,10 +395,10 @@ mod tests {
     fn test_sha256_integrity() {
         let validator = IntegrityValidator::new();
         let content = b"Hello, World!";
-        
+
         // Generate integrity hash
         let integrity = validator.generate_integrity(content, HashAlgorithm::Sha256);
-        
+
         // Verify the integrity
         let result = validator.verify_integrity(content, &integrity);
         assert_eq!(result, IntegrityResult::Valid);
@@ -406,7 +409,7 @@ mod tests {
         let validator = IntegrityValidator::new();
         let content = b"Hello, World!";
         let wrong_integrity = "sha256-wronghash";
-        
+
         let result = validator.verify_integrity(content, wrong_integrity);
         assert_eq!(result, IntegrityResult::Invalid);
     }
@@ -415,10 +418,10 @@ mod tests {
     fn test_csp_self_policy() {
         let mut validator = IntegrityValidator::new();
         validator.add_csp_directive("script-src", vec!["'self'"]);
-        
+
         let https_url = Url::parse("https://example.com/script.js").unwrap();
         let violation = validator.check_csp_violation(&https_url, "script");
-        
+
         // Should be allowed for 'self' (simplified check)
         assert!(violation.is_none());
     }
@@ -426,10 +429,10 @@ mod tests {
     #[test]
     fn test_csp_violation() {
         let validator = IntegrityValidator::strict();
-        
+
         let external_url = Url::parse("https://evil.com/script.js").unwrap();
         let violation = validator.check_csp_violation(&external_url, "script");
-        
+
         // Should be blocked in strict mode
         assert!(violation.is_some());
     }
@@ -439,7 +442,7 @@ mod tests {
         let validator = IntegrityValidator::new();
         let content = b"test";
         let malformed = "not-a-valid-integrity";
-        
+
         let result = validator.verify_integrity(content, malformed);
         assert_eq!(result, IntegrityResult::MalformedAttribute);
     }
@@ -449,7 +452,7 @@ mod tests {
         let validator = IntegrityValidator::new();
         let content = b"test";
         let unsupported = "md5-abcd1234";
-        
+
         let result = validator.verify_integrity(content, unsupported);
         assert_eq!(result, IntegrityResult::UnsupportedAlgorithm);
     }
@@ -458,10 +461,10 @@ mod tests {
     fn test_csp_wildcard_domain() {
         let mut validator = IntegrityValidator::new();
         validator.add_csp_directive("script-src", vec!["*.example.com"]);
-        
+
         let subdomain_url = Url::parse("https://cdn.example.com/script.js").unwrap();
         let violation = validator.check_csp_violation(&subdomain_url, "script");
-        
+
         assert!(violation.is_none());
     }
 }

@@ -1,34 +1,40 @@
-pub mod dns;
-pub mod request;
-pub mod response;
-pub mod connection;
-pub mod resource;
-pub mod resource_manager;
-pub mod error;
-pub mod resource_loader;
-pub mod resource_discovery;
-pub mod cache;
 pub mod advanced_loader;
+pub mod cache;
+pub mod connection;
+pub mod dns;
+pub mod error;
 pub mod integrity;
 pub mod performance;
-pub mod tracker_blocking;
 pub mod privacy_engine;
+pub mod request;
+pub mod resource;
+pub mod resource_discovery;
+pub mod resource_loader;
+pub mod resource_manager;
+pub mod response;
+pub mod tracker_blocking;
 
-/// Re-export common types for easier usage
-pub use dns::{DnsMode, CitadelDnsResolver, DohProviders};
-pub use request::{Request, Method};
-pub use response::Response;
+pub use advanced_loader::{
+    AdvancedResourceLoader, BandwidthTracker, LoadingStrategy, NetworkCondition, Priority,
+};
+pub use cache::{CacheConfig, CacheEntry, ResourceCache};
 pub use connection::Connection;
-pub use resource::Resource;
-pub use resource_manager::{ResourceManager, ResourcePolicy, CachePolicy, ResourceStats, ResourceManagerConfig, OriginType};
-pub use resource_loader::{ResourceLoader, LoadProgress, LoadResult, LoadOptions};
-pub use resource_discovery::{ResourceDiscovery, ResourceRef, ResourceContext};
-pub use cache::{ResourceCache, CacheEntry, CacheConfig};
+/// Re-export common types for easier usage
+pub use dns::{CitadelDnsResolver, DnsMode, DohProviders};
 pub use error::NetworkError;
-pub use advanced_loader::{AdvancedResourceLoader, LoadingStrategy, Priority, NetworkCondition, BandwidthTracker};
-pub use integrity::{IntegrityValidator, HashAlgorithm, IntegrityResult, CSPViolation};
-pub use tracker_blocking::{TrackerBlockingEngine, BlocklistConfig, BlockingLevel, BlockedRequest, TrackerBlockingStats};
+pub use integrity::{CSPViolation, HashAlgorithm, IntegrityResult, IntegrityValidator};
 pub use privacy_engine::{CitadelPrivacyEngine, PrivacyStats};
+pub use request::{Method, Request};
+pub use resource::Resource;
+pub use resource_discovery::{ResourceContext, ResourceDiscovery, ResourceRef};
+pub use resource_loader::{LoadOptions, LoadProgress, LoadResult, ResourceLoader};
+pub use resource_manager::{
+    CachePolicy, OriginType, ResourceManager, ResourceManagerConfig, ResourcePolicy, ResourceStats,
+};
+pub use response::Response;
+pub use tracker_blocking::{
+    BlockedRequest, BlockingLevel, BlocklistConfig, TrackerBlockingEngine, TrackerBlockingStats,
+};
 
 /// Types of privacy level configurations for the networking layer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,4 +77,4 @@ impl Default for NetworkConfig {
             tracker_blocking: tracker_blocking::BlocklistConfig::default(),
         }
     }
-} 
+}

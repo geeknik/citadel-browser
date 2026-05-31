@@ -6,8 +6,8 @@
 //! comes back. We assert the complete page (heading, body paragraph, and the
 //! "More information..." link) is present and laid out.
 
-use citadel_tabs::{DisplayKind, RenderRequest, RenderedContent, render_in_isolation};
 use citadel_tabs::zkvm_renderer::spawn_zkvm_renderer;
+use citadel_tabs::{render_in_isolation, DisplayKind, RenderRequest, RenderedContent};
 use citadel_zkvm::{Channel, ChannelMessage};
 use std::time::Duration;
 
@@ -58,7 +58,9 @@ fn assert_example_com_fully_rendered(rendered: &RenderedContent) {
         .find(|i| i.kind == DisplayKind::Paragraph && i.text.contains("illustrative examples"))
         .expect("body paragraph must be present");
     assert!(
-        paragraph.text.contains("without prior coordination or asking for permission"),
+        paragraph
+            .text
+            .contains("without prior coordination or asking for permission"),
         "paragraph must contain the full sentence, got: {:?}",
         paragraph.text
     );
@@ -68,7 +70,11 @@ fn assert_example_com_fully_rendered(rendered: &RenderedContent) {
         .iter()
         .find(|i| i.kind == DisplayKind::Link)
         .expect("the 'More information...' link must be present");
-    assert!(link.text.contains("More information"), "link text: {:?}", link.text);
+    assert!(
+        link.text.contains("More information"),
+        "link text: {:?}",
+        link.text
+    );
     assert_eq!(
         link.href.as_deref(),
         Some("https://www.iana.org/domains/example"),
@@ -91,11 +97,18 @@ fn assert_example_com_fully_rendered(rendered: &RenderedContent) {
 
     // Block-flow layout: every run is positioned, sized, and stacked top-to-bottom.
     for item in items {
-        assert!(item.width > 0.0 && item.height > 0.0, "every run must have a box: {:?}", item.text);
+        assert!(
+            item.width > 0.0 && item.height > 0.0,
+            "every run must have a box: {:?}",
+            item.text
+        );
     }
     assert!(heading.y < paragraph.y, "heading above paragraph");
     assert!(paragraph.y < link.y, "paragraph above link");
-    assert!(rendered.height > heading.height, "total height must span the page");
+    assert!(
+        rendered.height > heading.height,
+        "total height must span the page"
+    );
 }
 
 /// Pure-function render: parse + sanitize + layout inside the boundary helper.
@@ -144,7 +157,10 @@ async fn example_com_renders_fully_over_encrypted_channel() {
 
     let rendered: RenderedContent = match message {
         ChannelMessage::Control { command, params } => {
-            assert_eq!(command, "rendered_content", "expected rendered_content reply");
+            assert_eq!(
+                command, "rendered_content",
+                "expected rendered_content reply"
+            );
             serde_json::from_str(&params).expect("deserialize rendered content")
         }
         other => panic!("unexpected reply from boundary: {:?}", other),
@@ -174,8 +190,16 @@ fn boundary_blocks_scripts_and_dangerous_urls() {
 
     // No script source survived into any visible run.
     for item in &rendered.display_list {
-        assert!(!item.text.contains("document.cookie"), "script body leaked: {:?}", item.text);
-        assert!(!item.text.contains("fetch("), "script body leaked: {:?}", item.text);
+        assert!(
+            !item.text.contains("document.cookie"),
+            "script body leaked: {:?}",
+            item.text
+        );
+        assert!(
+            !item.text.contains("fetch("),
+            "script body leaked: {:?}",
+            item.text
+        );
     }
 
     // The javascript: link kept its text but lost its dangerous href.
@@ -195,7 +219,16 @@ fn boundary_blocks_scripts_and_dangerous_urls() {
     assert_eq!(good_link.href.as_deref(), Some("https://ok.example/page"));
 
     // The visible heading and paragraph still rendered.
-    assert!(rendered.display_list.iter().any(|i| i.text == "Safe Heading"));
-    assert!(rendered.display_list.iter().any(|i| i.text == "Visible text."));
-    assert!(rendered.security_metadata.blocked_elements >= 2, "script + js-url blocked");
+    assert!(rendered
+        .display_list
+        .iter()
+        .any(|i| i.text == "Safe Heading"));
+    assert!(rendered
+        .display_list
+        .iter()
+        .any(|i| i.text == "Visible text."));
+    assert!(
+        rendered.security_metadata.blocked_elements >= 2,
+        "script + js-url blocked"
+    );
 }

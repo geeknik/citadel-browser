@@ -7,10 +7,10 @@ use tokio::sync::Semaphore;
 use tokio::time::timeout;
 use url::Url;
 
-use crate::cache::{ResourceCache, CacheConfig};
+use crate::cache::{CacheConfig, ResourceCache};
 use crate::error::NetworkError;
 use crate::resource::{Resource, ResourceType};
-use crate::resource_discovery::{ResourceDiscovery, ResourceRef, ResourceContext};
+use crate::resource_discovery::{ResourceContext, ResourceDiscovery, ResourceRef};
 use crate::response::Response;
 use crate::NetworkConfig;
 
@@ -49,7 +49,7 @@ impl LoadProgress {
             resource_details: HashMap::new(),
         }
     }
-    
+
     /// Get the completion percentage (0.0 to 1.0)
     pub fn completion_percentage(&self) -> f64 {
         if self.total == 0 {
@@ -58,17 +58,17 @@ impl LoadProgress {
             (self.loaded + self.failed + self.cached) as f64 / self.total as f64
         }
     }
-    
+
     /// Get the elapsed time since loading started
     pub fn elapsed(&self) -> Duration {
         self.started_at.elapsed()
     }
-    
+
     /// Check if loading is complete
     pub fn is_complete(&self) -> bool {
         (self.loaded + self.failed + self.cached) >= self.total
     }
-    
+
     /// Get the success rate (0.0 to 1.0)
     pub fn success_rate(&self) -> f64 {
         let completed = self.loaded + self.failed + self.cached;
@@ -138,7 +138,7 @@ pub struct LoadOptions {
 impl Default for LoadOptions {
     fn default() -> Self {
         Self {
-            max_concurrent: 6,  // Browser-like concurrency limit
+            max_concurrent: 6, // Browser-like concurrency limit
             request_timeout: Duration::from_secs(30),
             total_timeout: Duration::from_secs(120),
             load_non_critical: true,
@@ -186,7 +186,7 @@ impl ResourceLoader {
         let resource = Resource::new(config).await?;
         let discovery = ResourceDiscovery::new()?;
         let cache = Arc::new(ResourceCache::default());
-        
+
         Ok(Self {
             resource,
             discovery,
@@ -195,7 +195,7 @@ impl ResourceLoader {
             progress_callback: None,
         })
     }
-    
+
     /// Create a resource loader with custom cache configuration
     pub async fn with_cache_config(
         config: NetworkConfig,
@@ -204,7 +204,7 @@ impl ResourceLoader {
         let resource = Resource::new(config).await?;
         let discovery = ResourceDiscovery::new()?;
         let cache = Arc::new(ResourceCache::new(cache_config));
-        
+
         Ok(Self {
             resource,
             discovery,
@@ -213,13 +213,13 @@ impl ResourceLoader {
             progress_callback: None,
         })
     }
-    
+
     /// Set loading options
     pub fn with_options(mut self, options: LoadOptions) -> Self {
         self.options = options;
         self
     }
-    
+
     /// Set a progress callback
     pub fn with_progress_callback<F>(mut self, callback: F) -> Self
     where
@@ -228,7 +228,7 @@ impl ResourceLoader {
         self.progress_callback = Some(Arc::new(callback));
         self
     }
-    
+
     /// Load resources from HTML content
     pub async fn load_from_html(
         &self,
@@ -238,19 +238,19 @@ impl ResourceLoader {
         let context = ResourceContext::new(base_url.clone())
             .include_non_critical(self.options.load_non_critical)
             .allowed_types(self.options.allowed_types.clone().unwrap_or_default());
-        
+
         // Discover resources
         let mut progress = LoadProgress::new(0);
         progress.phase = LoadPhase::Discovering;
         self.notify_progress(&progress);
-        
+
         let resources = self.discovery.discover_all(html, &context)?;
         progress.total = resources.len();
-        
+
         // Load discovered resources
         self.load_resources(resources, progress).await
     }
-    
+
     /// Load resources from a list of resource references
     pub async fn load_resources(
         &self,
@@ -259,7 +259,7 @@ impl ResourceLoader {
     ) -> Result<LoadResult, NetworkError> {
         let start_time = Instant::now();
         progress.total = resources.len();
-        
+
         if resources.is_empty() {
             progress.phase = LoadPhase::Complete;
             self.notify_progress(&progress);
@@ -270,43 +270,45 @@ impl ResourceLoader {
                 total_time: start_time.elapsed(),
             });
         }
-        
+
         // Separate critical and non-critical resources
-        let (critical_resources, non_critical_resources): (Vec<_>, Vec<_>) = 
+        let (critical_resources, non_critical_resources): (Vec<_>, Vec<_>) =
             resources.into_iter().partition(|r| r.is_critical);
-        
+
         let mut responses = HashMap::new();
         let mut errors = HashMap::new();
-        
+
         // Load critical resources first
         if !critical_resources.is_empty() {
             progress.phase = LoadPhase::Critical;
             self.notify_progress(&progress);
-            
-            let (critical_responses, critical_errors, updated_progress) = 
-                self.load_resource_batch(critical_resources, progress).await?;
-            
+
+            let (critical_responses, critical_errors, updated_progress) = self
+                .load_resource_batch(critical_resources, progress)
+                .await?;
+
             responses.extend(critical_responses);
             errors.extend(critical_errors);
             progress = updated_progress;
         }
-        
+
         // Load non-critical resources
         if !non_critical_resources.is_empty() && self.options.load_non_critical {
             progress.phase = LoadPhase::NonCritical;
             self.notify_progress(&progress);
-            
-            let (non_critical_responses, non_critical_errors, updated_progress) = 
-                self.load_resource_batch(non_critical_resources, progress).await?;
-            
+
+            let (non_critical_responses, non_critical_errors, updated_progress) = self
+                .load_resource_batch(non_critical_resources, progress)
+                .await?;
+
             responses.extend(non_critical_responses);
             errors.extend(non_critical_errors);
             progress = updated_progress;
         }
-        
+
         progress.phase = LoadPhase::Complete;
         self.notify_progress(&progress);
-        
+
         Ok(LoadResult {
             progress,
             responses,
@@ -314,124 +316,130 @@ impl ResourceLoader {
             total_time: start_time.elapsed(),
         })
     }
-    
+
     /// Load a batch of resources concurrently
     async fn load_resource_batch(
         &self,
         resources: Vec<ResourceRef>,
         progress: LoadProgress,
-    ) -> Result<(HashMap<Url, Response>, HashMap<Url, NetworkError>, LoadProgress), NetworkError> {
+    ) -> Result<
+        (
+            HashMap<Url, Response>,
+            HashMap<Url, NetworkError>,
+            LoadProgress,
+        ),
+        NetworkError,
+    > {
         if resources.is_empty() {
             return Ok((HashMap::new(), HashMap::new(), progress));
         }
-        
+
         // Create semaphore for concurrency control
         let semaphore = Arc::new(Semaphore::new(self.options.max_concurrent));
-        
+
         // Create progress tracking
         let progress_arc = Arc::new(Mutex::new(progress.clone()));
-        
+
         // Create tasks for each resource
-        let tasks: Vec<_> = resources.into_iter().map(|resource_ref| {
-            let semaphore = Arc::clone(&semaphore);
-            let progress_arc = Arc::clone(&progress_arc);
-            let cache = Arc::clone(&self.cache);
-            let resource = &self.resource;
-            let options = self.options.clone();
-            let callback = self.progress_callback.clone();
-            
-            async move {
-                // Acquire semaphore permit
-                let _permit = match semaphore.acquire().await {
-                    Ok(permit) => permit,
-                    Err(_) => {
-                        log::error!("Failed to acquire semaphore permit for resource loading");
-                        let error = NetworkError::ResourceError("Failed to acquire semaphore permit".to_string());
-                        return (resource_ref.url.clone(), Err(error));
-                    }
-                };
-                
-                // Load the resource
-                let result = Self::load_single_resource(
-                    resource,
-                    &resource_ref,
-                    cache,
-                    &options,
-                ).await;
-                
-                // Update progress
-                {
-                    let mut prog = match progress_arc.lock() {
-                        Ok(p) => p,
+        let tasks: Vec<_> = resources
+            .into_iter()
+            .map(|resource_ref| {
+                let semaphore = Arc::clone(&semaphore);
+                let progress_arc = Arc::clone(&progress_arc);
+                let cache = Arc::clone(&self.cache);
+                let resource = &self.resource;
+                let options = self.options.clone();
+                let callback = self.progress_callback.clone();
+
+                async move {
+                    // Acquire semaphore permit
+                    let _permit = match semaphore.acquire().await {
+                        Ok(permit) => permit,
                         Err(_) => {
-                            log::warn!("Failed to acquire progress lock");
-                            // Still return the result even if progress update fails
-                            return (resource_ref.url.clone(), result);
+                            log::error!("Failed to acquire semaphore permit for resource loading");
+                            let error = NetworkError::ResourceError(
+                                "Failed to acquire semaphore permit".to_string(),
+                            );
+                            return (resource_ref.url.clone(), Err(error));
                         }
                     };
-                    match &result {
-                        Ok(response) => {
-                            if response.from_cache() {
-                                prog.cached += 1;
-                            } else {
-                                prog.loaded += 1;
+
+                    // Load the resource
+                    let result =
+                        Self::load_single_resource(resource, &resource_ref, cache, &options).await;
+
+                    // Update progress
+                    {
+                        let mut prog = match progress_arc.lock() {
+                            Ok(p) => p,
+                            Err(_) => {
+                                log::warn!("Failed to acquire progress lock");
+                                // Still return the result even if progress update fails
+                                return (resource_ref.url.clone(), result);
                             }
-                            prog.bytes_loaded += response.body().len();
+                        };
+                        match &result {
+                            Ok(response) => {
+                                if response.from_cache() {
+                                    prog.cached += 1;
+                                } else {
+                                    prog.loaded += 1;
+                                }
+                                prog.bytes_loaded += response.body().len();
+                            }
+                            Err(_) => {
+                                prog.failed += 1;
+                            }
                         }
-                        Err(_) => {
-                            prog.failed += 1;
+
+                        // Add resource details
+                        let load_result = match &result {
+                            Ok(response) => ResourceLoadResult {
+                                url: resource_ref.url.clone(),
+                                resource_type: resource_ref.resource_type,
+                                success: true,
+                                error: None,
+                                from_cache: response.from_cache(),
+                                size_bytes: response.body().len(),
+                                load_time: Duration::from_millis(0), // Would be tracked in real implementation
+                                status_code: Some(response.status()),
+                            },
+                            Err(e) => ResourceLoadResult {
+                                url: resource_ref.url.clone(),
+                                resource_type: resource_ref.resource_type,
+                                success: false,
+                                error: Some(e.to_string()),
+                                from_cache: false,
+                                size_bytes: 0,
+                                load_time: Duration::from_millis(0),
+                                status_code: None,
+                            },
+                        };
+
+                        prog.resource_details
+                            .insert(resource_ref.url.to_string(), load_result);
+
+                        // Notify progress callback
+                        if let Some(ref cb) = callback {
+                            cb(&prog);
                         }
                     }
-                    
-                    // Add resource details
-                    let load_result = match &result {
-                        Ok(response) => ResourceLoadResult {
-                            url: resource_ref.url.clone(),
-                            resource_type: resource_ref.resource_type,
-                            success: true,
-                            error: None,
-                            from_cache: response.from_cache(),
-                            size_bytes: response.body().len(),
-                            load_time: Duration::from_millis(0), // Would be tracked in real implementation
-                            status_code: Some(response.status()),
-                        },
-                        Err(e) => ResourceLoadResult {
-                            url: resource_ref.url.clone(),
-                            resource_type: resource_ref.resource_type,
-                            success: false,
-                            error: Some(e.to_string()),
-                            from_cache: false,
-                            size_bytes: 0,
-                            load_time: Duration::from_millis(0),
-                            status_code: None,
-                        },
-                    };
-                    
-                    prog.resource_details.insert(
-                        resource_ref.url.to_string(),
-                        load_result,
-                    );
-                    
-                    // Notify progress callback
-                    if let Some(ref cb) = callback {
-                        cb(&prog);
-                    }
+
+                    (resource_ref.url, result)
                 }
-                
-                (resource_ref.url, result)
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         // Apply total timeout to the entire batch
         let batch_future = join_all(tasks);
         let results = timeout(self.options.total_timeout, batch_future)
             .await
             .map_err(|_| NetworkError::TimeoutError(self.options.total_timeout))?;
-        
+
         // Separate successful and failed results
         let mut responses = HashMap::new();
         let mut errors = HashMap::new();
-        
+
         for (url, result) in results {
             match result {
                 Ok(response) => {
@@ -442,22 +450,24 @@ impl ResourceLoader {
                 }
             }
         }
-        
+
         // Get final progress
         let final_progress = {
             let prog = match progress_arc.lock() {
                 Ok(p) => p,
                 Err(_) => {
                     log::error!("Failed to acquire final progress lock");
-                    return Err(NetworkError::ResourceError("Failed to acquire progress lock".to_string()));
+                    return Err(NetworkError::ResourceError(
+                        "Failed to acquire progress lock".to_string(),
+                    ));
                 }
             };
             prog.clone()
         };
-        
+
         Ok((responses, errors, final_progress))
     }
-    
+
     /// Load a single resource with caching and retries
     async fn load_single_resource(
         resource: &Resource,
@@ -466,25 +476,23 @@ impl ResourceLoader {
         options: &LoadOptions,
     ) -> Result<Response, NetworkError> {
         let url = &resource_ref.url;
-        
+
         // Check cache first if enabled
         if options.use_cache {
             if let Some(cached_response) = cache.get(url) {
                 log::debug!("Cache hit for {}", url);
                 return Ok(cached_response);
             }
-            
+
             // Check if we can validate a stale entry
             if options.validate_cache {
                 if let Some(stale_entry) = cache.get_for_validation(url) {
                     log::debug!("Validating stale cache entry for {}", url);
-                    
+
                     // Create conditional request
-                    let mut request = crate::request::Request::new(
-                        crate::request::Method::GET,
-                        url.as_str(),
-                    )?;
-                    
+                    let mut request =
+                        crate::request::Request::new(crate::request::Method::GET, url.as_str())?;
+
                     // Add validation headers
                     if let Some(etag) = &stale_entry.etag {
                         request = request.with_header("If-None-Match", etag);
@@ -492,9 +500,9 @@ impl ResourceLoader {
                     if let Some(last_modified) = &stale_entry.last_modified {
                         request = request.with_header("If-Modified-Since", last_modified);
                     }
-                    
+
                     let prepared_request = request.prepare();
-                    
+
                     // Make conditional request
                     match timeout(options.request_timeout, resource.fetch(prepared_request)).await {
                         Ok(Ok(response)) => {
@@ -521,13 +529,13 @@ impl ResourceLoader {
                 }
             }
         }
-        
+
         // Load from network with retries
         let mut last_error = NetworkError::UnknownError("No attempts made".to_string());
-        
+
         for attempt in 0..=options.max_retries {
             log::debug!("Loading {} (attempt {})", url, attempt + 1);
-            
+
             // Create request based on resource type
             let request = match resource_ref.resource_type {
                 ResourceType::Css => {
@@ -554,31 +562,38 @@ impl ResourceLoader {
                         .with_timeout(options.request_timeout)
                         .prepare()
                 }
-                _ => {
-                    crate::request::Request::new(crate::request::Method::GET, url.as_str())?
-                        .with_timeout(options.request_timeout)
-                        .prepare()
-                }
+                _ => crate::request::Request::new(crate::request::Method::GET, url.as_str())?
+                    .with_timeout(options.request_timeout)
+                    .prepare(),
             };
-            
+
             // Make the request with timeout
             match timeout(options.request_timeout, resource.fetch(request)).await {
                 Ok(Ok(response)) => {
-                    log::debug!("Successfully loaded {} ({} bytes)", url, response.body().len());
-                    
+                    log::debug!(
+                        "Successfully loaded {} ({} bytes)",
+                        url,
+                        response.body().len()
+                    );
+
                     // Cache the response if caching is enabled
                     if options.use_cache {
                         if let Err(cache_error) = cache.put(url, response.clone()) {
                             log::debug!("Failed to cache {}: {}", url, cache_error);
                         }
                     }
-                    
+
                     return Ok(response);
                 }
                 Ok(Err(e)) => {
                     last_error = e;
-                    log::debug!("Failed to load {} (attempt {}): {}", url, attempt + 1, last_error);
-                    
+                    log::debug!(
+                        "Failed to load {} (attempt {}): {}",
+                        url,
+                        attempt + 1,
+                        last_error
+                    );
+
                     // Don't retry on certain errors
                     if !last_error.is_retryable() {
                         break;
@@ -589,30 +604,34 @@ impl ResourceLoader {
                     log::debug!("Timeout loading {} (attempt {})", url, attempt + 1);
                 }
             }
-            
+
             // Wait before retry (exponential backoff)
             if attempt < options.max_retries {
                 let delay = Duration::from_millis(100 * (1 << attempt));
                 tokio::time::sleep(delay).await;
             }
         }
-        
-        log::debug!("Failed to load {} after {} attempts", url, options.max_retries + 1);
+
+        log::debug!(
+            "Failed to load {} after {} attempts",
+            url,
+            options.max_retries + 1
+        );
         Err(last_error)
     }
-    
+
     /// Notify progress callback if set
     fn notify_progress(&self, progress: &LoadProgress) {
         if let Some(ref callback) = self.progress_callback {
             callback(progress);
         }
     }
-    
+
     /// Get cache statistics
     pub fn cache_stats(&self) -> crate::cache::CacheStats {
         self.cache.stats()
     }
-    
+
     /// Clear the resource cache
     pub fn clear_cache(&self) {
         self.cache.clear();
@@ -623,30 +642,30 @@ impl ResourceLoader {
 mod tests {
     use super::*;
     use crate::NetworkConfig;
-    
+
     #[tokio::test]
     async fn test_resource_loader_creation() {
         let config = NetworkConfig::default();
         let loader = ResourceLoader::new(config).await;
         assert!(loader.is_ok());
     }
-    
+
     #[test]
     fn test_load_progress() {
         let mut progress = LoadProgress::new(10);
         assert_eq!(progress.completion_percentage(), 0.0);
         assert!(!progress.is_complete());
-        
+
         progress.loaded = 5;
         assert_eq!(progress.completion_percentage(), 0.5);
-        
+
         progress.loaded = 7;
         progress.failed = 2;
         progress.cached = 1;
         assert_eq!(progress.completion_percentage(), 1.0);
         assert!(progress.is_complete());
     }
-    
+
     #[test]
     fn test_load_options_default() {
         let options = LoadOptions::default();
@@ -655,15 +674,20 @@ mod tests {
         assert!(options.load_non_critical);
         assert!(options.use_cache);
     }
-    
+
     #[tokio::test]
     async fn test_empty_resource_loading() {
         let config = NetworkConfig::default();
-        let loader = ResourceLoader::new(config).await.expect("ResourceLoader creation should succeed in tests");
-        
+        let loader = ResourceLoader::new(config)
+            .await
+            .expect("ResourceLoader creation should succeed in tests");
+
         let progress = LoadProgress::new(0);
-        let result = loader.load_resources(vec![], progress).await.expect("Empty resource loading should succeed");
-        
+        let result = loader
+            .load_resources(vec![], progress)
+            .await
+            .expect("Empty resource loading should succeed");
+
         assert_eq!(result.responses.len(), 0);
         assert_eq!(result.errors.len(), 0);
         assert!(result.progress.is_complete());

@@ -6,12 +6,12 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use crate::error::NetworkError;
-use crate::resource::{Resource, ResourceType};
 use crate::request::{Method, Request};
+use crate::resource::{Resource, ResourceType};
 use crate::response::Response;
+use crate::tracker_blocking::TrackerBlockingEngine;
 use crate::NetworkConfig;
 use crate::PrivacyLevel;
-use crate::tracker_blocking::TrackerBlockingEngine;
 
 /// Resource loading policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,22 +102,22 @@ impl Default for ResourceManagerConfig {
 pub struct ResourceManager {
     /// Resource fetcher
     resource: Arc<Resource>,
-    
+
     /// Resource cache
     cache: Arc<RwLock<HashMap<String, CacheEntry>>>,
-    
+
     /// Current configuration
     pub config: ResourceManagerConfig,
-    
+
     /// Known tracker domains
     tracker_domains: Arc<RwLock<HashMap<String, OriginType>>>,
-    
+
     /// Integrated tracker blocking engine
     tracker_blocker: Option<Arc<TrackerBlockingEngine>>,
-    
+
     /// Resource load stats for the current session
     load_stats: Arc<Mutex<ResourceStats>>,
-    
+
     /// Main frame URL (top-level document)
     main_frame_url: Arc<RwLock<Option<Url>>>,
 }
@@ -127,19 +127,19 @@ pub struct ResourceManager {
 pub struct ResourceStats {
     /// Total requests attempted
     pub total_requests: usize,
-    
+
     /// Successful requests
     pub successful_requests: usize,
-    
+
     /// Failed requests
     pub failed_requests: usize,
-    
+
     /// Cached responses
     pub cache_hits: usize,
-    
+
     /// Blocked resources by type
     pub blocked: HashMap<String, usize>,
-    
+
     /// Bytes transferred
     pub bytes_transferred: usize,
 }
@@ -149,42 +149,51 @@ impl ResourceManager {
     pub async fn new() -> Result<Self, NetworkError> {
         Self::with_config(ResourceManagerConfig::default()).await
     }
-    
+
     /// Create a new ResourceManager with custom configuration
     pub async fn with_config(config: ResourceManagerConfig) -> Result<Self, NetworkError> {
         Self::with_config_and_tracker_blocking(config, None).await
     }
-    
+
     /// Create a new ResourceManager with custom configuration and tracker blocking
     pub async fn with_config_and_tracker_blocking(
-        config: ResourceManagerConfig, 
-        _tracker_blocker: Option<Arc<TrackerBlockingEngine>>
+        config: ResourceManagerConfig,
+        _tracker_blocker: Option<Arc<TrackerBlockingEngine>>,
     ) -> Result<Self, NetworkError> {
         // Create the resource fetcher
-        let resource = Arc::new(
-            Resource::new(config.network_config.clone()).await?
-        );
-        
+        let resource = Arc::new(Resource::new(config.network_config.clone()).await?);
+
         // Initialize tracker domains with common trackers
         let mut tracker_domains = HashMap::new();
-        
+
         // Add known analytics trackers
         for domain in [
-            "google-analytics.com", "analytics.google.com", "stats.g.doubleclick.net",
-            "pixel.facebook.com", "analytics.facebook.com", "analytics.twitter.com",
-            "matomo.org", "statcounter.com", "quantserve.com", "hotjar.com",
+            "google-analytics.com",
+            "analytics.google.com",
+            "stats.g.doubleclick.net",
+            "pixel.facebook.com",
+            "analytics.facebook.com",
+            "analytics.twitter.com",
+            "matomo.org",
+            "statcounter.com",
+            "quantserve.com",
+            "hotjar.com",
         ] {
             tracker_domains.insert(domain.to_string(), OriginType::Analytics);
         }
-        
+
         // Add known social media trackers
         for domain in [
-            "connect.facebook.net", "platform.twitter.com", "platform.linkedin.com",
-            "platform.instagram.com", "widgets.pinterest.com", "api.tiktok.com",
+            "connect.facebook.net",
+            "platform.twitter.com",
+            "platform.linkedin.com",
+            "platform.instagram.com",
+            "widgets.pinterest.com",
+            "api.tiktok.com",
         ] {
             tracker_domains.insert(domain.to_string(), OriginType::SocialMedia);
         }
-        
+
         Ok(Self {
             resource,
             cache: Arc::new(RwLock::new(HashMap::new())),
@@ -195,81 +204,94 @@ impl ResourceManager {
             tracker_blocker: _tracker_blocker,
         })
     }
-    
+
     /// Set the main frame URL (top-level document)
     pub fn set_main_frame_url(&self, url: Url) {
         if let Ok(mut main_frame) = self.main_frame_url.write() {
             *main_frame = Some(url);
         }
     }
-    
+
     /// Check if a resource should be blocked based on policy (async version with tracker blocking)
-    async fn should_block_resource_advanced(&self, url: &Url, resource_type: ResourceType) -> Option<String> {
+    async fn should_block_resource_advanced(
+        &self,
+        url: &Url,
+        resource_type: ResourceType,
+    ) -> Option<String> {
         // Use advanced tracker blocking engine if available
         if let Some(ref blocker) = self.tracker_blocker {
-            if let Some(blocked) = blocker.should_block_url(url.as_str(), Some(resource_type)).await {
+            if let Some(blocked) = blocker
+                .should_block_url(url.as_str(), Some(resource_type))
+                .await
+            {
                 // Record the blocked request
                 blocker.record_blocked_request(blocked.clone()).await;
                 return Some(blocked.reason);
             }
         }
-        
+
         // Fall back to basic policy checking
         self.should_block_resource_basic(url, resource_type)
     }
-    
+
     /// Check if a resource should be blocked based on policy (basic version)
-    fn should_block_resource_basic(&self, url: &Url, resource_type: ResourceType) -> Option<String> {
+    fn should_block_resource_basic(
+        &self,
+        url: &Url,
+        resource_type: ResourceType,
+    ) -> Option<String> {
         // Get main frame URL for comparison
         let main_frame = if let Ok(main_frame) = self.main_frame_url.read() {
             main_frame.clone()
         } else {
             None
         };
-        
+
         // Determine origin type
         let origin_type = self.classify_origin(url, main_frame.as_ref());
-        
+
         // Apply resource policy
         match self.config.resource_policy {
             ResourcePolicy::AllowAll => None,
-            
+
             ResourcePolicy::BlockScripts => {
                 if resource_type == ResourceType::Script {
                     Some("Scripts are blocked by policy".to_string())
                 } else {
                     None
                 }
-            },
-            
+            }
+
             ResourcePolicy::BlockThirdParty => {
-                if origin_type == OriginType::ThirdParty || 
-                   origin_type == OriginType::Tracker || 
-                   origin_type == OriginType::Analytics ||
-                   origin_type == OriginType::SocialMedia {
+                if origin_type == OriginType::ThirdParty
+                    || origin_type == OriginType::Tracker
+                    || origin_type == OriginType::Analytics
+                    || origin_type == OriginType::SocialMedia
+                {
                     Some(format!("Third-party resource blocked: {:?}", origin_type))
                 } else {
                     None
                 }
-            },
-            
+            }
+
             ResourcePolicy::BlockTracking => {
-                if origin_type == OriginType::Tracker || 
-                   origin_type == OriginType::Analytics ||
-                   origin_type == OriginType::SocialMedia {
+                if origin_type == OriginType::Tracker
+                    || origin_type == OriginType::Analytics
+                    || origin_type == OriginType::SocialMedia
+                {
                     Some(format!("Tracking resource blocked: {:?}", origin_type))
                 } else {
                     None
                 }
-            },
-            
+            }
+
             ResourcePolicy::Custom => {
                 // Custom policies would be implemented here
                 None
-            },
+            }
         }
     }
-    
+
     /// Classify the origin of a URL relative to the main frame
     fn classify_origin(&self, url: &Url, main_frame: Option<&Url>) -> OriginType {
         // Check if it's a known tracker
@@ -279,7 +301,7 @@ impl ResourceManager {
                 if let Some(origin_type) = trackers.get(host) {
                     return *origin_type;
                 }
-                
+
                 // Check for subdomain match
                 for (tracker, origin_type) in trackers.iter() {
                     if host.ends_with(tracker) {
@@ -288,109 +310,116 @@ impl ResourceManager {
                 }
             }
         }
-        
+
         // If we have a main frame, check if it's first or third party
         if let Some(main) = main_frame {
             if let (Some(main_host), Some(url_host)) = (main.host_str(), url.host_str()) {
                 // Extract domain from host (e.g., example.com from www.example.com)
                 let main_domain = Self::extract_domain(main_host);
                 let url_domain = Self::extract_domain(url_host);
-                
+
                 if main_domain == url_domain {
                     return OriginType::FirstParty;
                 } else {
                     // Check if it's a CDN or API service
-                    if url_host.contains("cdn.") || 
-                       url_host.contains("api.") || 
-                       url_host.contains("assets.") {
+                    if url_host.contains("cdn.")
+                        || url_host.contains("api.")
+                        || url_host.contains("assets.")
+                    {
                         return OriginType::Service;
                     }
-                    
+
                     return OriginType::ThirdParty;
                 }
             }
         }
-        
+
         // Default to third-party if we can't determine
         OriginType::ThirdParty
     }
-    
+
     /// Extract the base domain from a host
     fn extract_domain(host: &str) -> String {
         let parts: Vec<&str> = host.split('.').collect();
-        
+
         // For hosts with enough parts, take the last two (e.g., example.com from www.example.com)
         if parts.len() >= 2 {
             let domain = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
-            
+
             // Handle special cases like co.uk
-            if parts.len() >= 3 && (
-                (parts[parts.len() - 1] == "uk" && parts[parts.len() - 2] == "co") ||
+            if parts.len() >= 3
+                && ((parts[parts.len() - 1] == "uk" && parts[parts.len() - 2] == "co") ||
                 (parts[parts.len() - 1] == "au" && parts[parts.len() - 2] == "com") || 
                 // Add other special TLDs as needed
-                false
-            ) {
-                return format!("{}.{}.{}", parts[parts.len() - 3], parts[parts.len() - 2], parts[parts.len() - 1]);
+                false)
+            {
+                return format!(
+                    "{}.{}.{}",
+                    parts[parts.len() - 3],
+                    parts[parts.len() - 2],
+                    parts[parts.len() - 1]
+                );
             }
-            
+
             return domain;
         }
-        
+
         // If we can't determine, return the original
         host.to_string()
     }
-    
+
     /// Check if a resource is in the cache
     fn check_cache(&self, url: &Url) -> Option<Response> {
         // Apply cache policy
         if self.config.cache_policy == CachePolicy::NeverCache {
             return None;
         }
-        
+
         if let Ok(cache) = self.cache.read() {
             let key = url.as_str();
-            
+
             if let Some(entry) = cache.get(key) {
                 // Check if expired
-                if entry.expires > Instant::now() || self.config.cache_policy == CachePolicy::PreferCache {
+                if entry.expires > Instant::now()
+                    || self.config.cache_policy == CachePolicy::PreferCache
+                {
                     // Update stats
                     if let Ok(mut stats) = self.load_stats.try_lock() {
                         stats.cache_hits += 1;
                     }
-                    
+
                     return Some(entry.response.clone());
                 }
             }
         }
-        
+
         None
     }
-    
+
     /// Update the cache with a new response
     fn update_cache(&self, url: &Url, response: Response) {
         // Don't cache if policy is NeverCache
         if self.config.cache_policy == CachePolicy::NeverCache {
             return;
         }
-        
+
         // Get cache control headers
-        let cache_control = response.header("cache-control")
-            .map(|s| s.to_lowercase());
-        
+        let cache_control = response.header("cache-control").map(|s| s.to_lowercase());
+
         // Check for no-store directive
         if let Some(cc) = &cache_control {
             if cc.contains("no-store") {
                 return;
             }
         }
-        
+
         // Calculate TTL
         let ttl = if let Some(cc) = &cache_control {
             if cc.contains("no-cache") && self.config.cache_policy != CachePolicy::PreferCache {
                 // Honor no-cache unless we're set to prefer cache
                 return;
             }
-            
+
             // Try to parse max-age
             if let Some(max_age_pos) = cc.find("max-age=") {
                 let max_age_str = &cc[max_age_pos + 8..];
@@ -411,13 +440,13 @@ impl ResourceManager {
         } else {
             self.config.default_cache_ttl
         };
-        
+
         // Extract ETag
         let etag = response.header("etag").cloned();
-        
+
         // Extract Last-Modified
         let last_modified = response.header("last-modified").cloned();
-        
+
         // Create cache entry
         let entry = CacheEntry {
             response: response.clone(),
@@ -425,93 +454,87 @@ impl ResourceManager {
             etag,
             last_modified,
         };
-        
+
         // Update cache
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(url.as_str().to_string(), entry);
-            
+
             // Implement cache size management (simple version)
             // A real implementation would track memory usage and evict oldest entries
-            if cache.len() > self.config.max_cache_size_mb * 20 { // rough estimate
+            if cache.len() > self.config.max_cache_size_mb * 20 {
+                // rough estimate
                 // Remove oldest 25% of entries
-                let keys_to_remove: Vec<String> = cache.keys()
-                    .take(cache.len() / 4)
-                    .cloned()
-                    .collect();
-                
+                let keys_to_remove: Vec<String> =
+                    cache.keys().take(cache.len() / 4).cloned().collect();
+
                 for key in keys_to_remove {
                     cache.remove(&key);
                 }
             }
         }
     }
-    
+
     /// Fetch a resource with privacy protections
-    pub async fn fetch(&self, url: &str, resource_type: Option<ResourceType>) -> Result<Response, NetworkError> {
+    pub async fn fetch(
+        &self,
+        url: &str,
+        resource_type: Option<ResourceType>,
+    ) -> Result<Response, NetworkError> {
         let url = Url::parse(url).map_err(NetworkError::UrlError)?;
-        
+
         // Update stats
         if let Ok(mut stats) = self.load_stats.try_lock() {
             stats.total_requests += 1;
         }
-        
+
         // Determine resource type if not specified
         let resource_type = resource_type.unwrap_or(ResourceType::Other);
-        
+
         // Check policy before loading (async)
-        if let Some(block_reason) = self.should_block_resource_advanced(&url, resource_type).await {
+        if let Some(block_reason) = self
+            .should_block_resource_advanced(&url, resource_type)
+            .await
+        {
             // Update blocked stats
             if let Ok(mut stats) = self.load_stats.try_lock() {
                 let counter = stats.blocked.entry(block_reason.clone()).or_insert(0);
                 *counter += 1;
                 stats.failed_requests += 1;
             }
-            
+
             return Err(NetworkError::PrivacyViolationError(block_reason));
         }
-        
+
         // Check cache first
         if let Some(cached) = self.check_cache(&url) {
             return Ok(cached);
         }
-        
+
         // If not in cache, create a request based on resource type
         let request = match resource_type {
-            ResourceType::Html => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "text/html,application/xhtml+xml")
-            },
+            ResourceType::Html => Request::new(Method::GET, url.as_str())?
+                .with_header("Accept", "text/html,application/xhtml+xml"),
             ResourceType::Css => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "text/css")
-            },
-            ResourceType::Script => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "application/javascript,text/javascript")
-            },
+                Request::new(Method::GET, url.as_str())?.with_header("Accept", "text/css")
+            }
+            ResourceType::Script => Request::new(Method::GET, url.as_str())?
+                .with_header("Accept", "application/javascript,text/javascript"),
             ResourceType::Image => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "image/*")
-            },
-            ResourceType::Font => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "font/*,application/font-*")
-            },
+                Request::new(Method::GET, url.as_str())?.with_header("Accept", "image/*")
+            }
+            ResourceType::Font => Request::new(Method::GET, url.as_str())?
+                .with_header("Accept", "font/*,application/font-*"),
             ResourceType::Json => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "application/json")
-            },
-            ResourceType::Xml => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "application/xml,text/xml")
-            },
+                Request::new(Method::GET, url.as_str())?.with_header("Accept", "application/json")
+            }
+            ResourceType::Xml => Request::new(Method::GET, url.as_str())?
+                .with_header("Accept", "application/xml,text/xml"),
             ResourceType::Text => {
-                Request::new(Method::GET, url.as_str())?
-                    .with_header("Accept", "text/plain")
-            },
+                Request::new(Method::GET, url.as_str())?.with_header("Accept", "text/plain")
+            }
             _ => Request::new(Method::GET, url.as_str())?,
         };
-        
+
         // Set privacy level based on origin type
         let origin_type = self.classify_origin(&url, None);
         let privacy_level = match origin_type {
@@ -524,26 +547,26 @@ impl ResourceManager {
                     PrivacyLevel::Balanced => PrivacyLevel::High,
                     PrivacyLevel::Custom => PrivacyLevel::High,
                 }
-            },
+            }
             _ => PrivacyLevel::Maximum, // Maximum privacy for trackers, etc.
         };
-        
+
         // Add cache validation headers if needed
         let request_with_validation = if self.config.cache_policy == CachePolicy::AlwaysValidate {
             if let Ok(cache) = self.cache.read() {
                 if let Some(entry) = cache.get(url.as_str()) {
                     let mut req = request;
-                    
+
                     // Add ETag if available
                     if let Some(etag) = &entry.etag {
                         req = req.with_header("If-None-Match", etag);
                     }
-                    
+
                     // Add Last-Modified if available
                     if let Some(last_modified) = &entry.last_modified {
                         req = req.with_header("If-Modified-Since", last_modified);
                     }
-                    
+
                     req
                 } else {
                     request
@@ -554,15 +577,15 @@ impl ResourceManager {
         } else {
             request
         };
-        
+
         // Prepare the request with the appropriate privacy level
         let final_request = request_with_validation
             .with_privacy_level(privacy_level)
             .prepare();
-        
+
         // Fetch the resource
         let result = self.resource.fetch(final_request).await;
-        
+
         match result {
             Ok(response) => {
                 // Update stats
@@ -570,42 +593,42 @@ impl ResourceManager {
                     stats.successful_requests += 1;
                     stats.bytes_transferred += response.body().len();
                 }
-                
+
                 // Update cache
                 self.update_cache(&url, response.clone());
-                
+
                 Ok(response)
-            },
+            }
             Err(e) => {
                 // Update stats
                 if let Ok(mut stats) = self.load_stats.try_lock() {
                     stats.failed_requests += 1;
                 }
-                
+
                 Err(e)
-            },
+            }
         }
     }
-    
+
     /// Helper method to fetch an HTML document (main frame)
     pub async fn fetch_html(&self, url: &str) -> Result<Response, NetworkError> {
         // Parse URL for later use
         let parsed_url = Url::parse(url).map_err(NetworkError::UrlError)?;
-        
+
         // Set as main frame URL
         self.set_main_frame_url(parsed_url.clone());
-        
+
         // Fetch as HTML resource type
         self.fetch(url, Some(ResourceType::Html)).await
     }
-    
+
     /// Clear the resource cache
     pub fn clear_cache(&self) {
         if let Ok(mut cache) = self.cache.write() {
             cache.clear();
         }
     }
-    
+
     /// Get current resource stats
     pub async fn get_stats(&self) -> ResourceStats {
         let stats = self.load_stats.lock().await;
@@ -619,21 +642,21 @@ impl ResourceManager {
             bytes_transferred: stats.bytes_transferred,
         }
     }
-    
+
     /// Add a domain to the tracker list
     pub fn add_tracker(&self, domain: &str, origin_type: OriginType) {
         if let Ok(mut trackers) = self.tracker_domains.write() {
             trackers.insert(domain.to_string(), origin_type);
         }
     }
-    
+
     /// Check if a domain is in the tracker list
     pub fn is_tracker(&self, domain: &str) -> bool {
         if let Ok(trackers) = self.tracker_domains.read() {
             if trackers.contains_key(domain) {
                 return true;
             }
-            
+
             // Check for subdomain match
             for tracker in trackers.keys() {
                 if domain.ends_with(tracker) {
@@ -641,58 +664,68 @@ impl ResourceManager {
                 }
             }
         }
-        
+
         false
     }
-    
+
     /// Set the tracker blocking engine
     pub fn set_tracker_blocker(&mut self, tracker_blocker: Arc<TrackerBlockingEngine>) {
         self.tracker_blocker = Some(tracker_blocker);
         log::info!("🛡️ Tracker blocking engine integrated with resource manager");
     }
-    
+
     /// Create a ResourceManager with integrated tracker blocking
-    pub async fn with_tracker_blocking(config: ResourceManagerConfig) -> Result<Self, NetworkError> {
+    pub async fn with_tracker_blocking(
+        config: ResourceManagerConfig,
+    ) -> Result<Self, NetworkError> {
         // Create tracker blocking engine from network config
         let tracker_config = config.network_config.tracker_blocking.clone();
         let tracker_blocker = Arc::new(TrackerBlockingEngine::with_config(tracker_config).await?);
-        
+
         Self::with_config_and_tracker_blocking(config, Some(tracker_blocker)).await
     }
-    
+
     /// Get comprehensive blocking statistics
-    pub async fn get_comprehensive_stats(&self) -> (ResourceStats, Option<crate::tracker_blocking::TrackerBlockingStats>) {
+    pub async fn get_comprehensive_stats(
+        &self,
+    ) -> (
+        ResourceStats,
+        Option<crate::tracker_blocking::TrackerBlockingStats>,
+    ) {
         let resource_stats = self.get_stats().await;
         let tracker_stats = if let Some(ref blocker) = self.tracker_blocker {
             Some(blocker.get_stats().await)
         } else {
             None
         };
-        
+
         (resource_stats, tracker_stats)
     }
-    
+
     /// Update the resource manager configuration
     pub async fn update_config(&self, config: ResourceManagerConfig) -> Result<(), NetworkError> {
         // We can't modify self.resource directly since it's behind an Arc
         // Instead, in a real implementation with mutable config, we would create a new Resource
         // and update the Arc.
-        
+
         // For this implementation, we'll just log that the config would be updated
         if self.config.network_config != config.network_config {
             log::info!("Network configuration would be updated");
         }
-        
+
         if self.config.resource_policy != config.resource_policy {
-            log::info!("Resource policy would be updated to {:?}", config.resource_policy);
+            log::info!(
+                "Resource policy would be updated to {:?}",
+                config.resource_policy
+            );
         }
-        
+
         if self.config.cache_policy != config.cache_policy {
             log::info!("Cache policy would be updated to {:?}", config.cache_policy);
         }
-        
+
         // In a real implementation, we would update self.config here
-        
+
         Ok(())
     }
 }
@@ -700,17 +733,26 @@ impl ResourceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_resource_manager_creation() {
         let manager = ResourceManager::new().await;
         assert!(manager.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_domain_extraction() {
-        assert_eq!(ResourceManager::extract_domain("www.example.com"), "example.com");
-        assert_eq!(ResourceManager::extract_domain("api.service.co.uk"), "service.co.uk");
-        assert_eq!(ResourceManager::extract_domain("cdn.assets.example.com"), "example.com");
+        assert_eq!(
+            ResourceManager::extract_domain("www.example.com"),
+            "example.com"
+        );
+        assert_eq!(
+            ResourceManager::extract_domain("api.service.co.uk"),
+            "service.co.uk"
+        );
+        assert_eq!(
+            ResourceManager::extract_domain("cdn.assets.example.com"),
+            "example.com"
+        );
     }
-} 
+}

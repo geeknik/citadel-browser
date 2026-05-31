@@ -89,22 +89,24 @@ fn create_element_handler(
 
     // Block dangerous elements
     if is_dangerous_element(&tag) {
-        return Err(boa_engine::JsError::from_opaque(JsValue::from(
-            js_string!("SecurityError: creation of dangerous elements is blocked"),
-        )));
+        return Err(boa_engine::JsError::from_opaque(JsValue::from(js_string!(
+            "SecurityError: creation of dangerous elements is blocked"
+        ))));
     }
 
     let upper_tag = tag.to_ascii_uppercase();
 
     // Build a minimal element stub.
     // addEventListener and setAttribute are safe no-op stubs.
-    let add_event_listener = NativeFunction::from_fn_ptr(
-        |_this: &JsValue, _args: &[JsValue], _ctx: &mut Context| Ok(JsValue::undefined()),
-    );
+    let add_event_listener =
+        NativeFunction::from_fn_ptr(|_this: &JsValue, _args: &[JsValue], _ctx: &mut Context| {
+            Ok(JsValue::undefined())
+        });
 
-    let set_attribute = NativeFunction::from_fn_ptr(
-        |_this: &JsValue, _args: &[JsValue], _ctx: &mut Context| Ok(JsValue::undefined()),
-    );
+    let set_attribute =
+        NativeFunction::from_fn_ptr(|_this: &JsValue, _args: &[JsValue], _ctx: &mut Context| {
+            Ok(JsValue::undefined())
+        });
 
     let el = ObjectInitializer::new(ctx)
         .property(
@@ -132,16 +134,11 @@ pub fn setup_console_bindings(ctx: &mut Context) -> ParserResult<()> {
     info!("[JS] Setting up console logging APIs");
 
     // All console methods are safe no-ops that return undefined
-    let log_fn =
-        NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
-    let warn_fn =
-        NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
-    let error_fn =
-        NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
-    let info_fn =
-        NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
-    let debug_fn =
-        NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
+    let log_fn = NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
+    let warn_fn = NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
+    let error_fn = NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
+    let info_fn = NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
+    let debug_fn = NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::undefined()));
 
     let console = ObjectInitializer::new(ctx)
         .function(log_fn, js_string!("log"), 0)
@@ -152,9 +149,7 @@ pub fn setup_console_bindings(ctx: &mut Context) -> ParserResult<()> {
         .build();
 
     ctx.register_global_property(js_string!("console"), console, Attribute::all())
-        .map_err(|e| {
-            crate::error::ParserError::JsError(format!("Failed to set console: {}", e))
-        })?;
+        .map_err(|e| crate::error::ParserError::JsError(format!("Failed to set console: {}", e)))?;
 
     Ok(())
 }
@@ -183,11 +178,7 @@ pub fn setup_window_bindings(ctx: &mut Context) -> ParserResult<()> {
             js_string!("example.com"),
             Attribute::all(),
         )
-        .property(
-            js_string!("pathname"),
-            js_string!("/"),
-            Attribute::all(),
-        )
+        .property(js_string!("pathname"), js_string!("/"), Attribute::all())
         .property(js_string!("search"), js_string!(""), Attribute::all())
         .property(js_string!("hash"), js_string!(""), Attribute::all())
         .build();
@@ -219,11 +210,7 @@ pub fn setup_window_bindings(ctx: &mut Context) -> ParserResult<()> {
             JsValue::from(false),
             Attribute::all(),
         )
-        .property(
-            js_string!("doNotTrack"),
-            js_string!("1"),
-            Attribute::all(),
-        )
+        .property(js_string!("doNotTrack"), js_string!("1"), Attribute::all())
         .property(
             js_string!("hardwareConcurrency"),
             JsValue::from(4),
@@ -238,7 +225,11 @@ pub fn setup_window_bindings(ctx: &mut Context) -> ParserResult<()> {
 
     // --- screen (anti-fingerprinting fixed values) ---
     let screen = ObjectInitializer::new(ctx)
-        .property(js_string!("width"), JsValue::from(1920_i32), Attribute::all())
+        .property(
+            js_string!("width"),
+            JsValue::from(1920_i32),
+            Attribute::all(),
+        )
         .property(
             js_string!("height"),
             JsValue::from(1080_i32),
@@ -267,16 +258,12 @@ pub fn setup_window_bindings(ctx: &mut Context) -> ParserResult<()> {
         .build();
 
     ctx.register_global_property(js_string!("screen"), screen, Attribute::all())
-        .map_err(|e| {
-            crate::error::ParserError::JsError(format!("Failed to set screen: {}", e))
-        })?;
+        .map_err(|e| crate::error::ParserError::JsError(format!("Failed to set screen: {}", e)))?;
 
     // --- window references the global object ---
     let global = ctx.global_object();
     ctx.register_global_property(js_string!("window"), global, Attribute::all())
-        .map_err(|e| {
-            crate::error::ParserError::JsError(format!("Failed to set window: {}", e))
-        })?;
+        .map_err(|e| crate::error::ParserError::JsError(format!("Failed to set window: {}", e)))?;
 
     info!("[JS] Window APIs configured for privacy-first browsing");
 
@@ -287,11 +274,7 @@ pub fn setup_window_bindings(ctx: &mut Context) -> ParserResult<()> {
 ///
 /// Sets up console, window, and DOM bindings, then evaluates the supplied code.
 /// Returns the stringified result or a `ParserError` on failure.
-pub fn execute_with_dom_context(
-    ctx: &mut Context,
-    dom: &Dom,
-    code: &str,
-) -> ParserResult<String> {
+pub fn execute_with_dom_context(ctx: &mut Context, dom: &Dom, code: &str) -> ParserResult<String> {
     info!("[JS] Executing JavaScript with full DOM context");
 
     // Set up browser environment
@@ -482,12 +465,7 @@ impl JSContentSecurityPolicy {
     }
 
     /// Check if script execution is allowed
-    pub fn is_script_allowed(
-        &self,
-        source: &str,
-        nonce: Option<&str>,
-        hash: Option<&str>,
-    ) -> bool {
+    pub fn is_script_allowed(&self, source: &str, nonce: Option<&str>, hash: Option<&str>) -> bool {
         // Check nonce
         if let Some(nonce) = nonce {
             if self.nonces.contains(nonce) {
@@ -757,7 +735,11 @@ mod security_tests {
         for tag in &dangerous {
             let code = format!("document.createElement('{}')", tag);
             let result = ctx.eval(Source::from_bytes(code.as_bytes()));
-            assert!(result.is_err(), "createElement('{}') should be blocked", tag);
+            assert!(
+                result.is_err(),
+                "createElement('{}') should be blocked",
+                tag
+            );
         }
     }
 
@@ -912,9 +894,7 @@ mod security_tests {
         assert_eq!(v.as_number(), Some(4.0));
 
         // userAgent contains Citadel
-        let v = ctx
-            .eval(Source::from_bytes("navigator.userAgent"))
-            .unwrap();
+        let v = ctx.eval(Source::from_bytes("navigator.userAgent")).unwrap();
         let ua = v
             .as_string()
             .map(|s| s.to_std_string_escaped())

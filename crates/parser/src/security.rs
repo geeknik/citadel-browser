@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use ammonia::Builder;
+use std::collections::HashSet;
 
 use crate::error::ParserResult;
 
@@ -26,31 +26,91 @@ impl SecurityContext {
     /// Create a new security context with default settings
     pub fn new(max_nesting_depth: usize) -> Self {
         let mut allowed_elements = HashSet::new();
-        allowed_elements.extend([
-            // Essential HTML structure elements
-            "html", "head", "body", "title", "meta", "link", "style",
-            // Basic content elements
-            "a", "abbr", "article", "aside", "b", "blockquote", "br",
-            "caption", "code", "col", "colgroup", "dd", "del", "details",
-            "div", "dl", "dt", "em", "figcaption", "figure", "footer",
-            "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "i",
-            "img", "ins", "li", "main", "mark", "nav", "ol", "p", "pre",
-            "q", "s", "section", "small", "span", "strong", "sub", "sup",
-            "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr",
-            "u", "ul"
-        ].iter().map(|s| s.to_string()));
+        allowed_elements.extend(
+            [
+                // Essential HTML structure elements
+                "html",
+                "head",
+                "body",
+                "title",
+                "meta",
+                "link",
+                "style",
+                // Basic content elements
+                "a",
+                "abbr",
+                "article",
+                "aside",
+                "b",
+                "blockquote",
+                "br",
+                "caption",
+                "code",
+                "col",
+                "colgroup",
+                "dd",
+                "del",
+                "details",
+                "div",
+                "dl",
+                "dt",
+                "em",
+                "figcaption",
+                "figure",
+                "footer",
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "h6",
+                "header",
+                "hr",
+                "i",
+                "img",
+                "ins",
+                "li",
+                "main",
+                "mark",
+                "nav",
+                "ol",
+                "p",
+                "pre",
+                "q",
+                "s",
+                "section",
+                "small",
+                "span",
+                "strong",
+                "sub",
+                "sup",
+                "table",
+                "tbody",
+                "td",
+                "tfoot",
+                "th",
+                "thead",
+                "time",
+                "tr",
+                "u",
+                "ul",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
 
         let mut allowed_attributes = HashSet::new();
-        allowed_attributes.extend([
-            "alt", "class", "colspan", "datetime", "dir", "height",
-            "href", "id", "lang", "rowspan", "src", "title",
-            "width"
-        ].iter().map(|s| s.to_string()));
+        allowed_attributes.extend(
+            [
+                "alt", "class", "colspan", "datetime", "dir", "height", "href", "id", "lang",
+                "rowspan", "src", "title", "width",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
 
         let mut allowed_schemes = HashSet::new();
-        allowed_schemes.extend([
-            "https", "data", "mailto"
-        ].iter().map(|s| s.to_string()));
+        allowed_schemes.extend(["https", "data", "mailto"].iter().map(|s| s.to_string()));
 
         Self {
             max_nesting_depth,
@@ -87,7 +147,7 @@ impl SecurityContext {
     pub fn allows_scripts(&self) -> bool {
         self.allow_scripts
     }
-    
+
     /// Enable JavaScript execution (for testing and development)
     pub fn enable_scripts(&mut self) {
         self.allow_scripts = true;
@@ -106,36 +166,46 @@ impl SecurityContext {
     /// Check if one security context can append a child with another security context
     pub fn can_append_child(&self, child_context: &SecurityContext) -> bool {
         // Child context should be at least as restrictive as parent
-        self.max_nesting_depth >= child_context.max_nesting_depth &&
-        self.allowed_elements.is_superset(&child_context.allowed_elements) &&
-        self.allowed_attributes.is_superset(&child_context.allowed_attributes) &&
-        self.allowed_schemes.is_superset(&child_context.allowed_schemes) &&
-        (!self.allow_scripts || child_context.allow_scripts) &&
-        (!self.allow_external_content || child_context.allow_external_content)
+        self.max_nesting_depth >= child_context.max_nesting_depth
+            && self
+                .allowed_elements
+                .is_superset(&child_context.allowed_elements)
+            && self
+                .allowed_attributes
+                .is_superset(&child_context.allowed_attributes)
+            && self
+                .allowed_schemes
+                .is_superset(&child_context.allowed_schemes)
+            && (!self.allow_scripts || child_context.allow_scripts)
+            && (!self.allow_external_content || child_context.allow_external_content)
     }
 
     /// Sanitize HTML content according to security rules
     pub fn sanitize_html(&self, content: &str) -> ParserResult<String> {
         // Start with a basic safe configuration
         let mut builder = Builder::default();
-        
+
         // Only add the tags we explicitly allow
-        let safe_tags: HashSet<&str> = self.allowed_elements.iter()
+        let safe_tags: HashSet<&str> = self
+            .allowed_elements
+            .iter()
             .map(|s| s.as_str())
             .filter(|&tag| {
                 // Filter out dangerous tags that we never want, even if accidentally allowed
                 !matches!(tag, "script" | "iframe" | "object" | "embed" | "frame")
             })
             .collect();
-        
-        let safe_attributes: HashSet<&str> = self.allowed_attributes.iter()
+
+        let safe_attributes: HashSet<&str> = self
+            .allowed_attributes
+            .iter()
             .map(|s| s.as_str())
             .filter(|&attr| {
                 // Filter out dangerous attributes
                 !attr.starts_with("on") // Remove all event handlers
             })
             .collect();
-        
+
         let url_schemes: HashSet<&str> = self.allowed_schemes.iter().map(|s| s.as_str()).collect();
 
         builder
@@ -188,7 +258,7 @@ mod tests {
     #[ignore] // TODO: Fix Ammonia configuration conflict
     fn test_html_sanitization() {
         let context = SecurityContext::default();
-        
+
         let input = r#"
             <div class="safe">
                 <p>Hello</p>
@@ -199,7 +269,7 @@ mod tests {
         "#;
 
         let sanitized = context.sanitize_html(input).unwrap();
-        
+
         assert!(!sanitized.contains("script"));
         assert!(!sanitized.contains("onerror"));
         assert!(!sanitized.contains("javascript:"));
@@ -207,4 +277,4 @@ mod tests {
         assert!(sanitized.contains("<p>Hello</p>"));
         assert!(sanitized.contains("<img src=\"https://example.com/img.jpg\">"));
     }
-} 
+}

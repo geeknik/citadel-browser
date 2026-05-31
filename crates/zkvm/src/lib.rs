@@ -1,26 +1,26 @@
 //! Citadel Zero-Knowledge Virtual Machine
-//! 
+//!
 //! This module implements a secure virtual machine that provides cryptographic guarantees
 //! of isolation between browser tabs. Each VM instance operates with zero knowledge of
 //! other VMs or the host system, while still allowing controlled communication channels.
 
-mod executor;
 pub mod channel;
 pub mod error;
+mod executor;
 
-use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
-use zeroize::Zeroize;
-use rand::RngCore;
 use aes_gcm::{
-    aead::{Aead, KeyInit, AeadCore},
+    aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
 };
+use rand::RngCore;
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
+use zeroize::Zeroize;
 
 // Re-export important types
-pub use executor::Executor;
 pub use channel::{Channel, ChannelMessage};
 pub use error::ZkVmError;
+pub use executor::Executor;
 
 /// Result type for ZKVM operations
 pub type ZkVmResult<T> = Result<T, ZkVmError>;
@@ -63,54 +63,54 @@ impl MemoryPage {
     fn new(size: usize, permissions: PagePermissions) -> ZkVmResult<Self> {
         let mut key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key);
-        
+
         Ok(Self {
             data: vec![0; size],
             permissions,
             key: Arc::new(key),
         })
     }
-    
+
     /// Encrypt the page contents
     fn encrypt(&mut self) -> ZkVmResult<()> {
         let cipher = Aes256Gcm::new_from_slice(self.key.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-            
+
         let nonce = Aes256Gcm::generate_nonce(&mut rand::thread_rng());
         let ciphertext = cipher
             .encrypt(&nonce, self.data.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-            
+
         self.data = ciphertext;
         Ok(())
     }
-    
+
     /// Decrypt the page contents
     fn decrypt(&mut self) -> ZkVmResult<()> {
         let cipher = Aes256Gcm::new_from_slice(self.key.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-            
+
         let nonce = Aes256Gcm::generate_nonce(&mut rand::thread_rng());
         let plaintext = cipher
             .decrypt(&nonce, self.data.as_ref())
             .map_err(|e| ZkVmError::CryptoError(e.to_string()))?;
-            
+
         self.data = plaintext;
         Ok(())
     }
-    
+
     /// Check if the page allows read access
     #[allow(dead_code)] // Will be used when implementing full memory access controls
     fn can_read(&self) -> bool {
         self.permissions.read
     }
-    
+
     /// Check if the page allows write access
     #[allow(dead_code)] // Will be used when implementing full memory access controls
     fn can_write(&self) -> bool {
         self.permissions.write
     }
-    
+
     /// Check if the page allows execute access
     #[allow(dead_code)] // Will be used when implementing full memory access controls
     fn can_execute(&self) -> bool {
@@ -138,10 +138,10 @@ impl ZkVm {
     pub async fn new() -> ZkVmResult<(Self, Channel)> {
         let mut id = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut id);
-        
+
         let (vm_channel, host_channel) = Channel::new()?;
         let executor = Executor::new(1024 * 1024 * 32)?; // 32MB default memory limit
-        
+
         let vm = Self {
             state: RwLock::new(ZkVmState::Ready),
             memory: Mutex::new(Vec::new()),
@@ -149,19 +149,23 @@ impl ZkVm {
             channel: vm_channel,
             executor,
         };
-        
+
         Ok((vm, host_channel))
     }
-    
+
     /// Allocate a new memory page
-    pub async fn allocate_page(&self, size: usize, permissions: PagePermissions) -> ZkVmResult<usize> {
+    pub async fn allocate_page(
+        &self,
+        size: usize,
+        permissions: PagePermissions,
+    ) -> ZkVmResult<usize> {
         let page = MemoryPage::new(size, permissions)?;
         let mut memory = self.memory.lock().await;
         let page_id = memory.len();
         memory.push(page);
         Ok(page_id)
     }
-    
+
     /// Start the VM
     pub async fn start(&self) -> ZkVmResult<()> {
         let mut state = self.state.write().await;
@@ -171,40 +175,44 @@ impl ZkVm {
                 Ok(())
             }
             _ => Err(ZkVmError::InvalidOperation(
-                "VM must be in Ready state to start".into()
+                "VM must be in Ready state to start".into(),
             )),
         }
     }
-    
+
     /// Execute a single instruction
     pub async fn step(&self) -> ZkVmResult<()> {
         let state = self.state.read().await;
         if *state != ZkVmState::Running {
             return Err(ZkVmError::InvalidOperation(
-                "VM must be running to execute instructions".into()
+                "VM must be running to execute instructions".into(),
             ));
         }
         drop(state);
-        
+
         // Execute from current PC - this will run until halt or error
         // For step execution, we'd need to modify the executor
         // For now, just advance the PC as a placeholder
         Ok(())
     }
-    
+
     /// Load and encrypt a memory page
-    pub async fn load_encrypted_page(&self, data: Vec<u8>, permissions: PagePermissions) -> ZkVmResult<usize> {
+    pub async fn load_encrypted_page(
+        &self,
+        data: Vec<u8>,
+        permissions: PagePermissions,
+    ) -> ZkVmResult<usize> {
         let size = data.len();
         let mut page = MemoryPage::new(size, permissions)?;
         page.data = data;
         page.encrypt()?;
-        
+
         let mut memory = self.memory.lock().await;
         let page_id = memory.len();
         memory.push(page);
         Ok(page_id)
     }
-    
+
     /// Access a decrypted page temporarily
     pub async fn with_decrypted_page<F, R>(&self, page_id: usize, f: F) -> ZkVmResult<R>
     where
@@ -214,55 +222,55 @@ impl ZkVm {
         if page_id >= memory.len() {
             return Err(ZkVmError::MemoryError("Invalid page ID".into()));
         }
-        
+
         let page = &mut memory[page_id];
         page.decrypt()?;
         let result = f(&page.data);
         page.encrypt()?;
-        
+
         Ok(result)
     }
-    
+
     /// Stop the VM and securely wipe all memory
     pub async fn terminate(&self) -> ZkVmResult<()> {
         let mut state = self.state.write().await;
         let mut memory = self.memory.lock().await;
-        
+
         // Securely wipe all memory pages
         for page in memory.iter_mut() {
             page.data.zeroize();
         }
-        
+
         // Close the communication channel
         self.channel.close().await;
-        
+
         *state = ZkVmState::Terminated;
         Ok(())
     }
-    
+
     /// Get the VM's unique identifier
     pub fn id(&self) -> Arc<[u8; 32]> {
         self.id.clone()
     }
-    
+
     /// Execute bytecode using the internal executor (simplified implementation)
     pub async fn execute_code(&self, _bytecode: &[u8]) -> ZkVmResult<()> {
         let state = self.state.read().await;
         match *state {
             ZkVmState::Running => {
                 drop(state); // Release read lock
-                
+
                 // This is a simplified implementation that demonstrates executor usage
                 // In a real implementation, this would:
-                // 1. Load bytecode into VM memory 
+                // 1. Load bytecode into VM memory
                 // 2. Set up execution context
                 // 3. Call executor.execute() with proper entry point
                 // For now, we just validate state and return success
                 Ok(())
             }
             _ => Err(ZkVmError::InvalidOperation(
-                "VM must be running to execute code".into()
-            ))
+                "VM must be running to execute code".into(),
+            )),
         }
     }
 }
@@ -278,21 +286,21 @@ impl Drop for ZkVm {
 mod tests {
     use super::*;
     use tokio_test::block_on;
-    
+
     #[test]
     fn test_vm_lifecycle() {
         block_on(async {
             let (vm, _host_channel) = ZkVm::new().await.unwrap();
             assert!(matches!(*vm.state.read().await, ZkVmState::Ready));
-            
+
             vm.start().await.unwrap();
             assert!(matches!(*vm.state.read().await, ZkVmState::Running));
-            
+
             vm.terminate().await.unwrap();
             assert!(matches!(*vm.state.read().await, ZkVmState::Terminated));
         });
     }
-    
+
     #[test]
     fn test_memory_allocation() {
         block_on(async {
@@ -302,29 +310,29 @@ mod tests {
                 write: true,
                 execute: false,
             };
-            
+
             let page_id = vm.allocate_page(4096, perms).await.unwrap();
             assert_eq!(page_id, 0);
-            
+
             let memory = vm.memory.lock().await;
             assert_eq!(memory.len(), 1);
             assert_eq!(memory[0].data.len(), 4096);
         });
     }
-    
+
     #[test]
     fn test_channel_communication() {
         block_on(async {
             let (mut vm, mut host_channel) = ZkVm::new().await.unwrap();
-            
+
             // Send a message from host to VM
             let message = ChannelMessage::Control {
                 command: "test".into(),
                 params: serde_json::json!({"key": "value"}).to_string(),
             };
-            
+
             host_channel.send(message.clone()).await.unwrap();
-            
+
             // VM should receive the message
             let received = vm.channel.receive().await.unwrap();
             match received {
@@ -336,4 +344,4 @@ mod tests {
             }
         });
     }
-} 
+}

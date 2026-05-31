@@ -142,9 +142,9 @@ impl Default for ParseTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
-    use std::sync::Arc;
 
     #[test]
     fn test_metrics_counters() {
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_document_metrics() {
         let metrics = DocumentMetrics::new();
-        
+
         metrics.increment_elements();
         metrics.increment_attributes();
         metrics.add_text_content(100);
@@ -206,7 +206,10 @@ mod tests {
         }
 
         assert_eq!(metrics_arc.elements_parsed.load(Ordering::Relaxed), 1000);
-        assert_eq!(metrics_arc.sanitization_actions.load(Ordering::Relaxed), 1000);
+        assert_eq!(
+            metrics_arc.sanitization_actions.load(Ordering::Relaxed),
+            1000
+        );
     }
 
     #[test]
@@ -233,4 +236,4 @@ mod tests {
         assert_eq!(metrics.total_attributes(), 1000);
         assert_eq!(metrics.total_text_content(), 10000);
     }
-} 
+}

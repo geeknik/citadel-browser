@@ -95,16 +95,33 @@ impl fmt::Display for PrivacyEvent {
             PrivacyEvent::TrackerBlocked { url, category, .. } => {
                 write!(f, "Tracker blocked: {} ({})", url, category)
             }
-            PrivacyEvent::FingerprintNeutralized { api_name, action_taken } => {
-                write!(f, "Fingerprint neutralized: {} ({})", api_name, action_taken)
+            PrivacyEvent::FingerprintNeutralized {
+                api_name,
+                action_taken,
+            } => {
+                write!(
+                    f,
+                    "Fingerprint neutralized: {} ({})",
+                    api_name, action_taken
+                )
             }
             PrivacyEvent::DnsQueryLocal { domain, cached } => {
                 write!(f, "DNS local: {} (cached: {})", domain, cached)
             }
-            PrivacyEvent::ApiNotImplemented { api_name, caller_origin } => {
-                write!(f, "API not implemented: {} (from: {})", api_name, caller_origin)
+            PrivacyEvent::ApiNotImplemented {
+                api_name,
+                caller_origin,
+            } => {
+                write!(
+                    f,
+                    "API not implemented: {} (from: {})",
+                    api_name, caller_origin
+                )
             }
-            PrivacyEvent::CspViolation { directive, blocked_uri } => {
+            PrivacyEvent::CspViolation {
+                directive,
+                blocked_uri,
+            } => {
                 write!(f, "CSP violation: {} blocked {}", directive, blocked_uri)
             }
             PrivacyEvent::EventsDropped { count } => {
@@ -143,7 +160,9 @@ impl PrivacyEventSender {
         let dropped = self.dropped_count.swap(0, Ordering::Relaxed);
         if dropped > 0 {
             // Try to send the dropped count summary first
-            let _ = self.sender.try_send(PrivacyEvent::EventsDropped { count: dropped });
+            let _ = self
+                .sender
+                .try_send(PrivacyEvent::EventsDropped { count: dropped });
         }
 
         match self.sender.try_send(event) {
@@ -173,7 +192,9 @@ pub fn create_privacy_channel() -> (PrivacyEventSender, PrivacyEventReceiver) {
 }
 
 /// Create a privacy event channel with a custom capacity.
-pub fn create_privacy_channel_with_capacity(capacity: usize) -> (PrivacyEventSender, PrivacyEventReceiver) {
+pub fn create_privacy_channel_with_capacity(
+    capacity: usize,
+) -> (PrivacyEventSender, PrivacyEventReceiver) {
     let (tx, rx) = mpsc::channel(capacity);
     let sender = PrivacyEventSender {
         sender: tx,

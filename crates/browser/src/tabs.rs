@@ -2,4 +2,4 @@
 //! using the full ZKVM-based tab manager for proper isolation.
 
 // Re-export ZKVM tab types for proper security isolation
-pub use citadel_tabs::{Tab, SendSafeTabManager as TabManager, TabType, TabState};
+pub use citadel_tabs::{SendSafeTabManager as TabManager, Tab, TabState, TabType};

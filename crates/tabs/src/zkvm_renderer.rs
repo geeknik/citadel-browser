@@ -6,12 +6,14 @@
 //! boundary. The host never touches the raw markup — it only paints the sanitized
 //! display list. That is the "zero-knowledge tab" property in practice.
 
+use crate::{TabError, TabResult};
+use citadel_parser::{
+    dom::NodeData, dom::NodeHandle, parse_html, security::SecurityContext as ParserSecurityContext,
+};
+use citadel_zkvm::{Channel, ChannelMessage};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use citadel_zkvm::{Channel, ChannelMessage};
-use crate::{TabResult, TabError};
-use serde::{Serialize, Deserialize};
-use citadel_parser::{parse_html, dom::NodeData, dom::NodeHandle, security::SecurityContext as ParserSecurityContext};
 
 /// A request to render a page, sent from the host into the isolation boundary.
 ///
@@ -99,15 +101,15 @@ pub struct RenderedContent {
 /// Pruning `script`/`style`/etc. at the DOM level is the structural form of
 /// the engine's "fail closed" sanitization — far stronger than string replace.
 const SKIP_TAGS: &[&str] = &[
-    "script", "style", "head", "meta", "link", "title", "noscript",
-    "template", "base", "svg", "math", "object", "embed", "applet", "iframe",
+    "script", "style", "head", "meta", "link", "title", "noscript", "template", "base", "svg",
+    "math", "object", "embed", "applet", "iframe",
 ];
 
 /// Inline tags whose text is merged into the surrounding block run.
 const INLINE_TAGS: &[&str] = &[
-    "span", "b", "strong", "i", "em", "code", "small", "label", "abbr", "u",
-    "mark", "sub", "sup", "q", "cite", "time", "bdi", "bdo", "wbr", "font", "tt",
-    "kbd", "samp", "var", "ins", "del", "s",
+    "span", "b", "strong", "i", "em", "code", "small", "label", "abbr", "u", "mark", "sub", "sup",
+    "q", "cite", "time", "bdi", "bdo", "wbr", "font", "tt", "kbd", "samp", "var", "ins", "del",
+    "s",
 ];
 
 /// ZKVM renderer that processes content in complete isolation.
@@ -192,9 +194,17 @@ impl ZkVmRenderer {
         match message {
             ChannelMessage::Control { command, params } => match command.as_str() {
                 "render_page" => {
-                    let request: RenderRequest = serde_json::from_str(&params)
-                        .map_err(|e| TabError::InvalidOperation(format!("ZKVM render request parse failed: {}", e)))?;
-                    log::info!("🎨 ZKVM: render_page for {} ({} bytes)", request.url, request.html.len());
+                    let request: RenderRequest = serde_json::from_str(&params).map_err(|e| {
+                        TabError::InvalidOperation(format!(
+                            "ZKVM render request parse failed: {}",
+                            e
+                        ))
+                    })?;
+                    log::info!(
+                        "🎨 ZKVM: render_page for {} ({} bytes)",
+                        request.url,
+                        request.html.len()
+                    );
                     let rendered = render_in_isolation(&request);
                     log::info!(
                         "✅ ZKVM: produced {} display items, {} elements blocked",
@@ -203,12 +213,14 @@ impl ZkVmRenderer {
                     );
                     let response = ChannelMessage::Control {
                         command: "rendered_content".to_string(),
-                        params: serde_json::to_string(&rendered)
-                            .map_err(|e| TabError::InvalidOperation(format!("ZKVM serialize failed: {}", e)))?,
+                        params: serde_json::to_string(&rendered).map_err(|e| {
+                            TabError::InvalidOperation(format!("ZKVM serialize failed: {}", e))
+                        })?,
                     };
                     let channel = self.channel.write().await;
-                    channel.send(response).await
-                        .map_err(|e| TabError::InvalidOperation(format!("ZKVM boundary send failed: {}", e)))?;
+                    channel.send(response).await.map_err(|e| {
+                        TabError::InvalidOperation(format!("ZKVM boundary send failed: {}", e))
+                    })?;
                 }
                 "shutdown" => {
                     log::info!("🔒 ZKVM: shutdown");
@@ -273,7 +285,9 @@ fn collapse_ws(input: &str) -> String {
 
 /// Recursively concatenate visible descendant text, pruning non-visual subtrees.
 fn collect_text(handle: &NodeHandle, out: &mut String) {
-    let Ok(node) = handle.read() else { return; };
+    let Ok(node) = handle.read() else {
+        return;
+    };
     match &node.data {
         NodeData::Text(t) => out.push_str(t),
         NodeData::Element(el) => {
@@ -370,7 +384,12 @@ fn push_link(handle: &NodeHandle, href: Option<String>, out: &mut Vec<DisplayIte
 ///
 /// Non-visual / dangerous subtrees are pruned (counted in `blocked`). Inline text
 /// is merged into its parent block; `<a>` elements become their own link runs.
-fn collect_blocks(handle: &NodeHandle, out: &mut Vec<DisplayItem>, blocked: &mut usize, inherited_bold: bool) {
+fn collect_blocks(
+    handle: &NodeHandle,
+    out: &mut Vec<DisplayItem>,
+    blocked: &mut usize,
+    inherited_bold: bool,
+) {
     let Ok(node) = handle.read() else {
         *blocked = blocked.saturating_add(1);
         return;

@@ -29,12 +29,15 @@ impl BrowserCategory {
     /// Get the browser category from a user agent string
     pub fn from_user_agent(user_agent: &str) -> Self {
         let ua_lower = user_agent.to_lowercase();
-        
+
         if ua_lower.contains("firefox") {
             BrowserCategory::Firefox
         } else if ua_lower.contains("edg") || ua_lower.contains("edge") {
             BrowserCategory::Edge
-        } else if ua_lower.contains("safari") && !ua_lower.contains("chrome") && !ua_lower.contains("android") {
+        } else if ua_lower.contains("safari")
+            && !ua_lower.contains("chrome")
+            && !ua_lower.contains("android")
+        {
             BrowserCategory::Safari
         } else if ua_lower.contains("opr") || ua_lower.contains("opera") {
             BrowserCategory::Opera
@@ -44,7 +47,7 @@ impl BrowserCategory {
             BrowserCategory::Other
         }
     }
-    
+
     /// Get a string representation for this browser category
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -56,19 +59,19 @@ impl BrowserCategory {
             BrowserCategory::Other => "other",
         }
     }
-    
+
     /// Get a display name for this browser category
     pub fn display_name(&self) -> &'static str {
         match self {
             BrowserCategory::Chrome => "Google Chrome",
-            BrowserCategory::Firefox => "Mozilla Firefox", 
+            BrowserCategory::Firefox => "Mozilla Firefox",
             BrowserCategory::Safari => "Apple Safari",
             BrowserCategory::Edge => "Microsoft Edge",
             BrowserCategory::Opera => "Opera",
             BrowserCategory::Other => "Unknown Browser",
         }
     }
-    
+
     /// Check if this browser category matches a string identifier
     pub fn matches_str(&self, identifier: &str) -> bool {
         self.as_str() == identifier.to_lowercase()
@@ -113,14 +116,14 @@ impl NavigatorProtection {
     /// Create a new navigator protection instance
     pub fn new(manager: FingerprintManager) -> Self {
         let enabled = manager.protection_config().normalize_navigator;
-        
+
         Self {
             manager,
             enabled,
             normalized_info: None,
         }
     }
-    
+
     /// Initialize with normalized navigator info
     pub fn with_real_navigator(&mut self, real_navigator: NavigatorInfo) {
         if !self.enabled {
@@ -131,22 +134,24 @@ impl NavigatorProtection {
         self.normalized_info = Some(self.normalize_navigator(real_navigator, browser_category));
 
         // Emit privacy event for navigator normalization
-        self.manager.emit_neutralized("navigator.hardwareConcurrency", "normalized value");
-        self.manager.emit_neutralized("navigator.platform", "normalized value");
+        self.manager
+            .emit_neutralized("navigator.hardwareConcurrency", "normalized value");
+        self.manager
+            .emit_neutralized("navigator.platform", "normalized value");
     }
-    
+
     /// Get the normalized navigator information
     pub fn get_navigator_info(&self) -> Option<&NavigatorInfo> {
         self.normalized_info.as_ref()
     }
-    
+
     /// Log a navigator access attempt
     pub fn log_access_attempt(&self, property: &str) {
         if self.enabled {
             self.manager.log_attempt("navigator", property);
         }
     }
-    
+
     /// Normalize navigator information based on browser category
     fn normalize_navigator(&self, real: NavigatorInfo, category: BrowserCategory) -> NavigatorInfo {
         if !self.enabled {
@@ -154,10 +159,8 @@ impl NavigatorProtection {
         }
 
         let protection_level = self.manager.protection_config().level;
-        let hw_concurrency = self.normalize_hardware_concurrency_for_level(
-            real.hardware_concurrency,
-            protection_level,
-        );
+        let hw_concurrency = self
+            .normalize_hardware_concurrency_for_level(real.hardware_concurrency, protection_level);
 
         // Keep the real browser category but normalize fingerprinting factors
         let normalized = match category {
@@ -213,14 +216,17 @@ impl NavigatorProtection {
 
         normalized
     }
-    
+
     /// Normalize platform string to reduce entropy
     fn normalize_platform(&self, platform: &str) -> String {
         let platform_lower = platform.to_lowercase();
-        
+
         if platform_lower.contains("win") {
             "Win32".to_string()
-        } else if platform_lower.contains("mac") || platform_lower.contains("iphone") || platform_lower.contains("ipad") {
+        } else if platform_lower.contains("mac")
+            || platform_lower.contains("iphone")
+            || platform_lower.contains("ipad")
+        {
             "MacIntel".to_string()
         } else if platform_lower.contains("linux") || platform_lower.contains("android") {
             "Linux x86_64".to_string()
@@ -228,7 +234,7 @@ impl NavigatorProtection {
             platform.to_string()
         }
     }
-    
+
     /// Normalize hardware concurrency to standard values
     fn normalize_hardware_concurrency(&self, real_cores: u32) -> u32 {
         // Round to common values to reduce uniqueness
@@ -269,21 +275,21 @@ impl NavigatorProtection {
             _ => self.normalize_hardware_concurrency(real_cores),
         }
     }
-    
+
     /// Get a normalized user agent string
     pub fn get_normalized_user_agent(&self, real_ua: &str) -> String {
         if !self.enabled {
             return real_ua.to_string();
         }
-        
+
         if let Some(info) = &self.normalized_info {
             return info.user_agent.clone();
         }
-        
+
         // If we haven't initialized with a real navigator yet,
         // do basic normalization on the provided UA
         let category = BrowserCategory::from_user_agent(real_ua);
-        
+
         match category {
             BrowserCategory::Chrome => {
                 // Keep major version but standardize the rest
@@ -306,7 +312,11 @@ impl NavigatorProtection {
                 if let Some(idx) = real_ua.find("Firefox/") {
                     let version_start = idx + "Firefox/".len();
                     if let Some(end_idx) = real_ua[version_start..].find(' ') {
-                        let version_end = if end_idx > 0 { version_start + end_idx } else { real_ua.len() };
+                        let version_end = if end_idx > 0 {
+                            version_start + end_idx
+                        } else {
+                            real_ua.len()
+                        };
                         let version = &real_ua[version_start..version_end];
                         if let Some(dot_idx) = version.find('.') {
                             let major = &version[..dot_idx];
@@ -323,7 +333,7 @@ impl NavigatorProtection {
                 return real_ua.to_string();
             }
         }
-        
+
         real_ua.to_string()
     }
 }
@@ -332,68 +342,87 @@ impl NavigatorProtection {
 mod tests {
     use super::*;
     use crate::SecurityContext;
-    
+
     fn create_test_navigator_protection() -> NavigatorProtection {
         let security_context = SecurityContext::new(10);
         let manager = FingerprintManager::new(security_context);
         NavigatorProtection::new(manager)
     }
-    
+
     #[test]
     fn test_browser_category_detection() {
         // Chrome
         let chrome_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
-        assert_eq!(BrowserCategory::from_user_agent(chrome_ua), BrowserCategory::Chrome);
-        
+        assert_eq!(
+            BrowserCategory::from_user_agent(chrome_ua),
+            BrowserCategory::Chrome
+        );
+
         // Firefox
-        let firefox_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0";
-        assert_eq!(BrowserCategory::from_user_agent(firefox_ua), BrowserCategory::Firefox);
-        
+        let firefox_ua =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0";
+        assert_eq!(
+            BrowserCategory::from_user_agent(firefox_ua),
+            BrowserCategory::Firefox
+        );
+
         // Safari
         let safari_ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15";
-        assert_eq!(BrowserCategory::from_user_agent(safari_ua), BrowserCategory::Safari);
-        
+        assert_eq!(
+            BrowserCategory::from_user_agent(safari_ua),
+            BrowserCategory::Safari
+        );
+
         // Edge
         let edge_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59";
-        assert_eq!(BrowserCategory::from_user_agent(edge_ua), BrowserCategory::Edge);
+        assert_eq!(
+            BrowserCategory::from_user_agent(edge_ua),
+            BrowserCategory::Edge
+        );
     }
-    
+
     #[test]
     fn test_browser_category_methods() {
         let chrome = BrowserCategory::Chrome;
         let firefox = BrowserCategory::Firefox;
-        
+
         // Test as_str method
         assert_eq!(chrome.as_str(), "chrome");
         assert_eq!(firefox.as_str(), "firefox");
-        
+
         // Test display_name method
         assert_eq!(chrome.display_name(), "Google Chrome");
         assert_eq!(firefox.display_name(), "Mozilla Firefox");
-        
+
         // Test matches_str method
         assert!(chrome.matches_str("chrome"));
         assert!(chrome.matches_str("CHROME"));
         assert!(!chrome.matches_str("firefox"));
     }
-    
+
     #[test]
     fn test_platform_normalization() {
         let protection = create_test_navigator_protection();
-        
+
         assert_eq!(protection.normalize_platform("Windows"), "Win32");
         assert_eq!(protection.normalize_platform("Windows NT 10.0"), "Win32");
         assert_eq!(protection.normalize_platform("MacIntel"), "MacIntel");
         assert_eq!(protection.normalize_platform("iPhone"), "MacIntel");
-        assert_eq!(protection.normalize_platform("Linux x86_64"), "Linux x86_64");
-        assert_eq!(protection.normalize_platform("Linux aarch64"), "Linux x86_64");
+        assert_eq!(
+            protection.normalize_platform("Linux x86_64"),
+            "Linux x86_64"
+        );
+        assert_eq!(
+            protection.normalize_platform("Linux aarch64"),
+            "Linux x86_64"
+        );
         assert_eq!(protection.normalize_platform("Android"), "Linux x86_64");
     }
-    
+
     #[test]
     fn test_hardware_concurrency_normalization() {
         let protection = create_test_navigator_protection();
-        
+
         assert_eq!(protection.normalize_hardware_concurrency(1), 2);
         assert_eq!(protection.normalize_hardware_concurrency(2), 2);
         assert_eq!(protection.normalize_hardware_concurrency(3), 4);
@@ -404,28 +433,29 @@ mod tests {
         assert_eq!(protection.normalize_hardware_concurrency(16), 16);
         assert_eq!(protection.normalize_hardware_concurrency(24), 16);
     }
-    
+
     #[test]
     fn test_user_agent_normalization() {
         let protection = create_test_navigator_protection();
-        
+
         let chrome_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
         let normalized_chrome = protection.get_normalized_user_agent(chrome_ua);
-        
+
         assert!(normalized_chrome.contains("Chrome/91.0.0.0"));
         assert!(normalized_chrome.contains("Windows NT 10.0"));
-        
-        let firefox_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0";
+
+        let firefox_ua =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0";
         let normalized_firefox = protection.get_normalized_user_agent(firefox_ua);
-        
+
         assert!(normalized_firefox.contains("Firefox/89.0"));
         assert!(normalized_firefox.contains("rv:89.0"));
     }
-    
+
     #[test]
     fn test_navigator_info_normalization() {
         let mut protection = create_test_navigator_protection();
-        
+
         let real_info = NavigatorInfo {
             user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36".to_string(),
             platform: "Win32".to_string(),
@@ -437,14 +467,14 @@ mod tests {
             plugins_enabled: true,
             do_not_track: false,
         };
-        
+
         protection.with_real_navigator(real_info);
-        
+
         let normalized = protection.get_navigator_info().unwrap();
-        
+
         // Check normalization
         assert_eq!(normalized.hardware_concurrency, 8); // 6 rounded up to 8
         assert_eq!(normalized.device_memory, Some(8.0)); // Standardized to 8GB
         assert_eq!(normalized.plugins_enabled, false); // Disabled for privacy
     }
-} 
+}

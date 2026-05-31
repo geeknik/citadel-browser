@@ -65,9 +65,9 @@ impl NetworkError {
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            NetworkError::ConnectionError(_) |
-            NetworkError::TimeoutError(_) |
-            NetworkError::DnsError(_)
+            NetworkError::ConnectionError(_)
+                | NetworkError::TimeoutError(_)
+                | NetworkError::DnsError(_)
         )
     }
-} 
+}

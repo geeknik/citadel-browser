@@ -1,5 +1,5 @@
-use std::fmt;
 use std::error::Error;
+use std::fmt;
 use url::ParseError as UrlParseError;
 
 /// Error types for the parser
@@ -41,7 +41,9 @@ impl fmt::Display for ParserError {
             ParserError::IoError(msg) => write!(f, "IO Error: {}", msg),
             ParserError::JsError(msg) => write!(f, "JavaScript error: {}", msg),
             ParserError::LayoutError(msg) => write!(f, "Layout error: {}", msg),
-            ParserError::ResourceLimitExceeded(msg) => write!(f, "Resource limit exceeded: {}", msg),
+            ParserError::ResourceLimitExceeded(msg) => {
+                write!(f, "Resource limit exceeded: {}", msg)
+            }
             ParserError::Unknown(msg) => write!(f, "Unknown error: {}", msg),
         }
     }
@@ -76,7 +78,10 @@ mod tests {
         assert_eq!(err.to_string(), "HTML parse error: invalid tag");
 
         let err = ParserError::SecurityViolation("script tag not allowed".to_string());
-        assert_eq!(err.to_string(), "Security violation: script tag not allowed");
+        assert_eq!(
+            err.to_string(),
+            "Security violation: script tag not allowed"
+        );
 
         let err = ParserError::NestingTooDeep(100);
         assert_eq!(err.to_string(), "Nesting too deep: 100");
@@ -91,4 +96,4 @@ mod tests {
         let err = ParserError::Unknown("test".to_string());
         assert!(err.source().is_none());
     }
-} 
+}

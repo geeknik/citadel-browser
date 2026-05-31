@@ -3,10 +3,10 @@ use std::sync::Arc;
 use crate::dns::{CitadelDnsResolver, DnsMode};
 use crate::error::NetworkError;
 use crate::resource_manager::{ResourceManager, ResourceManagerConfig};
-use crate::tracker_blocking::{TrackerBlockingEngine, BlocklistConfig, TrackerBlockingStats};
+use crate::tracker_blocking::{BlocklistConfig, TrackerBlockingEngine, TrackerBlockingStats};
 use crate::NetworkConfig;
 
-/// Comprehensive privacy engine that coordinates DNS resolution, 
+/// Comprehensive privacy engine that coordinates DNS resolution,
 /// resource management, and tracker blocking
 pub struct CitadelPrivacyEngine {
     /// DNS resolver with tracker blocking
@@ -29,14 +29,15 @@ impl CitadelPrivacyEngine {
 
         // Create tracker blocking engine
         let tracker_blocker = Arc::new(
-            TrackerBlockingEngine::with_config(network_config.tracker_blocking.clone()).await?
+            TrackerBlockingEngine::with_config(network_config.tracker_blocking.clone()).await?,
         );
 
         // Create DNS resolver with tracker blocking
         let dns_resolver = CitadelDnsResolver::with_tracker_blocking(
             network_config.dns_mode.clone(),
             tracker_blocker.clone(),
-        ).await?;
+        )
+        .await?;
 
         // Create resource manager with tracker blocking
         let resource_config = ResourceManagerConfig {
@@ -47,7 +48,8 @@ impl CitadelPrivacyEngine {
         let resource_manager = ResourceManager::with_config_and_tracker_blocking(
             resource_config,
             Some(tracker_blocker.clone()),
-        ).await?;
+        )
+        .await?;
 
         log::info!("✅ Citadel Privacy Engine initialized successfully");
 
@@ -68,21 +70,18 @@ impl CitadelPrivacyEngine {
         log::info!("🛡️ Initializing Citadel Privacy Engine with full custom configuration");
 
         // Create tracker blocking engine
-        let tracker_blocker = Arc::new(
-            TrackerBlockingEngine::with_config(tracker_config).await?
-        );
+        let tracker_blocker = Arc::new(TrackerBlockingEngine::with_config(tracker_config).await?);
 
         // Create DNS resolver with tracker blocking
-        let dns_resolver = CitadelDnsResolver::with_tracker_blocking(
-            dns_mode,
-            tracker_blocker.clone(),
-        ).await?;
+        let dns_resolver =
+            CitadelDnsResolver::with_tracker_blocking(dns_mode, tracker_blocker.clone()).await?;
 
         // Create resource manager with tracker blocking
         let resource_manager = ResourceManager::with_config_and_tracker_blocking(
             resource_config,
             Some(tracker_blocker.clone()),
-        ).await?;
+        )
+        .await?;
 
         log::info!("✅ Citadel Privacy Engine initialized with full custom configuration");
 
@@ -128,12 +127,18 @@ impl CitadelPrivacyEngine {
 
     /// Check if a domain would be blocked (for UI previews)
     pub async fn would_block_domain(&self, domain: &str) -> bool {
-        self.tracker_blocker.should_block_domain(domain).await.is_some()
+        self.tracker_blocker
+            .should_block_domain(domain)
+            .await
+            .is_some()
     }
 
     /// Check if a URL would be blocked (for UI previews)
     pub async fn would_block_url(&self, url: &str) -> bool {
-        self.tracker_blocker.should_block_url(url, None).await.is_some()
+        self.tracker_blocker
+            .should_block_url(url, None)
+            .await
+            .is_some()
     }
 
     /// Get the underlying tracker blocking engine for advanced operations
@@ -198,7 +203,9 @@ impl PrivacyStats {
             self.estimated_data_saved_mb(),
             self.privacy_protection_percentage(),
             if self.dns.cache_hits + self.dns.queries_blocked > 0 {
-                (self.dns.cache_hits as f64 / (self.dns.cache_hits + self.dns.queries_blocked) as f64) * 100.0
+                (self.dns.cache_hits as f64
+                    / (self.dns.cache_hits + self.dns.queries_blocked) as f64)
+                    * 100.0
             } else {
                 0.0
             }
@@ -221,7 +228,7 @@ mod tests {
     async fn test_privacy_engine_with_config() {
         let mut config = NetworkConfig::default();
         config.privacy_level = PrivacyLevel::Maximum;
-        
+
         let engine = CitadelPrivacyEngine::with_config(config).await;
         assert!(engine.is_ok());
     }
@@ -229,7 +236,7 @@ mod tests {
     #[tokio::test]
     async fn test_domain_blocking_check() {
         let engine = CitadelPrivacyEngine::new().await.unwrap();
-        
+
         // Test known tracker domain
         let would_block = engine.would_block_domain("doubleclick.net").await;
         assert!(would_block);
@@ -243,7 +250,7 @@ mod tests {
     async fn test_privacy_stats() {
         let engine = CitadelPrivacyEngine::new().await.unwrap();
         let stats = engine.get_privacy_stats().await;
-        
+
         // Should have some default stats
         assert!(stats.tracker_blocking.total_blocklist_entries > 0);
     }
@@ -251,7 +258,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_clearing() {
         let engine = CitadelPrivacyEngine::new().await.unwrap();
-        
+
         // Should not panic
         engine.clear_all_caches();
     }
@@ -259,13 +266,17 @@ mod tests {
     #[tokio::test]
     async fn test_url_blocking_check() {
         let engine = CitadelPrivacyEngine::new().await.unwrap();
-        
+
         // Test tracker URL
-        let would_block = engine.would_block_url("https://doubleclick.net/track.js").await;
+        let would_block = engine
+            .would_block_url("https://doubleclick.net/track.js")
+            .await;
         assert!(would_block);
 
         // Test regular URL
-        let would_not_block = engine.would_block_url("https://example.com/script.js").await;
+        let would_not_block = engine
+            .would_block_url("https://example.com/script.js")
+            .await;
         assert!(!would_not_block);
     }
 }

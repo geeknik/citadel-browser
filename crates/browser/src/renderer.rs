@@ -4,22 +4,23 @@
 //! computed layout positions from Taffy and applying CSS styles to Iced widgets.
 //! This brings the DESIGN.md vision to life with proper web page rendering.
 
-use std::sync::Arc;
-use std::collections::HashMap;
-use std::time::Instant;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-use iced::{
-    widget::{container, text, scrollable, Space, Column, container::Appearance, container::StyleSheet, text_input, button, checkbox, pick_list},
-    Element, Length, Color, Background, theme, Padding, Font
-};
-use citadel_parser::{
-    Dom, CitadelStylesheet, compute_layout,
-    LayoutResult, ComputedStyle
-};
-use citadel_parser::layout::LayoutRect;
-use citadel_parser::dom::{Node, NodeData};
 use crate::app::Message;
+use citadel_parser::dom::{Node, NodeData};
+use citadel_parser::layout::LayoutRect;
+use citadel_parser::{compute_layout, CitadelStylesheet, ComputedStyle, Dom, LayoutResult};
+use iced::{
+    theme,
+    widget::{
+        button, checkbox, container, container::Appearance, container::StyleSheet, pick_list,
+        scrollable, text, text_input, Column, Space,
+    },
+    Background, Color, Element, Font, Length, Padding,
+};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use std::time::Instant;
 // WORKAROUND: Remove performance imports for now to fix build
 use citadel_parser::css::{ColorValue, LengthValue, PositionType as CssPositionType};
 
@@ -40,7 +41,6 @@ pub struct StickyElementState {
     pub is_stuck: bool,
     pub stick_direction: StickyDirection,
 }
-
 
 // Enhanced custom stylesheet for comprehensive visual rendering
 #[derive(Clone, Debug)]
@@ -322,7 +322,10 @@ impl CitadelRenderer {
     ///
     /// Operates purely on the positioned, sanitized runs that crossed the
     /// isolation boundary — there is no DOM or stylesheet involved.
-    fn render_zkvm_display_list(&self, content: &citadel_tabs::RenderedContent) -> Element<'_, Message> {
+    fn render_zkvm_display_list(
+        &self,
+        content: &citadel_tabs::RenderedContent,
+    ) -> Element<'_, Message> {
         use citadel_tabs::DisplayKind;
         let mut col = Column::new().spacing(14).padding(40).width(Length::Fill);
 
@@ -335,7 +338,10 @@ impl CitadelRenderer {
             let mut widget: iced::widget::Text<iced::Theme> =
                 text(label).size(item.font_size).style(color);
             if item.bold {
-                widget = widget.font(Font { weight: iced::font::Weight::Bold, ..Font::DEFAULT });
+                widget = widget.font(Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Font::DEFAULT
+                });
             }
             col = col.push(widget);
         }
@@ -345,11 +351,8 @@ impl CitadelRenderer {
         // background MUST live at that bounded level, not here inside the scrollable,
         // or `Length::Fill` collapses and the background never paints. The VM's text
         // colours are web colours (dark), legible on that light canvas.
-        container(col)
-            .width(Length::Fill)
-            .into()
+        container(col).width(Length::Fill).into()
     }
-
 
     /// Create renderer with performance monitor (TODO: Fix circular import)
     // pub fn new_with_performance_monitor(performance_monitor: Arc<PerformanceMonitor>) -> Self {
@@ -362,7 +365,7 @@ impl CitadelRenderer {
     pub fn set_base_url(&mut self, url: String) {
         self.base_url = Some(url);
     }
-    
+
     /// Update the content to render with full layout computation and caching
     pub fn update_content(
         &mut self,
@@ -370,41 +373,51 @@ impl CitadelRenderer {
         stylesheet: Arc<CitadelStylesheet>,
     ) -> Result<(), String> {
         let start_time = Instant::now();
-        
+
         log::trace!("📥 CitadelRenderer::update_content() called");
         log::trace!("  DOM rules: {}", stylesheet.rules.len());
         let text_content = dom.get_text_content();
         log::trace!("  DOM text length: {} chars", text_content.len());
         if text_content.len() > 0 {
-            log::trace!("  Text preview: '{}'", &text_content[..std::cmp::min(100, text_content.len())]);
+            log::trace!(
+                "  Text preview: '{}'",
+                &text_content[..std::cmp::min(100, text_content.len())]
+            );
         }
 
         // Check if we can do incremental update
         let dom_hash = self.hash_dom(&dom);
         let should_invalidate_cache = self.should_invalidate_widget_cache(dom_hash);
-        
+
         if should_invalidate_cache {
             log::debug!("DOM changed, invalidating widget cache");
             self.clear_widget_cache();
         }
 
         // Compute layout using Taffy engine
-        let layout_result = compute_layout(&dom, &stylesheet, self.viewport_size.0, self.viewport_size.1)
-            .map_err(|e| format!("Advanced layout computation failed: {}", e))?;
+        let layout_result = compute_layout(
+            &dom,
+            &stylesheet,
+            self.viewport_size.0,
+            self.viewport_size.1,
+        )
+        .map_err(|e| format!("Advanced layout computation failed: {}", e))?;
 
-        log::info!("Layout computed: {} nodes, {}ms, cache hits: {}, cache misses: {}",
-                   layout_result.node_layouts.len(),
-                   layout_result.metrics.layout_time_ms,
-                   layout_result.metrics.cache_hits,
-                   layout_result.metrics.cache_misses);
+        log::info!(
+            "Layout computed: {} nodes, {}ms, cache hits: {}, cache misses: {}",
+            layout_result.node_layouts.len(),
+            layout_result.metrics.layout_time_ms,
+            layout_result.metrics.cache_hits,
+            layout_result.metrics.cache_misses
+        );
 
         // Update content size based on new layout
         self.update_content_size_from_layout(&layout_result);
-        
+
         // Update performance metrics
         let render_time = start_time.elapsed();
         self.update_render_metrics(&layout_result, render_time);
-        
+
         // Update memory usage if performance monitor is available
         // TODO: Re-enable performance monitoring
         // if let Some(monitor) = &self.performance_monitor {
@@ -412,7 +425,7 @@ impl CitadelRenderer {
         //     monitor.update_memory_usage("renderer", memory_usage);
         //     monitor.add_measurement("render", render_time.as_millis() as u64);
         // }
-        
+
         self.current_dom = Some(dom);
         self.current_stylesheet = Some(stylesheet);
         self.current_layout = Some(layout_result);
@@ -424,13 +437,14 @@ impl CitadelRenderer {
     /// Update viewport size and recompute layout with caching optimization
     pub fn update_viewport_size(&mut self, width: f32, height: f32) {
         log::info!("Updating viewport size: {}x{}", width, height);
-        
+
         // Check if viewport size actually changed
-        if (self.viewport_size.0 - width).abs() < 1.0 && (self.viewport_size.1 - height).abs() < 1.0 {
+        if (self.viewport_size.0 - width).abs() < 1.0 && (self.viewport_size.1 - height).abs() < 1.0
+        {
             log::debug!("Viewport size unchanged, skipping layout recomputation");
             return;
         }
-        
+
         self.viewport_size = (width, height);
         self.viewport_transform.viewport_width = width;
         self.viewport_transform.viewport_height = height;
@@ -441,16 +455,16 @@ impl CitadelRenderer {
         // Recompute layout if we have content
         if let (Some(dom), Some(stylesheet)) = (&self.current_dom, &self.current_stylesheet) {
             let start_time = Instant::now();
-            
+
             match compute_layout(dom, stylesheet, width, height) {
                 Ok(layout_result) => {
                     // Update content size based on layout
                     self.update_content_size_from_layout(&layout_result);
-                    
+
                     // Update performance metrics
                     let render_time = start_time.elapsed();
                     self.update_render_metrics(&layout_result, render_time);
-                    
+
                     self.current_layout = Some(layout_result);
                 }
                 Err(e) => {
@@ -459,27 +473,27 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Set zoom level for content rendering with cache optimization
     pub fn set_zoom_level(&mut self, zoom_factor: f32) {
         log::info!("Setting zoom level to {:.1}x", zoom_factor);
-        
+
         // Check if zoom factor actually changed
         if (self.viewport_transform.zoom_factor - zoom_factor).abs() < 0.01 {
             log::debug!("Zoom factor unchanged, skipping layout recomputation");
             return;
         }
-        
+
         self.viewport_transform.zoom_factor = zoom_factor;
-        
+
         // Invalidate zoom-dependent cache entries
         self.invalidate_zoom_dependent_cache();
-        
+
         // Recompute layout with new zoom factor
         if let (Some(dom), Some(stylesheet)) = (&self.current_dom, &self.current_stylesheet) {
             let effective_width = self.viewport_size.0 / zoom_factor;
             let effective_height = self.viewport_size.1 / zoom_factor;
-            
+
             match compute_layout(dom, stylesheet, effective_width, effective_height) {
                 Ok(layout_result) => {
                     self.update_content_size_from_layout(&layout_result);
@@ -491,30 +505,30 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Set scroll position
     pub fn set_scroll_position(&mut self, x: f32, y: f32) {
         self.viewport_transform.scroll_x = x;
         self.viewport_transform.scroll_y = y;
-        
+
         // Update sticky element positions
         self.update_sticky_elements();
     }
-    
+
     /// Get current content size for scrolling calculations
     pub fn get_content_size(&self) -> ContentSize {
         self.content_size.clone()
     }
-    
+
     /// Update content size from layout result
     fn update_content_size_from_layout(&mut self, layout_result: &LayoutResult) {
         let mut max_width = self.viewport_size.0;
         let mut max_height = self.viewport_size.1;
-        
+
         for layout_rect in layout_result.node_layouts.values() {
             let right = layout_rect.x + layout_rect.width;
             let bottom = layout_rect.y + layout_rect.height;
-            
+
             if right > max_width {
                 max_width = right;
             }
@@ -522,14 +536,17 @@ impl CitadelRenderer {
                 max_height = bottom;
             }
         }
-        
+
         // Apply zoom factor to content size
         self.content_size.width = max_width * self.viewport_transform.zoom_factor;
         self.content_size.height = max_height * self.viewport_transform.zoom_factor;
-        
-        log::debug!("Content size updated: {}x{} (zoom: {:.1}x)", 
-                   self.content_size.width, self.content_size.height, 
-                   self.viewport_transform.zoom_factor);
+
+        log::debug!(
+            "Content size updated: {}x{} (zoom: {:.1}x)",
+            self.content_size.width,
+            self.content_size.height,
+            self.viewport_transform.zoom_factor
+        );
     }
 
     /// Handle form-related messages (placeholder for full implementation)
@@ -563,12 +580,12 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Get the current form state (for external access)
     pub fn get_form_state(&self) -> &FormState {
         &self.form_state
     }
-    
+
     /// Clear form state
     pub fn clear_form_state(&mut self) {
         self.form_state = FormState {
@@ -579,7 +596,7 @@ impl CitadelRenderer {
             pending_submission: None,
         };
     }
-    
+
     /// Render the current content using computed layout positions
     pub fn render(&self) -> Element<'_, Message> {
         // Zero-knowledge path: if the tab's ZKVM boundary returned a sanitized
@@ -594,18 +611,24 @@ impl CitadelRenderer {
         // inside the ZKVM boundary and the host paints only the display list.
         log::trace!("🎨 CitadelRenderer::render() called");
         log::trace!("  DOM present: {}", self.current_dom.is_some());
-        log::trace!("  Stylesheet present: {}", self.current_stylesheet.is_some());
+        log::trace!(
+            "  Stylesheet present: {}",
+            self.current_stylesheet.is_some()
+        );
         log::trace!("  Layout present: {}", self.current_layout.is_some());
-        
+
         // Log detailed content information
         if let Some(dom) = &self.current_dom {
             let text_content = dom.get_text_content();
             log::info!("  📝 DOM text content length: {} chars", text_content.len());
             if text_content.len() > 0 {
-                log::info!("  📚 Text preview: '{}'", &text_content[..std::cmp::min(300, text_content.len())]);
+                log::info!(
+                    "  📚 Text preview: '{}'",
+                    &text_content[..std::cmp::min(300, text_content.len())]
+                );
             } else {
                 log::warn!("  ⚠️ DOM text content is EMPTY! Investigating DOM structure...");
-                
+
                 // Deep DOM structure investigation
                 log::warn!("  ⚠️ DOM appears to have no text content. This suggests either:");
                 log::warn!("      1. HTML parsing failed to create proper DOM structure");
@@ -613,15 +636,22 @@ impl CitadelRenderer {
                 log::warn!("      3. The content is nested too deeply or in unexpected elements");
             }
         }
-        
-        match (&self.current_dom, &self.current_stylesheet, &self.current_layout) {
+
+        match (
+            &self.current_dom,
+            &self.current_stylesheet,
+            &self.current_layout,
+        ) {
             (Some(dom), Some(stylesheet), Some(layout_result)) => {
-                log::trace!("🎨 Rendering with computed layout: {} positioned elements", layout_result.node_layouts.len());
+                log::trace!(
+                    "🎨 Rendering with computed layout: {} positioned elements",
+                    layout_result.node_layouts.len()
+                );
                 log::trace!("📊 Stylesheet has {} rules", stylesheet.rules.len());
-                
+
                 // Render properly processed content from ZKVM pipeline
                 log::info!("🎨 Rendering content processed through ZKVM security boundary");
-                
+
                 // Debug: Log DOM structure
                 let root_handle = dom.root();
                 let root_node = match root_handle.read() {
@@ -632,17 +662,20 @@ impl CitadelRenderer {
                     }
                 };
                 log::info!("🌳 DOM root has {} children", root_node.children().len());
-                
+
                 // Debug: Check if we have actual content
                 let text_content = dom.get_text_content();
                 log::info!("📝 Total text content in DOM: {} chars", text_content.len());
                 if text_content.len() > 0 {
-                    log::info!("📖 Text preview: {}", &text_content[..std::cmp::min(100, text_content.len())]);
+                    log::info!(
+                        "📖 Text preview: {}",
+                        &text_content[..std::cmp::min(100, text_content.len())]
+                    );
                 }
 
                 // Render DOM tree as structured widgets
                 let root_handle = dom.root();
-                
+
                 // The root is the document node - we need to find the HTML element
                 let root_node = match root_handle.read() {
                     Ok(node) => node,
@@ -652,7 +685,7 @@ impl CitadelRenderer {
                     }
                 };
                 let mut html_element = None;
-                
+
                 // Find the <html> element among the document's children
                 for child in root_node.children() {
                     let child_node = match child.read() {
@@ -669,7 +702,7 @@ impl CitadelRenderer {
                         }
                     }
                 }
-                
+
                 // Render from the HTML element if found, otherwise from root
                 let rendered_content = if let Some(html_handle) = html_element {
                     log::info!("🎯 Found HTML element, rendering from there");
@@ -680,8 +713,11 @@ impl CitadelRenderer {
                             return container(text("Error: Failed to read HTML element")).into();
                         }
                     };
-                    log::info!("📊 HTML element has {} direct children", html_node.children().len());
-                    
+                    log::info!(
+                        "📊 HTML element has {} direct children",
+                        html_node.children().len()
+                    );
+
                     // Log the structure of HTML element's children
                     for (i, child) in html_node.children().iter().enumerate() {
                         let child_node = match child.read() {
@@ -693,7 +729,12 @@ impl CitadelRenderer {
                         };
                         match &child_node.data {
                             NodeData::Element(e) => {
-                                log::info!("  HTML child {}: <{}> with {} children", i, e.local_name(), child_node.children().len());
+                                log::info!(
+                                    "  HTML child {}: <{}> with {} children",
+                                    i,
+                                    e.local_name(),
+                                    child_node.children().len()
+                                );
                             }
                             NodeData::Text(t) => {
                                 log::info!("  HTML child {}: Text({} chars)", i, t.len());
@@ -704,7 +745,7 @@ impl CitadelRenderer {
                         }
                     }
                     drop(html_node);
-                    
+
                     self.render_with_positioning(&html_handle, dom, stylesheet, layout_result)
                 } else {
                     log::warn!("⚠️ No HTML element found, rendering from document root");
@@ -716,7 +757,7 @@ impl CitadelRenderer {
             }
             (Some(dom), Some(_stylesheet), None) => {
                 log::error!("❌ CRITICAL: Layout computation failed - this should not happen with proper ZKVM processing");
-                
+
                 // Layout computation failed, show text content as fallback
                 log::error!("❌ Layout unavailable, falling back to text display");
                 let text_content = dom.get_text_content();
@@ -725,12 +766,20 @@ impl CitadelRenderer {
                 } else {
                     text_content
                 };
-                
+
                 container(
                     Column::new()
-                        .push(text("⚠️ LAYOUT UNAVAILABLE - Text Display").size(12).style(Color::from_rgb(1.0, 0.6, 0.0)))
-                        .push(scrollable(text(content).size(14)).height(Length::Fill).width(Length::Fill))
-                        .spacing(5)
+                        .push(
+                            text("⚠️ LAYOUT UNAVAILABLE - Text Display")
+                                .size(12)
+                                .style(Color::from_rgb(1.0, 0.6, 0.0)),
+                        )
+                        .push(
+                            scrollable(text(content).size(14))
+                                .height(Length::Fill)
+                                .width(Length::Fill),
+                        )
+                        .spacing(5),
                 )
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -739,14 +788,26 @@ impl CitadelRenderer {
             }
             (Some(_dom), None, _) => {
                 log::error!("❌ CRITICAL: DOM loaded but no stylesheet - this should not happen with proper engine processing");
-                
+
                 container(
                     Column::new()
-                        .push(text("❌ STYLESHEET MISSING").size(14).style(Color::from_rgb(1.0, 0.4, 0.4)))
-                        .push(text("This indicates a critical CSS processing failure").size(12).style(Color::from_rgb(0.8, 0.6, 0.6)))
-                        .push(text("Check engine CSS extraction and parsing pipeline").size(12).style(Color::from_rgb(0.8, 0.6, 0.6)))
+                        .push(
+                            text("❌ STYLESHEET MISSING")
+                                .size(14)
+                                .style(Color::from_rgb(1.0, 0.4, 0.4)),
+                        )
+                        .push(
+                            text("This indicates a critical CSS processing failure")
+                                .size(12)
+                                .style(Color::from_rgb(0.8, 0.6, 0.6)),
+                        )
+                        .push(
+                            text("Check engine CSS extraction and parsing pipeline")
+                                .size(12)
+                                .style(Color::from_rgb(0.8, 0.6, 0.6)),
+                        )
                         .spacing(5)
-                        .align_items(iced::Alignment::Center)
+                        .align_items(iced::Alignment::Center),
                 )
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -756,18 +817,36 @@ impl CitadelRenderer {
             }
             _ => {
                 log::info!("📋 Renderer waiting for content processing through ZKVM pipeline");
-                
+
                 // Show loading state while waiting for ZKVM processed content
                 container(
                     Column::new()
-                        .push(text("🔒 Citadel Browser").size(24).style(Color::from_rgb(0.2, 0.6, 1.0)))
+                        .push(
+                            text("🔒 Citadel Browser")
+                                .size(24)
+                                .style(Color::from_rgb(0.2, 0.6, 1.0)),
+                        )
                         .push(Space::with_height(20))
-                        .push(text("🔄 Processing content through security isolation...").size(16).style(Color::from_rgb(0.7, 0.7, 0.7)))
+                        .push(
+                            text("🔄 Processing content through security isolation...")
+                                .size(16)
+                                .style(Color::from_rgb(0.7, 0.7, 0.7)),
+                        )
                         .push(Space::with_height(10))
-                        .push(text("Content is being securely processed in isolated ZKVM environment").size(12).style(Color::from_rgb(0.6, 0.6, 0.6)))
-                        .push(text("This ensures complete tab isolation and security").size(12).style(Color::from_rgb(0.6, 0.6, 0.6)))
+                        .push(
+                            text(
+                                "Content is being securely processed in isolated ZKVM environment",
+                            )
+                            .size(12)
+                            .style(Color::from_rgb(0.6, 0.6, 0.6)),
+                        )
+                        .push(
+                            text("This ensures complete tab isolation and security")
+                                .size(12)
+                                .style(Color::from_rgb(0.6, 0.6, 0.6)),
+                        )
                         .spacing(5)
-                        .align_items(iced::Alignment::Center)
+                        .align_items(iced::Alignment::Center),
                 )
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -787,26 +866,30 @@ impl CitadelRenderer {
         layout_result: &'a LayoutResult,
     ) -> Element<'a, Message> {
         log::info!("🎨 Starting positioned rendering");
-        
+
         // Create a container for absolutely positioned elements
-        let positioned_elements = self.collect_positioned_elements(node_handle, dom, stylesheet, layout_result);
-        
+        let positioned_elements =
+            self.collect_positioned_elements(node_handle, dom, stylesheet, layout_result);
+
         if positioned_elements.is_empty() {
             log::warn!("No positioned elements found, falling back to flow layout");
             return self.render_node_recursive(node_handle, dom, stylesheet, layout_result);
         }
-        
-        log::info!("🎯 Rendering {} positioned elements", positioned_elements.len());
-        
+
+        log::info!(
+            "🎯 Rendering {} positioned elements",
+            positioned_elements.len()
+        );
+
         // Create canvas-like rendering using containers with absolute positioning
         let canvas = self.create_positioned_canvas(positioned_elements);
-        
+
         container(canvas)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
-    
+
     /// Collect all elements with their computed positions
     fn collect_positioned_elements<'a>(
         &'a self,
@@ -816,10 +899,16 @@ impl CitadelRenderer {
         layout_result: &'a LayoutResult,
     ) -> Vec<(PositionContext, Element<'a, Message>)> {
         let mut positioned_elements = Vec::new();
-        self.collect_elements_recursive(node_handle, dom, stylesheet, layout_result, &mut positioned_elements);
+        self.collect_elements_recursive(
+            node_handle,
+            dom,
+            stylesheet,
+            layout_result,
+            &mut positioned_elements,
+        );
         positioned_elements
     }
-    
+
     /// Recursively collect positioned elements
     fn collect_elements_recursive<'a>(
         &'a self,
@@ -836,17 +925,20 @@ impl CitadelRenderer {
                 return; // Return unit type for void function
             }
         };
-        
+
         // Get layout for this node
         if let Some(layout) = layout_result.node_layouts.get(&node.id()) {
             match &node.data {
                 NodeData::Element(element) => {
                     let tag_name = element.local_name();
-                    
+
                     // Skip container elements that don't render content
-                    if !matches!(tag_name, "html" | "head" | "meta" | "title" | "script" | "style") {
+                    if !matches!(
+                        tag_name,
+                        "html" | "head" | "meta" | "title" | "script" | "style"
+                    ) {
                         let computed_style = self.compute_node_styles(&node, stylesheet);
-                        
+
                         let position_context = PositionContext {
                             x: layout.x,
                             y: layout.y,
@@ -854,13 +946,26 @@ impl CitadelRenderer {
                             height: layout.height,
                             position_type: self.get_position_type(&computed_style),
                         };
-                        
+
                         // Create the widget for this element with enhanced visual rendering
-                        let element_widget = self.create_enhanced_element_widget(&node, element, dom, stylesheet, layout_result, &computed_style);
-                        
-                        log::info!("📍 Positioned {}: x={:.1}, y={:.1}, w={:.1}, h={:.1}", 
-                            tag_name, layout.x, layout.y, layout.width, layout.height);
-                        
+                        let element_widget = self.create_enhanced_element_widget(
+                            &node,
+                            element,
+                            dom,
+                            stylesheet,
+                            layout_result,
+                            &computed_style,
+                        );
+
+                        log::info!(
+                            "📍 Positioned {}: x={:.1}, y={:.1}, w={:.1}, h={:.1}",
+                            tag_name,
+                            layout.x,
+                            layout.y,
+                            layout.width,
+                            layout.height
+                        );
+
                         positioned_elements.push((position_context, element_widget));
                     }
                 }
@@ -870,13 +975,19 @@ impl CitadelRenderer {
                 _ => {}
             }
         }
-        
+
         // Process children
         for child_handle in node.children() {
-            self.collect_elements_recursive(child_handle, dom, stylesheet, layout_result, positioned_elements);
+            self.collect_elements_recursive(
+                child_handle,
+                dom,
+                stylesheet,
+                layout_result,
+                positioned_elements,
+            );
         }
     }
-    
+
     /// Create a canvas with positioned elements
     fn create_positioned_canvas<'a>(
         &'a self,
@@ -884,13 +995,17 @@ impl CitadelRenderer {
     ) -> Element<'a, Message> {
         // Sort by z-index (for now, render in DOM order)
         let mut sorted_elements = positioned_elements;
-        sorted_elements.sort_by(|a, b| a.0.y.partial_cmp(&b.0.y).unwrap_or(std::cmp::Ordering::Equal));
-        
+        sorted_elements.sort_by(|a, b| {
+            a.0.y
+                .partial_cmp(&b.0.y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         // For now, we'll use a simplified approach with containers and padding to simulate positioning
         // This is a limitation of Iced - true absolute positioning requires custom layout
         let mut column_elements = Vec::new();
         let mut current_y = 0.0;
-        
+
         for (position, element) in sorted_elements {
             // Add vertical spacing to simulate y position
             if position.y > current_y {
@@ -899,7 +1014,7 @@ impl CitadelRenderer {
                     column_elements.push(Space::with_height(spacing).into());
                 }
             }
-            
+
             // Wrap element in container with horizontal positioning
             let positioned_element = if position.x > 0.0 {
                 let x_padding = position.x as u16;
@@ -910,11 +1025,11 @@ impl CitadelRenderer {
             } else {
                 element
             };
-            
+
             column_elements.push(positioned_element);
             current_y = position.y + position.height;
         }
-        
+
         if column_elements.is_empty() {
             text("No content to render").into()
         } else {
@@ -924,7 +1039,7 @@ impl CitadelRenderer {
                 .into()
         }
     }
-    
+
     /// Get position type from computed style
     fn get_position_type(&self, computed_style: &ComputedStyle) -> PositionType {
         match computed_style.position {
@@ -935,7 +1050,7 @@ impl CitadelRenderer {
             CssPositionType::Sticky => PositionType::Relative, // Sticky treated as relative for now
         }
     }
-    
+
     /// Create enhanced widget for an element with comprehensive visual styling
     fn create_enhanced_element_widget<'a>(
         &'a self,
@@ -947,7 +1062,7 @@ impl CitadelRenderer {
         computed_style: &ComputedStyle,
     ) -> Element<'a, Message> {
         let tag_name = element.local_name();
-        
+
         // Skip dangerous elements
         if self.is_dangerous_element(tag_name) {
             return text("[Blocked for security]")
@@ -955,27 +1070,35 @@ impl CitadelRenderer {
                 .style(Color::from_rgb(0.8, 0.4, 0.4))
                 .into();
         }
-        
+
         // Handle special elements first
         match tag_name {
             "img" => return self.create_image_widget(element, computed_style),
-            "br" => return Space::with_height(self.get_line_height_from_style(computed_style) as u16).into(),
+            "br" => {
+                return Space::with_height(self.get_line_height_from_style(computed_style) as u16)
+                    .into()
+            }
             _ => {}
         }
-        
+
         // Extract text content for the element
         let text_content = self.extract_text_content(node, dom);
-        
+
         if !text_content.is_empty() {
             // Get comprehensive styling from computed CSS
             let font_size = self.get_comprehensive_font_size(tag_name, computed_style);
             let text_color = self.get_comprehensive_text_color(tag_name, computed_style);
             let font_weight = self.get_font_weight_from_style(computed_style);
             let _text_decoration = self.get_text_decoration_from_style(computed_style);
-            
-            log::info!("📝 Creating enhanced text widget for {}: '{}' (size: {}, weight: {:?})", 
-                tag_name, text_content, font_size, font_weight);
-            
+
+            log::info!(
+                "📝 Creating enhanced text widget for {}: '{}' (size: {}, weight: {:?})",
+                tag_name,
+                text_content,
+                font_size,
+                font_weight
+            );
+
             // Create enhanced text widget with comprehensive styling
             let mut text_widget: iced::widget::Text<iced::Theme> = if tag_name == "a" {
                 if let Some(href) = element.get_attribute("href") {
@@ -992,20 +1115,20 @@ impl CitadelRenderer {
                     .size(font_size)
                     .style(iced::theme::Text::Color(text_color))
             };
-            
+
             // Apply font if available
             if let Some(font) = self.get_font_from_style(computed_style) {
                 text_widget = text_widget.font(font);
             }
-            
+
             // Create enhanced container with comprehensive styling
             let enhanced_style = self.create_enhanced_container_style(computed_style, tag_name);
             let padding = self.get_comprehensive_padding(tag_name, computed_style);
-            
+
             let mut text_container = container(text_widget)
                 .padding(padding)
                 .style(theme::Container::Custom(Box::new(enhanced_style)));
-            
+
             // Apply layout dimensions if available
             if let Some(layout) = layout_result.node_layouts.get(&node.id()) {
                 if layout.width > 0.0 {
@@ -1015,17 +1138,17 @@ impl CitadelRenderer {
                     text_container = text_container.height(Length::Fixed(layout.height));
                 }
             }
-            
+
             text_container.into()
         } else {
             // Element with no text content - create styled container
             let enhanced_style = self.create_enhanced_container_style(computed_style, tag_name);
             let padding = self.get_comprehensive_padding(tag_name, computed_style);
-            
+
             let mut empty_container = container(Space::with_height(0))
                 .padding(padding)
                 .style(theme::Container::Custom(Box::new(enhanced_style)));
-                
+
             // Apply layout dimensions if available
             if let Some(layout) = layout_result.node_layouts.get(&node.id()) {
                 if layout.width > 0.0 {
@@ -1035,11 +1158,11 @@ impl CitadelRenderer {
                     empty_container = empty_container.height(Length::Fixed(layout.height));
                 }
             }
-            
+
             empty_container.into()
         }
     }
-    
+
     /// Recursively render DOM nodes as structured Iced widgets (fallback method)
     fn render_node_recursive<'a>(
         &'a self,
@@ -1058,11 +1181,18 @@ impl CitadelRenderer {
         match &node.data {
             NodeData::Element(element) => {
                 let tag_name = element.local_name();
-                log::info!("🏷️ Rendering element: <{}> with {} children", tag_name, node.children().len());
-                
+                log::info!(
+                    "🏷️ Rendering element: <{}> with {} children",
+                    tag_name,
+                    node.children().len()
+                );
+
                 // Debug: Check if this is body element
                 if tag_name == "body" {
-                    log::info!("🎯 Found body element! Has {} children", node.children().len());
+                    log::info!(
+                        "🎯 Found body element! Has {} children",
+                        node.children().len()
+                    );
                     for (i, child) in node.children().iter().enumerate() {
                         let child_node = match child.read() {
                             Ok(node) => node,
@@ -1072,16 +1202,30 @@ impl CitadelRenderer {
                             }
                         };
                         match &child_node.data {
-                            NodeData::Element(e) => log::info!("  Body child {}: <{}> with {} children", i, e.local_name(), child_node.children().len()),
-                            NodeData::Text(t) => log::info!("  Body child {}: Text '{}' ({} chars)", i, t.trim(), t.len()),
+                            NodeData::Element(e) => log::info!(
+                                "  Body child {}: <{}> with {} children",
+                                i,
+                                e.local_name(),
+                                child_node.children().len()
+                            ),
+                            NodeData::Text(t) => log::info!(
+                                "  Body child {}: Text '{}' ({} chars)",
+                                i,
+                                t.trim(),
+                                t.len()
+                            ),
                             _ => log::info!("  Body child {}: Other", i),
                         }
                     }
                 }
-                
+
                 // Debug all elements with their content
                 if matches!(tag_name, "h1" | "h2" | "h3" | "p" | "div") {
-                    log::info!("🔍 Examining {} element with {} children", tag_name, node.children().len());
+                    log::info!(
+                        "🔍 Examining {} element with {} children",
+                        tag_name,
+                        node.children().len()
+                    );
                     let text_content = self.extract_text_content(&node, dom);
                     if !text_content.is_empty() {
                         log::info!("  📄 {} text content: '{}'", tag_name, text_content);
@@ -1089,17 +1233,23 @@ impl CitadelRenderer {
                         log::warn!("  ⚠️ {} element has no text content!", tag_name);
                     }
                 }
-                
+
                 self.render_element(&node, element, dom, stylesheet, layout_result)
             }
             NodeData::Text(text_content) => {
                 // Don't trim the text content itself, only check if it's worth rendering
                 if !text_content.trim().is_empty() {
-                    let preview = if text_content.len() > 50 { format!("{}...", &text_content[..50]) } else { text_content.clone() };
-                    log::info!("Rendering text node: '{}' ({} chars)", preview, text_content.len());
-                    text(text_content.as_str())
-                        .size(14)
-                        .into()
+                    let preview = if text_content.len() > 50 {
+                        format!("{}...", &text_content[..50])
+                    } else {
+                        text_content.clone()
+                    };
+                    log::info!(
+                        "Rendering text node: '{}' ({} chars)",
+                        preview,
+                        text_content.len()
+                    );
+                    text(text_content.as_str()).size(14).into()
                 } else {
                     log::debug!("📄 Skipping empty/whitespace text node: '{}'", text_content);
                     Space::with_height(0).into()
@@ -1135,9 +1285,17 @@ impl CitadelRenderer {
         // Skip non-visual elements that should never produce visible output.
         // <style> CSS rules, <script> code, <head> metadata, <meta>, <link>,
         // <noscript>, and <template> are not rendered by any browser.
-        if matches!(tag_name,
-            "style" | "script" | "head" | "meta" | "link" |
-            "noscript" | "template" | "title" | "base"
+        if matches!(
+            tag_name,
+            "style"
+                | "script"
+                | "head"
+                | "meta"
+                | "link"
+                | "noscript"
+                | "template"
+                | "title"
+                | "base"
         ) {
             return Space::with_height(0).into();
         }
@@ -1145,20 +1303,28 @@ impl CitadelRenderer {
         // Render children first
         let mut children_widgets = Vec::new();
         for child_handle in node.children() {
-            let child_widget = self.render_node_recursive(child_handle, dom, stylesheet, layout_result);
+            let child_widget =
+                self.render_node_recursive(child_handle, dom, stylesheet, layout_result);
             children_widgets.push(child_widget);
         }
 
         // Convert to appropriate Iced widget based on HTML element type
         let mut element_widget: Element<Message> = match tag_name {
             "html" | "body" => {
-                log::info!("🏗️ Building widget for <{}> with {} children widgets", tag_name, children_widgets.len());
+                log::info!(
+                    "🏗️ Building widget for <{}> with {} children widgets",
+                    tag_name,
+                    children_widgets.len()
+                );
                 if children_widgets.is_empty() {
-                    log::warn!("⚠️ {} element has no children widgets! Creating fallback content.", tag_name);
-                    
+                    log::warn!(
+                        "⚠️ {} element has no children widgets! Creating fallback content.",
+                        tag_name
+                    );
+
                     // For debugging: create a visible indicator
                     if tag_name == "body" {
-                        text("[DEBUG: Body element found but has no visible content]") 
+                        text("[DEBUG: Body element found but has no visible content]")
                             .size(16)
                             .style(Color::from_rgb(0.8, 0.4, 0.4))
                             .into()
@@ -1167,7 +1333,11 @@ impl CitadelRenderer {
                     }
                 } else {
                     // Debug: Log what widgets we're adding
-                    log::trace!("  📦 Adding {} child widgets to {}", children_widgets.len(), tag_name);
+                    log::trace!(
+                        "  📦 Adding {} child widgets to {}",
+                        children_widgets.len(),
+                        tag_name
+                    );
                     for (i, _) in children_widgets.iter().enumerate() {
                         log::trace!("    - Child widget {} added to {}", i, tag_name);
                     }
@@ -1184,14 +1354,15 @@ impl CitadelRenderer {
                     Column::with_children(children_widgets).spacing(2)
                 };
 
-                let enhanced_style = self.create_enhanced_container_style(&computed_style, tag_name);
+                let enhanced_style =
+                    self.create_enhanced_container_style(&computed_style, tag_name);
                 let padding = self.get_comprehensive_padding(tag_name, &computed_style);
 
                 let mut div_widget = container(div_container)
                     .width(Length::Fill)
                     .padding(padding)
                     .style(theme::Container::Custom(Box::new(enhanced_style)));
-                    
+
                 // Apply layout dimensions if available
                 if let Some(layout) = layout_result.node_layouts.get(&node.id()) {
                     if layout.width > 0.0 {
@@ -1201,14 +1372,20 @@ impl CitadelRenderer {
                         div_widget = div_widget.height(Length::Fixed(layout.height));
                     }
                 }
-                
+
                 div_widget.into()
             }
-            "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "a" | "span" | "em" | "strong" | "b" | "i" | "blockquote" | "pre" => {
+            "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "a" | "span" | "em" | "strong"
+            | "b" | "i" | "blockquote" | "pre" => {
                 // Always try to extract text content first
                 let text_content = self.extract_text_content(node, dom);
-                log::trace!("🔍 {} element text extraction: '{}' ({} chars)", tag_name, text_content, text_content.len());
-                
+                log::trace!(
+                    "🔍 {} element text extraction: '{}' ({} chars)",
+                    tag_name,
+                    text_content,
+                    text_content.len()
+                );
+
                 // If we have actual text content, render it
                 if !text_content.is_empty() {
                     let font_size = match tag_name {
@@ -1221,9 +1398,15 @@ impl CitadelRenderer {
                         _ => self.get_font_size_from_style(&computed_style),
                     };
                     let color = self.get_text_color_from_style(&computed_style);
-                    
-                    log::trace!("✅ Creating text widget for {}: '{}' (size: {}, color: {:?})", tag_name, text_content, font_size, color);
-                    
+
+                    log::trace!(
+                        "✅ Creating text widget for {}: '{}' (size: {}, color: {:?})",
+                        tag_name,
+                        text_content,
+                        font_size,
+                        color
+                    );
+
                     let text_widget = if tag_name == "a" {
                         if let Some(href) = element.get_attribute("href") {
                             text(format!("{} [{}]", text_content, href))
@@ -1235,15 +1418,17 @@ impl CitadelRenderer {
                                 .style(iced::theme::Text::Color(Color::from_rgb(0.0, 0.4, 0.8)))
                         }
                     } else {
-                        text(text_content).size(font_size).style(iced::theme::Text::Color(color))
+                        text(text_content)
+                            .size(font_size)
+                            .style(iced::theme::Text::Color(color))
                     };
-                    
+
                     let padding = match tag_name {
                         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => [0, 0, 16, 0],
                         "p" | "blockquote" => [0, 0, 12, 0],
                         _ => [0, 0, 6, 0],
                     };
-                    
+
                     container(text_widget)
                         .width(Length::Fill)
                         .padding(padding)
@@ -1255,40 +1440,45 @@ impl CitadelRenderer {
                         "p" | "blockquote" => [0, 0, 12, 0],
                         _ => [0, 0, 6, 0],
                     };
-                    
+
                     let content = Column::with_children(children_widgets)
                         .spacing(2)
                         .width(Length::Fill);
-                    
+
                     container(content)
                         .width(Length::Fill)
                         .padding(padding)
                         .into()
                 } else {
-                    log::warn!("⚠️ {} element has no text content or children to render!", tag_name);
+                    log::warn!(
+                        "⚠️ {} element has no text content or children to render!",
+                        tag_name
+                    );
                     Space::with_height(0).into()
                 }
             }
-            "br" => {
-                Space::with_height(14).into()
-            }
-            "img" => {
-                self.create_image_widget(element, &computed_style)
-            }
+            "br" => Space::with_height(14).into(),
+            "img" => self.create_image_widget(element, &computed_style),
             "form" => {
-                log::debug!("🏗️ Rendering form element with {} children", children_widgets.len());
+                log::debug!(
+                    "🏗️ Rendering form element with {} children",
+                    children_widgets.len()
+                );
                 if children_widgets.is_empty() {
                     Space::with_height(0).into()
                 } else {
-                    let _form_id = element.get_attribute("id").unwrap_or_else(|| format!("form_{}", self.form_element_counter));
-                    
-                    let enhanced_style = self.create_enhanced_container_style(&computed_style, tag_name);
+                    let _form_id = element
+                        .get_attribute("id")
+                        .unwrap_or_else(|| format!("form_{}", self.form_element_counter));
+
+                    let enhanced_style =
+                        self.create_enhanced_container_style(&computed_style, tag_name);
                     let padding = self.get_comprehensive_padding(tag_name, &computed_style);
-                    
+
                     let form_container = Column::with_children(children_widgets)
                         .spacing(8) // Forms need more spacing between elements
                         .width(Length::Fill);
-                    
+
                     container(form_container)
                         .width(Length::Fill)
                         .padding(padding)
@@ -1303,7 +1493,9 @@ impl CitadelRenderer {
                     text(text_content).size(14).into()
                 } else {
                     // Create a placeholder for the form element
-                    let element_type = element.get_attribute("type").unwrap_or_else(|| tag_name.to_string());
+                    let element_type = element
+                        .get_attribute("type")
+                        .unwrap_or_else(|| tag_name.to_string());
                     text(format!("[{} element]", element_type))
                         .size(12)
                         .style(Color::from_rgb(0.6, 0.6, 0.6))
@@ -1316,7 +1508,7 @@ impl CitadelRenderer {
                 if !text_content.is_empty() {
                     let font_size = self.get_comprehensive_font_size(tag_name, &computed_style);
                     let text_color = self.get_comprehensive_text_color(tag_name, &computed_style);
-                    
+
                     text(text_content)
                         .size(font_size)
                         .style(iced::theme::Text::Color(text_color))
@@ -1331,7 +1523,11 @@ impl CitadelRenderer {
                 }
             }
             "header" | "main" | "section" | "footer" | "article" | "aside" | "nav" => {
-                log::debug!("🏗️ Rendering structural element <{}> with {} children", tag_name, children_widgets.len());
+                log::debug!(
+                    "🏗️ Rendering structural element <{}> with {} children",
+                    tag_name,
+                    children_widgets.len()
+                );
                 if children_widgets.is_empty() {
                     Space::with_height(0).into()
                 } else {
@@ -1342,7 +1538,11 @@ impl CitadelRenderer {
                 }
             }
             "ul" | "ol" => {
-                log::debug!("📋 Rendering list <{}> with {} items", tag_name, children_widgets.len());
+                log::debug!(
+                    "📋 Rendering list <{}> with {} items",
+                    tag_name,
+                    children_widgets.len()
+                );
                 if children_widgets.is_empty() {
                     Space::with_height(0).into()
                 } else {
@@ -1354,7 +1554,10 @@ impl CitadelRenderer {
                 }
             }
             "li" => {
-                log::debug!("• Rendering list item with {} children", children_widgets.len());
+                log::debug!(
+                    "• Rendering list item with {} children",
+                    children_widgets.len()
+                );
                 if children_widgets.is_empty() {
                     text("•").into()
                 } else {
@@ -1365,7 +1568,11 @@ impl CitadelRenderer {
                 }
             }
             _ => {
-                log::debug!("🔧 Rendering generic element <{}> with {} children", tag_name, children_widgets.len());
+                log::debug!(
+                    "🔧 Rendering generic element <{}> with {} children",
+                    tag_name,
+                    children_widgets.len()
+                );
                 if children_widgets.is_empty() {
                     Space::with_height(0).into()
                 } else {
@@ -1379,9 +1586,15 @@ impl CitadelRenderer {
 
         // Apply layout dimensions if available
         if let Some(layout) = layout_result.node_layouts.get(&node.id()) {
-            log::debug!("📐 Applying layout dimensions to {}: {}x{} at ({}, {})", 
-                element.local_name(), layout.width, layout.height, layout.x, layout.y);
-            
+            log::debug!(
+                "📐 Applying layout dimensions to {}: {}x{} at ({}, {})",
+                element.local_name(),
+                layout.width,
+                layout.height,
+                layout.x,
+                layout.y
+            );
+
             // Note: Iced doesn't support absolute positioning directly,
             // so we only apply width constraints where meaningful
             if layout.width > 0.0 && layout.width < self.viewport_size.0 {
@@ -1397,28 +1610,42 @@ impl CitadelRenderer {
     /// Extract text content from a node and its children
     fn extract_text_content(&self, node: &Node, _dom: &Dom) -> String {
         let mut text_content = String::new();
-        
-        log::debug!("🔍 extract_text_content: Starting extraction from node with {} children", node.children().len());
-        
+
+        log::debug!(
+            "🔍 extract_text_content: Starting extraction from node with {} children",
+            node.children().len()
+        );
+
         // First check if this node itself has direct text content
         match &node.data {
             NodeData::Text(text) => {
                 let trimmed = text.trim();
-                log::debug!("  📄 Direct text node found: '{}' ({} chars, {} trimmed)", text, text.len(), trimmed.len());
+                log::debug!(
+                    "  📄 Direct text node found: '{}' ({} chars, {} trimmed)",
+                    text,
+                    text.len(),
+                    trimmed.len()
+                );
                 if !trimmed.is_empty() {
                     return trimmed.to_string();
                 }
             }
             _ => {}
         }
-        
+
         // Recursively collect text from all child nodes
         for (i, child_handle) in node.children().iter().enumerate() {
             if let Ok(child_node) = child_handle.read() {
                 match &child_node.data {
                     NodeData::Text(text) => {
                         let trimmed = text.trim();
-                        log::debug!("  📄 Child {}: Found text node '{}' ({} chars, {} trimmed)", i, text, text.len(), trimmed.len());
+                        log::debug!(
+                            "  📄 Child {}: Found text node '{}' ({} chars, {} trimmed)",
+                            i,
+                            text,
+                            text.len(),
+                            trimmed.len()
+                        );
                         if !trimmed.is_empty() {
                             text_content.push_str(trimmed);
                             text_content.push(' ');
@@ -1427,21 +1654,41 @@ impl CitadelRenderer {
                     NodeData::Element(element) => {
                         let child_tag = element.local_name();
                         // Skip non-visual elements
-                        if matches!(child_tag,
-                            "style" | "script" | "head" | "meta" | "link" |
-                            "noscript" | "template" | "title" | "base"
+                        if matches!(
+                            child_tag,
+                            "style"
+                                | "script"
+                                | "head"
+                                | "meta"
+                                | "link"
+                                | "noscript"
+                                | "template"
+                                | "title"
+                                | "base"
                         ) {
                             continue;
                         }
-                        log::debug!("  Child {}: Found element <{}> with {} children", i, child_tag, child_node.children().len());
+                        log::debug!(
+                            "  Child {}: Found element <{}> with {} children",
+                            i,
+                            child_tag,
+                            child_node.children().len()
+                        );
                         // Recursively get text from element's children
                         let child_text = self.extract_text_content(&child_node, _dom);
                         if !child_text.is_empty() {
-                            log::debug!("    ✅ Element <{}> contributed text: '{}'", element.local_name(), child_text);
+                            log::debug!(
+                                "    ✅ Element <{}> contributed text: '{}'",
+                                element.local_name(),
+                                child_text
+                            );
                             text_content.push_str(&child_text);
                             text_content.push(' ');
                         } else {
-                            log::debug!("    ⚠️ Element <{}> contributed no text", element.local_name());
+                            log::debug!(
+                                "    ⚠️ Element <{}> contributed no text",
+                                element.local_name()
+                            );
                         }
                     }
                     _ => {
@@ -1450,9 +1697,13 @@ impl CitadelRenderer {
                 }
             }
         }
-        
+
         let result = text_content.trim().to_string();
-        log::debug!("🔍 extract_text_content: Final result '{}' ({} chars)", result, result.len());
+        log::debug!(
+            "🔍 extract_text_content: Final result '{}' ({} chars)",
+            result,
+            result.len()
+        );
         result
     }
 
@@ -1473,13 +1724,21 @@ impl CitadelRenderer {
 
     /// Get background from computed style
     fn get_background_from_style(&self, style: &ComputedStyle) -> Option<Background> {
-        style.background_color.as_ref().and_then(|c| self.color_value_to_iced_color(c)).map(Background::from)
+        style
+            .background_color
+            .as_ref()
+            .and_then(|c| self.color_value_to_iced_color(c))
+            .map(Background::from)
     }
 
     /// Get border from computed style
     fn get_border_from_style(&self, style: &ComputedStyle) -> iced::Border {
         iced::Border {
-            color: style.border_color.as_ref().and_then(|c| self.color_value_to_iced_color(c)).unwrap_or(Color::TRANSPARENT),
+            color: style
+                .border_color
+                .as_ref()
+                .and_then(|c| self.color_value_to_iced_color(c))
+                .unwrap_or(Color::TRANSPARENT),
             width: style.border_width.as_ref().map_or(0.0, |w| match w {
                 LengthValue::Px(px) => *px,
                 _ => 0.0,
@@ -1499,7 +1758,11 @@ impl CitadelRenderer {
 
     /// Get text color from computed style (updated signature)
     fn get_text_color_from_style(&self, style: &ComputedStyle) -> Color {
-        style.color.as_ref().and_then(|c| self.color_value_to_iced_color(c)).unwrap_or(Color::BLACK)
+        style
+            .color
+            .as_ref()
+            .and_then(|c| self.color_value_to_iced_color(c))
+            .unwrap_or(Color::BLACK)
     }
 
     fn color_value_to_iced_color(&self, color: &ColorValue) -> Option<Color> {
@@ -1531,7 +1794,7 @@ impl CitadelRenderer {
                     "yellow" => Some(Color::from_rgb8(255, 255, 0)),
                     "transparent" => Some(Color::TRANSPARENT),
                     // Add more colors as needed
-                    _ => None
+                    _ => None,
                 }
             }
         }
@@ -1541,19 +1804,27 @@ impl CitadelRenderer {
     fn is_dangerous_element(&self, tag_name: &str) -> bool {
         matches!(tag_name, "script" | "iframe" | "object" | "embed")
     }
-    
+
     // ==================== ENHANCED VISUAL RENDERING METHODS ====================
-    
+
     /// Create enhanced container style with comprehensive CSS support
-    fn create_enhanced_container_style(&self, computed_style: &ComputedStyle, tag_name: &str) -> EnhancedContainerStyle {
+    fn create_enhanced_container_style(
+        &self,
+        computed_style: &ComputedStyle,
+        tag_name: &str,
+    ) -> EnhancedContainerStyle {
         let background = self.get_enhanced_background_from_style(computed_style);
         let border = self.get_enhanced_border_from_style(computed_style);
         let shadow = self.get_box_shadow_from_style(computed_style);
         let text_color = self.get_text_color_from_style(computed_style);
-        
-        log::debug!("🎨 Creating enhanced style for {}: bg={:?}, border={:?}", 
-            tag_name, background.is_some(), border.width > 0.0);
-        
+
+        log::debug!(
+            "🎨 Creating enhanced style for {}: bg={:?}, border={:?}",
+            tag_name,
+            background.is_some(),
+            border.width > 0.0
+        );
+
         EnhancedContainerStyle {
             background,
             border,
@@ -1561,7 +1832,7 @@ impl CitadelRenderer {
             text_color: Some(text_color),
         }
     }
-    
+
     /// Get comprehensive font size with fallbacks
     fn get_comprehensive_font_size(&self, tag_name: &str, computed_style: &ComputedStyle) -> u16 {
         // Try CSS font-size first
@@ -1576,7 +1847,7 @@ impl CitadelRenderer {
             self.get_default_font_size_for_tag(tag_name)
         }
     }
-    
+
     /// Get default font size for HTML tags
     fn get_default_font_size_for_tag(&self, tag_name: &str) -> u16 {
         match tag_name {
@@ -1591,15 +1862,19 @@ impl CitadelRenderer {
             _ => 14,
         }
     }
-    
+
     /// Get comprehensive text color with fallbacks
-    fn get_comprehensive_text_color(&self, tag_name: &str, computed_style: &ComputedStyle) -> Color {
+    fn get_comprehensive_text_color(
+        &self,
+        tag_name: &str,
+        computed_style: &ComputedStyle,
+    ) -> Color {
         // Try CSS color first - get_text_color_from_style always returns a Color
         let color = self.get_text_color_from_style(computed_style);
         if color != Color::BLACK {
             return color;
         }
-        
+
         // Fallback to semantic colors
         match tag_name {
             "a" => Color::from_rgb(0.0, 0.4, 0.8),
@@ -1607,7 +1882,7 @@ impl CitadelRenderer {
             _ => Color::from_rgb(0.0, 0.0, 0.0),
         }
     }
-    
+
     /// Get font weight from computed style
     fn get_font_weight_from_style(&self, computed_style: &ComputedStyle) -> FontWeight {
         if let Some(weight) = &computed_style.font_weight {
@@ -1624,26 +1899,26 @@ impl CitadelRenderer {
             FontWeight::Normal
         }
     }
-    
+
     /// Get text decoration from computed style
     fn get_text_decoration_from_style(&self, _computed_style: &ComputedStyle) -> TextDecoration {
         // TODO: Implement text-decoration parsing when available in CSS parser
         TextDecoration::None
     }
-    
+
     /// Get font from computed style
     fn get_font_from_style(&self, _computed_style: &ComputedStyle) -> Option<Font> {
         // TODO: Implement font-family parsing and web font loading
         None
     }
-    
+
     /// Get line height from computed style
     fn get_line_height_from_style(&self, computed_style: &ComputedStyle) -> f32 {
         // Calculate line height based on font size
         let font_size = self.get_comprehensive_font_size("", computed_style) as f32;
         font_size * 1.2 // Default line height is 1.2 times font size
     }
-    
+
     /// Get comprehensive padding with CSS support
     fn get_comprehensive_padding(&self, tag_name: &str, computed_style: &ComputedStyle) -> Padding {
         // Try CSS padding values first
@@ -1651,12 +1926,12 @@ impl CitadelRenderer {
         let right = self.length_value_to_pixels(computed_style.padding_right.as_ref());
         let bottom = self.length_value_to_pixels(computed_style.padding_bottom.as_ref());
         let left = self.length_value_to_pixels(computed_style.padding_left.as_ref());
-        
+
         // If any padding is specified in CSS, use it
         if top > 0.0 || right > 0.0 || bottom > 0.0 || left > 0.0 {
             return Padding::from([top as u16, right as u16, bottom as u16, left as u16]);
         }
-        
+
         // Fallback to semantic padding
         match tag_name {
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Padding::from([0, 0, 16, 0]),
@@ -1665,7 +1940,7 @@ impl CitadelRenderer {
             _ => Padding::from([0, 0, 4, 0]),
         }
     }
-    
+
     /// Convert length value to pixels
     fn length_value_to_pixels(&self, length: Option<&LengthValue>) -> f32 {
         match length {
@@ -1682,26 +1957,36 @@ impl CitadelRenderer {
             _ => 0.0,
         }
     }
-    
+
     /// Get enhanced background with support for colors, images, and gradients
-    fn get_enhanced_background_from_style(&self, computed_style: &ComputedStyle) -> Option<Background> {
+    fn get_enhanced_background_from_style(
+        &self,
+        computed_style: &ComputedStyle,
+    ) -> Option<Background> {
         // TODO: Add support for background-image and gradients
-        computed_style.background_color.as_ref()
+        computed_style
+            .background_color
+            .as_ref()
             .and_then(|c| self.color_value_to_iced_color(c))
             .map(Background::from)
     }
-    
+
     /// Get enhanced border with support for all border properties
     fn get_enhanced_border_from_style(&self, computed_style: &ComputedStyle) -> iced::Border {
-        let width = computed_style.border_width.as_ref().map_or(0.0, |w| match w {
-            LengthValue::Px(px) => *px,
-            _ => 0.0,
-        });
-        
-        let color = computed_style.border_color.as_ref()
+        let width = computed_style
+            .border_width
+            .as_ref()
+            .map_or(0.0, |w| match w {
+                LengthValue::Px(px) => *px,
+                _ => 0.0,
+            });
+
+        let color = computed_style
+            .border_color
+            .as_ref()
             .and_then(|c| self.color_value_to_iced_color(c))
             .unwrap_or(Color::TRANSPARENT);
-        
+
         // TODO: Add border-radius support when available in ComputedStyle
         iced::Border {
             color,
@@ -1709,32 +1994,37 @@ impl CitadelRenderer {
             radius: 0.0.into(),
         }
     }
-    
+
     /// Get box shadow from computed style
     fn get_box_shadow_from_style(&self, _computed_style: &ComputedStyle) -> Option<iced::Shadow> {
         // TODO: Implement box-shadow parsing when available in CSS parser
         None
     }
-    
+
     /// Create image widget with comprehensive styling
     fn create_image_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
         computed_style: &ComputedStyle,
     ) -> Element<'a, Message> {
-        let alt_text = element.get_attribute("alt").unwrap_or_else(|| "Image".to_string());
+        let alt_text = element
+            .get_attribute("alt")
+            .unwrap_or_else(|| "Image".to_string());
         let src = element.get_attribute("src");
-        
+
         // Check if we have the image in cache or can load it
         if let Some(src_url) = src {
             if let Some(_image_handle) = self.image_cache.get(&src_url) {
                 // TODO: Create actual image widget when image is cached
                 log::info!("🖼️ Image found in cache: {}", src_url);
             } else {
-                log::info!("🖼️ Image not in cache, showing placeholder for: {}", src_url);
+                log::info!(
+                    "🖼️ Image not in cache, showing placeholder for: {}",
+                    src_url
+                );
             }
         }
-        
+
         // For now, create styled placeholder
         let enhanced_style = EnhancedContainerStyle {
             background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
@@ -1746,28 +2036,31 @@ impl CitadelRenderer {
             shadow: None,
             text_color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
         };
-        
+
         let padding = self.get_comprehensive_padding("img", computed_style);
-        
+
         container(
             text(format!("🖼️ [{}]", alt_text))
                 .size(14)
-                .style(Color::from_rgb(0.5, 0.5, 0.5))
+                .style(Color::from_rgb(0.5, 0.5, 0.5)),
         )
         .padding(padding)
         .style(theme::Container::Custom(Box::new(enhanced_style)))
         .into()
     }
-    
+
     /// Create viewport-aware container with scroll and zoom support
-    fn create_viewport_aware_container<'a>(&'a self, content: Element<'a, Message>) -> Element<'a, Message> {
+    fn create_viewport_aware_container<'a>(
+        &'a self,
+        content: Element<'a, Message>,
+    ) -> Element<'a, Message> {
         // Apply zoom transformation if needed
         let transformed_content = if self.viewport_transform.zoom_factor != 1.0 {
             self.apply_zoom_transform(content)
         } else {
             content
         };
-        
+
         // Create scrollable container with viewport awareness
         let scrollable_container = scrollable(transformed_content)
             .height(Length::Fill)
@@ -1776,25 +2069,24 @@ impl CitadelRenderer {
                 vertical: scrollable::Properties::new(),
                 horizontal: scrollable::Properties::new(),
             });
-        
+
         // Apply scroll offset if needed
-        let positioned_container = if self.viewport_transform.scroll_x != 0.0 || self.viewport_transform.scroll_y != 0.0 {
-            // Note: Iced doesn't directly support scroll offset in containers
-            // In a full implementation, this would require custom widgets
-            container(scrollable_container)
-                .width(Length::Fill)
-                .height(Length::Fill)
-        } else {
-            container(scrollable_container)
-                .width(Length::Fill)
-                .height(Length::Fill)
-        };
-        
-        positioned_container
-            .padding(10)
-            .into()
+        let positioned_container =
+            if self.viewport_transform.scroll_x != 0.0 || self.viewport_transform.scroll_y != 0.0 {
+                // Note: Iced doesn't directly support scroll offset in containers
+                // In a full implementation, this would require custom widgets
+                container(scrollable_container)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+            } else {
+                container(scrollable_container)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+            };
+
+        positioned_container.padding(10).into()
     }
-    
+
     /// Apply zoom transformation to content
     fn apply_zoom_transform<'a>(&'a self, content: Element<'a, Message>) -> Element<'a, Message> {
         // Note: Iced doesn't have native zoom transform support
@@ -1802,36 +2094,48 @@ impl CitadelRenderer {
         // 1. Custom widgets with scale transforms
         // 2. Adjusting all size/position calculations
         // 3. High-DPI rendering support
-        
-        log::debug!("Applying zoom transform: {:.1}x (simulated)", self.viewport_transform.zoom_factor);
-        
+
+        log::debug!(
+            "Applying zoom transform: {:.1}x (simulated)",
+            self.viewport_transform.zoom_factor
+        );
+
         // For now, wrap in a container that could be extended with transform support
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
-    
+
     /// Update sticky elements based on current scroll position
     fn update_sticky_elements(&mut self) {
         let scroll_y = self.viewport_transform.scroll_y;
-        
+
         for (node_id, sticky_state) in &mut self.sticky_elements {
             match &sticky_state.stick_direction {
                 StickyDirection::Top(threshold) => {
                     let should_stick = scroll_y > sticky_state.original_position.y - threshold;
                     if should_stick != sticky_state.is_stuck {
                         sticky_state.is_stuck = should_stick;
-                        log::debug!("Sticky element {} top state changed: stuck={}", node_id, should_stick);
+                        log::debug!(
+                            "Sticky element {} top state changed: stuck={}",
+                            node_id,
+                            should_stick
+                        );
                     }
                 }
                 StickyDirection::Bottom(threshold) => {
                     let viewport_bottom = scroll_y + self.viewport_transform.viewport_height;
-                    let element_bottom = sticky_state.original_position.y + sticky_state.original_position.height;
+                    let element_bottom =
+                        sticky_state.original_position.y + sticky_state.original_position.height;
                     let should_stick = viewport_bottom < element_bottom + threshold;
                     if should_stick != sticky_state.is_stuck {
                         sticky_state.is_stuck = should_stick;
-                        log::debug!("Sticky element {} bottom state changed: stuck={}", node_id, should_stick);
+                        log::debug!(
+                            "Sticky element {} bottom state changed: stuck={}",
+                            node_id,
+                            should_stick
+                        );
                     }
                 }
                 StickyDirection::Left(_) | StickyDirection::Right(_) => {
@@ -1841,9 +2145,14 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Register sticky element for viewport tracking
-    fn register_sticky_element(&mut self, node_id: u32, position: PositionContext, computed_style: &ComputedStyle) {
+    fn register_sticky_element(
+        &mut self,
+        node_id: u32,
+        position: PositionContext,
+        computed_style: &ComputedStyle,
+    ) {
         // Determine sticky direction from CSS properties
         let stick_direction = if let Some(top) = &computed_style.top {
             if let Ok(threshold) = self.length_value_to_pixels_with_error(Some(top)) {
@@ -1860,27 +2169,32 @@ impl CitadelRenderer {
         } else {
             StickyDirection::Top(0.0) // Default
         };
-        
+
         let sticky_state = StickyElementState {
             original_position: position,
             stick_threshold: 0.0,
             is_stuck: false,
             stick_direction,
         };
-        
+
         self.sticky_elements.insert(node_id, sticky_state);
         log::debug!("Registered sticky element: {}", node_id);
     }
-    
+
     /// Check if element should be rendered as sticky
     fn is_element_sticky(&self, node_id: u32) -> bool {
-        self.sticky_elements.get(&node_id)
+        self.sticky_elements
+            .get(&node_id)
             .map(|state| state.is_stuck)
             .unwrap_or(false)
     }
-    
+
     /// Get effective position for sticky elements
-    fn get_effective_position(&self, node_id: u32, original_position: &PositionContext) -> PositionContext {
+    fn get_effective_position(
+        &self,
+        node_id: u32,
+        original_position: &PositionContext,
+    ) -> PositionContext {
         if let Some(sticky_state) = self.sticky_elements.get(&node_id) {
             if sticky_state.is_stuck {
                 match &sticky_state.stick_direction {
@@ -1892,7 +2206,10 @@ impl CitadelRenderer {
                     }
                     StickyDirection::Bottom(offset) => {
                         let mut new_position = original_position.clone();
-                        new_position.y = self.viewport_transform.scroll_y + self.viewport_transform.viewport_height - new_position.height - offset;
+                        new_position.y = self.viewport_transform.scroll_y
+                            + self.viewport_transform.viewport_height
+                            - new_position.height
+                            - offset;
                         new_position.position_type = PositionType::Fixed;
                         return new_position;
                     }
@@ -1900,15 +2217,19 @@ impl CitadelRenderer {
                 }
             }
         }
-        
+
         original_position.clone()
     }
-    
+
     /// Enhanced overflow handling for scrollable content
-    fn handle_overflow<'a>(&self, computed_style: &ComputedStyle, content: Element<'a, Message>) -> Element<'a, Message> {
+    fn handle_overflow<'a>(
+        &self,
+        computed_style: &ComputedStyle,
+        content: Element<'a, Message>,
+    ) -> Element<'a, Message> {
         // Extract overflow properties
         let overflow = computed_style.overflow.as_deref().unwrap_or("visible");
-        
+
         match overflow {
             "hidden" => {
                 // Clip content
@@ -1934,39 +2255,61 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Enhanced layout computation with viewport units
     fn compute_viewport_relative_length(&self, length: &LengthValue) -> f32 {
         match length {
             LengthValue::Vh(vh) => (vh / 100.0) * self.viewport_transform.viewport_height,
             LengthValue::Vw(vw) => (vw / 100.0) * self.viewport_transform.viewport_width,
             LengthValue::Vmin(vmin) => {
-                let min_dimension = self.viewport_transform.viewport_width.min(self.viewport_transform.viewport_height);
+                let min_dimension = self
+                    .viewport_transform
+                    .viewport_width
+                    .min(self.viewport_transform.viewport_height);
                 (vmin / 100.0) * min_dimension
             }
             LengthValue::Vmax(vmax) => {
-                let max_dimension = self.viewport_transform.viewport_width.max(self.viewport_transform.viewport_height);
+                let max_dimension = self
+                    .viewport_transform
+                    .viewport_width
+                    .max(self.viewport_transform.viewport_height);
                 (vmax / 100.0) * max_dimension
             }
             _ => 0.0, // Not a viewport unit
         }
     }
-    
+
     /// High-DPI rendering support
     fn apply_device_pixel_ratio(&self, size: f32) -> f32 {
         // In a full implementation, this would adjust rendering for high-DPI displays
         size // For now, return as-is
     }
-    
+
     /// Create responsive breakpoint-aware container
-    fn create_responsive_container<'a>(&'a self, content: Element<'a, Message>, computed_style: &ComputedStyle) -> Element<'a, Message> {
+    fn create_responsive_container<'a>(
+        &'a self,
+        content: Element<'a, Message>,
+        computed_style: &ComputedStyle,
+    ) -> Element<'a, Message> {
         // Check if this is a responsive container based on media queries or viewport units
         let has_viewport_units = computed_style.width.as_ref().map_or(false, |w| {
-            matches!(w, LengthValue::Vh(_) | LengthValue::Vw(_) | LengthValue::Vmin(_) | LengthValue::Vmax(_))
+            matches!(
+                w,
+                LengthValue::Vh(_)
+                    | LengthValue::Vw(_)
+                    | LengthValue::Vmin(_)
+                    | LengthValue::Vmax(_)
+            )
         }) || computed_style.height.as_ref().map_or(false, |h| {
-            matches!(h, LengthValue::Vh(_) | LengthValue::Vw(_) | LengthValue::Vmin(_) | LengthValue::Vmax(_))
+            matches!(
+                h,
+                LengthValue::Vh(_)
+                    | LengthValue::Vw(_)
+                    | LengthValue::Vmin(_)
+                    | LengthValue::Vmax(_)
+            )
         });
-        
+
         if has_viewport_units {
             log::debug!("Creating responsive container with viewport units");
             // Apply viewport-relative sizing
@@ -1978,9 +2321,12 @@ impl CitadelRenderer {
             content
         }
     }
-    
+
     /// Helper method to convert length values to pixels with proper error handling
-    fn length_value_to_pixels_with_error(&self, length: Option<&LengthValue>) -> Result<f32, String> {
+    fn length_value_to_pixels_with_error(
+        &self,
+        length: Option<&LengthValue>,
+    ) -> Result<f32, String> {
         match length {
             Some(LengthValue::Px(px)) => Ok(*px),
             Some(LengthValue::Em(em)) => Ok(em * 16.0), // Assume 1em = 16px
@@ -1992,7 +2338,7 @@ impl CitadelRenderer {
             None => Err("No length value provided".to_string()),
         }
     }
-    
+
     /// Get current viewport metrics for debugging
     pub fn get_viewport_metrics(&self) -> String {
         format!(
@@ -2006,7 +2352,7 @@ impl CitadelRenderer {
             self.content_size.height
         )
     }
-    
+
     /// Handle button click events
     fn handle_button_click(&mut self, element_id: &str) {
         // Find the button element in the DOM to determine its type and form association
@@ -2014,8 +2360,10 @@ impl CitadelRenderer {
             if let Some(button_element) = self.find_element_by_id(dom, element_id) {
                 if let Ok(button_node) = button_element.read() {
                     if let NodeData::Element(element) = &button_node.data {
-                        let button_type = element.get_attribute("type").unwrap_or_else(|| "button".to_string());
-                        
+                        let button_type = element
+                            .get_attribute("type")
+                            .unwrap_or_else(|| "button".to_string());
+
                         match button_type.as_str() {
                             "submit" => {
                                 // Find the parent form and submit it
@@ -2039,28 +2387,36 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Handle form submission
     fn handle_form_submission(&mut self, form_id: &str) {
         log::info!("📤 Processing form submission for form: {}", form_id);
-        
+
         // Find the form element in the DOM
         if let Some(dom) = &self.current_dom {
             if let Some(form_element) = self.find_element_by_id(dom, form_id) {
                 if let Ok(form_node) = form_element.read() {
                     if let NodeData::Element(element) = &form_node.data {
-                        let action = element.get_attribute("action").unwrap_or_else(|| "#".to_string());
-                        let method = element.get_attribute("method").unwrap_or_else(|| "GET".to_string()).to_uppercase();
-                        
+                        let action = element
+                            .get_attribute("action")
+                            .unwrap_or_else(|| "#".to_string());
+                        let method = element
+                            .get_attribute("method")
+                            .unwrap_or_else(|| "GET".to_string())
+                            .to_uppercase();
+
                         // Validate form submission security
                         if !self.validate_form_submission(&action, &method) {
-                            log::warn!("🛡️ Form submission blocked for security reasons: {}", action);
+                            log::warn!(
+                                "🛡️ Form submission blocked for security reasons: {}",
+                                action
+                            );
                             return;
                         }
-                        
+
                         // Collect form data
                         let form_data = self.collect_form_data(form_id, &form_element);
-                        
+
                         // Create form submission
                         let submission = FormSubmission {
                             action,
@@ -2068,7 +2424,7 @@ impl CitadelRenderer {
                             data: form_data,
                             form_id: form_id.to_string(),
                         };
-                        
+
                         self.form_state.pending_submission = Some(submission);
                         log::info!("✅ Form submission prepared and ready for network layer");
                     }
@@ -2076,32 +2432,36 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Validate form submission for security
     fn validate_form_submission(&self, action: &str, method: &str) -> bool {
         // Only allow HTTPS submissions (except for localhost/file)
-        if !action.starts_with("https://") && 
-           !action.starts_with("http://localhost") && 
-           !action.starts_with("http://127.0.0.1") &&
-           !action.starts_with("file://") &&
-           action != "#" {
+        if !action.starts_with("https://")
+            && !action.starts_with("http://localhost")
+            && !action.starts_with("http://127.0.0.1")
+            && !action.starts_with("file://")
+            && action != "#"
+        {
             log::warn!("🛡️ Blocking insecure form submission to: {}", action);
             return false;
         }
-        
+
         // Validate HTTP method
         if !matches!(method, "GET" | "POST") {
-            log::warn!("🛡️ Blocking form submission with unsupported method: {}", method);
+            log::warn!(
+                "🛡️ Blocking form submission with unsupported method: {}",
+                method
+            );
             return false;
         }
-        
+
         true
     }
-    
+
     /// Reset form values
     fn reset_form(&mut self, form_id: &str) {
         log::info!("🔄 Resetting form: {}", form_id);
-        
+
         // Remove all form data for this form
         // Note: In a real implementation, we'd need to track which inputs belong to which form
         self.form_state.input_values.clear();
@@ -2109,33 +2469,45 @@ impl CitadelRenderer {
         self.form_state.radio_selections.clear();
         self.form_state.select_selections.clear();
     }
-    
+
     /// Collect form data from all form elements
-    fn collect_form_data(&self, form_id: &str, form_element: &citadel_parser::dom::NodeHandle) -> HashMap<String, String> {
+    fn collect_form_data(
+        &self,
+        form_id: &str,
+        form_element: &citadel_parser::dom::NodeHandle,
+    ) -> HashMap<String, String> {
         let mut form_data = HashMap::new();
-        
+
         // Collect data from all form controls within this form
         if let Ok(form_node) = form_element.read() {
             self.collect_form_data_recursive(&form_node, &mut form_data);
         }
-        
-        log::info!("📊 Collected {} form fields for form {}", form_data.len(), form_id);
+
+        log::info!(
+            "📊 Collected {} form fields for form {}",
+            form_data.len(),
+            form_id
+        );
         form_data
     }
-    
+
     /// Recursively collect form data from form elements
     fn collect_form_data_recursive(&self, node: &Node, form_data: &mut HashMap<String, String>) {
         if let NodeData::Element(element) = &node.data {
             let tag_name = element.local_name();
-            
+
             match tag_name {
                 "input" => {
-                    let input_type = element.get_attribute("type").unwrap_or_else(|| "text".to_string());
+                    let input_type = element
+                        .get_attribute("type")
+                        .unwrap_or_else(|| "text".to_string());
                     let name = element.get_attribute("name");
                     let id = element.get_attribute("id");
-                    
-                    let key = name.or(id).unwrap_or_else(|| format!("input_{}", self.form_element_counter));
-                    
+
+                    let key = name
+                        .or(id)
+                        .unwrap_or_else(|| format!("input_{}", self.form_element_counter));
+
                     match input_type.as_str() {
                         "text" | "email" | "password" | "number" | "url" | "tel" => {
                             if let Some(value) = self.form_state.input_values.get(&key) {
@@ -2145,14 +2517,18 @@ impl CitadelRenderer {
                         "checkbox" => {
                             if let Some(&checked) = self.form_state.checkbox_states.get(&key) {
                                 if checked {
-                                    let value = element.get_attribute("value").unwrap_or_else(|| "on".to_string());
+                                    let value = element
+                                        .get_attribute("value")
+                                        .unwrap_or_else(|| "on".to_string());
                                     form_data.insert(key, value);
                                 }
                             }
                         }
                         "radio" => {
                             if let Some(group_name) = element.get_attribute("name") {
-                                if let Some(selected_value) = self.form_state.radio_selections.get(&group_name) {
+                                if let Some(selected_value) =
+                                    self.form_state.radio_selections.get(&group_name)
+                                {
                                     if let Some(value) = element.get_attribute("value") {
                                         if value == *selected_value {
                                             form_data.insert(group_name, value);
@@ -2167,8 +2543,10 @@ impl CitadelRenderer {
                 "textarea" => {
                     let name = element.get_attribute("name");
                     let id = element.get_attribute("id");
-                    let key = name.or(id).unwrap_or_else(|| format!("textarea_{}", self.form_element_counter));
-                    
+                    let key = name
+                        .or(id)
+                        .unwrap_or_else(|| format!("textarea_{}", self.form_element_counter));
+
                     if let Some(value) = self.form_state.input_values.get(&key) {
                         form_data.insert(key, value.clone());
                     }
@@ -2176,8 +2554,10 @@ impl CitadelRenderer {
                 "select" => {
                     let name = element.get_attribute("name");
                     let id = element.get_attribute("id");
-                    let key = name.or(id).unwrap_or_else(|| format!("select_{}", self.form_element_counter));
-                    
+                    let key = name
+                        .or(id)
+                        .unwrap_or_else(|| format!("select_{}", self.form_element_counter));
+
                     if let Some(value) = self.form_state.select_selections.get(&key) {
                         form_data.insert(key, value.clone());
                     }
@@ -2185,7 +2565,7 @@ impl CitadelRenderer {
                 _ => {}
             }
         }
-        
+
         // Recursively process children
         for child in &node.children {
             if let Ok(child_node) = child.read() {
@@ -2193,18 +2573,22 @@ impl CitadelRenderer {
             }
         }
     }
-    
+
     /// Find element by ID in the DOM
-    fn find_element_by_id(&self, dom: &Dom, element_id: &str) -> Option<citadel_parser::dom::NodeHandle> {
+    fn find_element_by_id(
+        &self,
+        dom: &Dom,
+        element_id: &str,
+    ) -> Option<citadel_parser::dom::NodeHandle> {
         dom.get_element_by_id(element_id)
     }
-    
+
     /// Find the parent form element for a given element
     fn find_parent_form(&self, element: &citadel_parser::dom::NodeHandle) -> Option<String> {
         // This is a simplified implementation
         // In a real browser, we'd traverse up the DOM tree to find the parent form
         // For now, we'll use a basic approach
-        
+
         // Check if the element has a form attribute
         if let Ok(node) = element.read() {
             if let NodeData::Element(elem) = &node.data {
@@ -2213,11 +2597,11 @@ impl CitadelRenderer {
                 }
             }
         }
-        
+
         // TODO: Implement proper form ancestor traversal
         None
     }
-    
+
     /// Create form input widgets
     fn create_form_widget<'a>(
         &'a self,
@@ -2225,60 +2609,60 @@ impl CitadelRenderer {
         _computed_style: &ComputedStyle,
     ) -> Option<Element<'a, Message>> {
         let tag_name = element.local_name();
-        
+
         match tag_name {
             "input" => {
-                let input_type = element.get_attribute("type").unwrap_or_else(|| "text".to_string());
+                let input_type = element
+                    .get_attribute("type")
+                    .unwrap_or_else(|| "text".to_string());
                 let id = element.get_attribute("id").unwrap_or_else(|| {
-                    let name = element.get_attribute("name").unwrap_or_else(|| format!("input_{}", self.form_element_counter));
+                    let name = element
+                        .get_attribute("name")
+                        .unwrap_or_else(|| format!("input_{}", self.form_element_counter));
                     name
                 });
-                
+
                 match input_type.as_str() {
                     "text" | "email" | "password" | "url" | "tel" => {
                         self.create_text_input_widget(element, &id, &input_type)
                     }
-                    "number" => {
-                        self.create_number_input_widget(element, &id)
-                    }
-                    "checkbox" => {
-                        self.create_checkbox_widget(element, &id)
-                    }
-                    "radio" => {
-                        self.create_radio_widget(element, &id)
-                    }
-                    "submit" => {
-                        self.create_submit_button_widget(element, &id)
-                    }
-                    "reset" => {
-                        self.create_reset_button_widget(element, &id)
-                    }
-                    "button" => {
-                        self.create_button_widget(element, &id)
-                    }
+                    "number" => self.create_number_input_widget(element, &id),
+                    "checkbox" => self.create_checkbox_widget(element, &id),
+                    "radio" => self.create_radio_widget(element, &id),
+                    "submit" => self.create_submit_button_widget(element, &id),
+                    "reset" => self.create_reset_button_widget(element, &id),
+                    "button" => self.create_button_widget(element, &id),
                     _ => {
                         // Unsupported input type - show placeholder
-                        Some(text(format!("[{} input]", input_type))
-                            .size(12)
-                            .style(Color::from_rgb(0.6, 0.6, 0.6))
-                            .into())
+                        Some(
+                            text(format!("[{} input]", input_type))
+                                .size(12)
+                                .style(Color::from_rgb(0.6, 0.6, 0.6))
+                                .into(),
+                        )
                     }
                 }
             }
             "textarea" => {
                 let id = element.get_attribute("id").unwrap_or_else(|| {
-                    let name = element.get_attribute("name").unwrap_or_else(|| format!("textarea_{}", self.form_element_counter));
+                    let name = element
+                        .get_attribute("name")
+                        .unwrap_or_else(|| format!("textarea_{}", self.form_element_counter));
                     name
                 });
                 self.create_textarea_widget(element, &id)
             }
             "button" => {
-                let id = element.get_attribute("id").unwrap_or_else(|| format!("button_{}", self.form_element_counter));
+                let id = element
+                    .get_attribute("id")
+                    .unwrap_or_else(|| format!("button_{}", self.form_element_counter));
                 self.create_button_widget(element, &id)
             }
             "select" => {
                 let id = element.get_attribute("id").unwrap_or_else(|| {
-                    let name = element.get_attribute("name").unwrap_or_else(|| format!("select_{}", self.form_element_counter));
+                    let name = element
+                        .get_attribute("name")
+                        .unwrap_or_else(|| format!("select_{}", self.form_element_counter));
                     name
                 });
                 self.create_select_widget(element, &id)
@@ -2286,7 +2670,7 @@ impl CitadelRenderer {
             _ => None,
         }
     }
-    
+
     /// Create text input widget
     fn create_text_input_widget<'a>(
         &'a self,
@@ -2295,64 +2679,81 @@ impl CitadelRenderer {
         input_type: &str,
     ) -> Option<Element<'a, Message>> {
         let placeholder = element.get_attribute("placeholder").unwrap_or_default();
-        let current_value = self.form_state.input_values.get(element_id).cloned().unwrap_or_default();
-        
+        let current_value = self
+            .form_state
+            .input_values
+            .get(element_id)
+            .cloned()
+            .unwrap_or_default();
+
         let mut input = text_input(&placeholder, &current_value)
             .padding(8)
             .width(Length::Fixed(200.0));
-        
+
         // Handle password masking
         if input_type == "password" {
             input = input.secure(true);
         }
-        
+
         // Note: In a real implementation, we'd need to convert FormMessage to Message
         // For now, we'll create a static input
         log::info!("📝 Creating {} input: {}", input_type, element_id);
-        
-        Some(container(input)
-            .padding(4)
-            .into())
+
+        Some(container(input).padding(4).into())
     }
-    
+
     /// Create number input widget
     fn create_number_input_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
         element_id: &str,
     ) -> Option<Element<'a, Message>> {
-        let placeholder = element.get_attribute("placeholder").unwrap_or_else(|| "0".to_string());
-        let current_value = self.form_state.input_values.get(element_id).cloned().unwrap_or_default();
-        
+        let placeholder = element
+            .get_attribute("placeholder")
+            .unwrap_or_else(|| "0".to_string());
+        let current_value = self
+            .form_state
+            .input_values
+            .get(element_id)
+            .cloned()
+            .unwrap_or_default();
+
         let input = text_input(&placeholder, &current_value)
             .padding(8)
             .width(Length::Fixed(120.0));
-        
+
         log::info!("🔢 Creating number input: {}", element_id);
-        
-        Some(container(input)
-            .padding(4)
-            .into())
+
+        Some(container(input).padding(4).into())
     }
-    
+
     /// Create checkbox widget
     fn create_checkbox_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
         element_id: &str,
     ) -> Option<Element<'a, Message>> {
-        let checked = self.form_state.checkbox_states.get(element_id).copied().unwrap_or(false);
-        let label_text = element.get_attribute("value").unwrap_or_else(|| "Checkbox".to_string());
-        
+        let checked = self
+            .form_state
+            .checkbox_states
+            .get(element_id)
+            .copied()
+            .unwrap_or(false);
+        let label_text = element
+            .get_attribute("value")
+            .unwrap_or_else(|| "Checkbox".to_string());
+
         let checkbox_widget = checkbox(label_text, checked);
-        
-        log::info!("☑️ Creating checkbox: {} (checked: {})", element_id, checked);
-        
-        Some(container(checkbox_widget)
-            .padding(4)
-            .into())
+
+        log::info!(
+            "☑️ Creating checkbox: {} (checked: {})",
+            element_id,
+            checked
+        );
+
+        Some(container(checkbox_widget).padding(4).into())
     }
-    
+
     /// Create radio button widget
     fn create_radio_widget<'a>(
         &'a self,
@@ -2360,79 +2761,85 @@ impl CitadelRenderer {
         _element_id: &str,
     ) -> Option<Element<'a, Message>> {
         let value = element.get_attribute("value").unwrap_or_default();
-        let group_name = element.get_attribute("name").unwrap_or_else(|| "radio_group".to_string());
-        let selected = self.form_state.radio_selections.get(&group_name)
+        let group_name = element
+            .get_attribute("name")
+            .unwrap_or_else(|| "radio_group".to_string());
+        let selected = self
+            .form_state
+            .radio_selections
+            .get(&group_name)
             .map(|selected_value| selected_value == &value)
             .unwrap_or(false);
-        
+
         // Note: Iced doesn't have a built-in radio button, so we'll use a checkbox for now
         let radio_widget = checkbox(format!("🔘 {}", value), selected);
-        
-        log::info!("🔘 Creating radio button: {} = '{}' (selected: {})", group_name, value, selected);
-        
-        Some(container(radio_widget)
-            .padding(4)
-            .into())
+
+        log::info!(
+            "🔘 Creating radio button: {} = '{}' (selected: {})",
+            group_name,
+            value,
+            selected
+        );
+
+        Some(container(radio_widget).padding(4).into())
     }
-    
+
     /// Create submit button widget
     fn create_submit_button_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
         element_id: &str,
     ) -> Option<Element<'a, Message>> {
-        let button_text = element.get_attribute("value").unwrap_or_else(|| "Submit".to_string());
-        
+        let button_text = element
+            .get_attribute("value")
+            .unwrap_or_else(|| "Submit".to_string());
+
         let submit_button = button(text(button_text))
             .padding([8, 16])
             .style(theme::Button::Primary);
-        
+
         log::info!("📤 Creating submit button: {}", element_id);
-        
-        Some(container(submit_button)
-            .padding(4)
-            .into())
+
+        Some(container(submit_button).padding(4).into())
     }
-    
+
     /// Create reset button widget
     fn create_reset_button_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
         element_id: &str,
     ) -> Option<Element<'a, Message>> {
-        let button_text = element.get_attribute("value").unwrap_or_else(|| "Reset".to_string());
-        
+        let button_text = element
+            .get_attribute("value")
+            .unwrap_or_else(|| "Reset".to_string());
+
         let reset_button = button(text(button_text))
             .padding([8, 16])
             .style(theme::Button::Secondary);
-        
+
         log::info!("🔄 Creating reset button: {}", element_id);
-        
-        Some(container(reset_button)
-            .padding(4)
-            .into())
+
+        Some(container(reset_button).padding(4).into())
     }
-    
+
     /// Create regular button widget
     fn create_button_widget<'a>(
         &'a self,
         element: &citadel_parser::dom::Element,
         element_id: &str,
     ) -> Option<Element<'a, Message>> {
-        let button_text = element.get_attribute("value")
+        let button_text = element
+            .get_attribute("value")
             .or_else(|| element.get_attribute("innerHTML"))
             .unwrap_or_else(|| "Button".to_string());
-        
-        let button_widget = button(text(button_text))
-            .padding([8, 16]);
-        
+
+        let button_widget = button(text(button_text)).padding([8, 16]);
+
         log::info!("🔳 Creating button: {}", element_id);
-        
-        Some(container(button_widget)
-            .padding(4)
-            .into())
+
+        Some(container(button_widget).padding(4).into())
     }
-    
+
     /// Create textarea widget
     fn create_textarea_widget<'a>(
         &'a self,
@@ -2440,27 +2847,36 @@ impl CitadelRenderer {
         element_id: &str,
     ) -> Option<Element<'a, Message>> {
         let placeholder = element.get_attribute("placeholder").unwrap_or_default();
-        let current_value = self.form_state.input_values.get(element_id).cloned().unwrap_or_default();
-        
-        let rows = element.get_attribute("rows")
+        let current_value = self
+            .form_state
+            .input_values
+            .get(element_id)
+            .cloned()
+            .unwrap_or_default();
+
+        let rows = element
+            .get_attribute("rows")
             .and_then(|r| r.parse::<u32>().ok())
             .unwrap_or(3);
-        
+
         let textarea_height = (rows * 20 + 16) as f32; // Approximate height calculation
-        
+
         let textarea = text_input(&placeholder, &current_value)
             .padding(8)
             .width(Length::Fixed(300.0));
-            // Note: Iced text_input doesn't support height directly
-            // Using line_height as approximation for textarea appearance
-        
-        log::info!("📝 Creating textarea: {} ({}x{})", element_id, 300, textarea_height);
-        
-        Some(container(textarea)
-            .padding(4)
-            .into())
+        // Note: Iced text_input doesn't support height directly
+        // Using line_height as approximation for textarea appearance
+
+        log::info!(
+            "📝 Creating textarea: {} ({}x{})",
+            element_id,
+            300,
+            textarea_height
+        );
+
+        Some(container(textarea).padding(4).into())
     }
-    
+
     /// Create select dropdown widget
     fn create_select_widget<'a>(
         &'a self,
@@ -2469,165 +2885,177 @@ impl CitadelRenderer {
     ) -> Option<Element<'a, Message>> {
         // Note: Iced's pick_list needs static options, so this is a simplified implementation
         // In a real browser, we'd need to parse the option elements from the DOM
-        
-        let options = vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()];
+
+        let options = vec![
+            "Option 1".to_string(),
+            "Option 2".to_string(),
+            "Option 3".to_string(),
+        ];
         let selected = self.form_state.select_selections.get(element_id).cloned();
-        
+
         let select_widget = pick_list(options, selected, |selection| {
             // Note: This would need to be converted to Message type
             Message::UI(crate::ui::UIMessage::AddressBarChanged(selection))
         })
         .padding(8)
         .width(Length::Fixed(150.0));
-        
+
         log::info!("📋 Creating select dropdown: {}", element_id);
-        
-        Some(container(select_widget)
-            .padding(4)
-            .into())
+
+        Some(container(select_widget).padding(4).into())
     }
-    
+
     // ==================== PERFORMANCE OPTIMIZATION METHODS ====================
-    
+
     /// Hash DOM structure for change detection
     fn hash_dom(&self, dom: &Dom) -> u64 {
         let mut hasher = DefaultHasher::new();
-        
+
         // Hash text content and basic structure
         let text_content = dom.get_text_content();
         text_content.hash(&mut hasher);
-        
+
         // Hash title for additional differentiation
         let title = dom.get_title();
         title.hash(&mut hasher);
-        
+
         hasher.finish()
     }
-    
+
     /// Check if widget cache should be invalidated
     fn should_invalidate_widget_cache(&self, dom_hash: u64) -> bool {
         self.last_dom_hash.is_none() || self.last_dom_hash != Some(dom_hash)
     }
-    
+
     /// Clear widget cache
     fn clear_widget_cache(&mut self) {
         log::debug!("Clearing widget cache: {} entries", self.widget_cache.len());
         self.widget_cache.clear();
         self.render_metrics.widget_cache_misses += 1;
     }
-    
+
     /// Invalidate viewport-dependent cache entries
     fn invalidate_viewport_dependent_cache(&mut self) {
         // Remove cache entries that depend on viewport size
-        let viewport_dependent_keys: Vec<u64> = self.widget_cache
-            .keys()
-            .cloned()
-            .collect();
-        
+        let viewport_dependent_keys: Vec<u64> = self.widget_cache.keys().cloned().collect();
+
         for key in viewport_dependent_keys {
             self.widget_cache.remove(&key);
         }
-        
+
         log::debug!("Invalidated viewport-dependent cache entries");
     }
-    
+
     /// Invalidate zoom-dependent cache entries
     fn invalidate_zoom_dependent_cache(&mut self) {
         // Similar to viewport invalidation - all cached widgets depend on zoom
         self.clear_widget_cache();
         log::debug!("Invalidated zoom-dependent cache entries");
     }
-    
+
     /// Update render metrics
-    fn update_render_metrics(&mut self, layout_result: &LayoutResult, render_time: std::time::Duration) {
+    fn update_render_metrics(
+        &mut self,
+        layout_result: &LayoutResult,
+        render_time: std::time::Duration,
+    ) {
         self.render_metrics.nodes_rendered = layout_result.node_layouts.len();
         self.render_metrics.nodes_culled = layout_result.metrics.nodes_culled;
         self.render_metrics.render_time_ms = render_time.as_millis() as u64;
         self.render_metrics.memory_allocated_kb = self.estimate_memory_usage() / 1024;
-        
+
         // Update cache hit/miss ratio
-        let total_cache_requests = self.render_metrics.widget_cache_hits + self.render_metrics.widget_cache_misses;
+        let total_cache_requests =
+            self.render_metrics.widget_cache_hits + self.render_metrics.widget_cache_misses;
         if total_cache_requests > 0 {
-            let _hit_ratio = self.render_metrics.widget_cache_hits as f64 / total_cache_requests as f64;
-            
+            let _hit_ratio =
+                self.render_metrics.widget_cache_hits as f64 / total_cache_requests as f64;
+
             // TODO: Re-enable performance monitoring
             // if let Some(monitor) = &self.performance_monitor {
             //     monitor.set_cache_hit_ratio("renderer_widgets", hit_ratio);
             // }
         }
     }
-    
+
     /// Estimate memory usage of renderer
     fn estimate_memory_usage(&self) -> usize {
         let mut total_memory = std::mem::size_of::<Self>();
-        
+
         // Font cache memory
         total_memory += self.font_cache.len() * std::mem::size_of::<Font>();
-        
+
         // Image cache memory (estimated)
         total_memory += self.image_cache.len() * 1024 * 100; // Estimate 100KB per image
-        
+
         // Widget cache memory
         total_memory += self.widget_cache.len() * std::mem::size_of::<WidgetCacheEntry>();
-        
+
         // Form state memory
         total_memory += self.form_state.input_values.len() * 100; // Estimate 100 bytes per input
-        
+
         // Sticky elements memory
         total_memory += self.sticky_elements.len() * std::mem::size_of::<StickyElementState>();
-        
+
         total_memory
     }
-    
+
     /// Enable or disable viewport culling
     pub fn set_viewport_culling(&mut self, enabled: bool) {
         self.viewport_culling_enabled = enabled;
-        log::info!("Viewport culling {}", if enabled { "enabled" } else { "disabled" });
+        log::info!(
+            "Viewport culling {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
-    
+
     /// Enable or disable frame batching
     pub fn set_frame_batching(&mut self, enabled: bool) {
         self.frame_batching_enabled = enabled;
-        log::info!("Frame batching {}", if enabled { "enabled" } else { "disabled" });
+        log::info!(
+            "Frame batching {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
-    
+
     /// Set widget cache size
     pub fn set_widget_cache_size(&mut self, max_size: usize) {
         self.max_widget_cache_size = max_size;
-        
+
         // Evict entries if cache is too large
         if self.widget_cache.len() > max_size {
             self.evict_lru_widget_cache_entries();
         }
-        
+
         log::info!("Widget cache size set to {}", max_size);
     }
-    
+
     /// Evict least recently used widget cache entries
     fn evict_lru_widget_cache_entries(&mut self) {
-        let mut entries_by_age: Vec<(u64, Instant)> = self.widget_cache
+        let mut entries_by_age: Vec<(u64, Instant)> = self
+            .widget_cache
             .iter()
             .map(|(key, entry)| (*key, entry.timestamp))
             .collect();
-        
+
         // Sort by timestamp (oldest first)
         entries_by_age.sort_by_key(|(_, timestamp)| *timestamp);
-        
+
         // Remove oldest quarter of entries
         let remove_count = std::cmp::max(1, self.max_widget_cache_size / 4);
         for (key, _) in entries_by_age.into_iter().take(remove_count) {
             self.widget_cache.remove(&key);
         }
-        
+
         log::debug!("Evicted {} LRU widget cache entries", remove_count);
     }
-    
+
     /// Check if node is visible in viewport for culling
     fn is_node_visible_in_viewport(&self, node_id: u32) -> bool {
         if !self.viewport_culling_enabled {
             return true;
         }
-        
+
         if let Some(layout) = &self.current_layout {
             if let Some(layout_rect) = layout.node_layouts.get(&node_id) {
                 let viewport_rect = LayoutRect::new(
@@ -2636,27 +3064,27 @@ impl CitadelRenderer {
                     self.viewport_transform.viewport_width,
                     self.viewport_transform.viewport_height,
                 );
-                
+
                 // Check intersection with viewport (with margin for smooth scrolling)
                 let margin = 100.0;
-                return layout_rect.x + layout_rect.width >= viewport_rect.x - margin &&
-                       layout_rect.x <= viewport_rect.x + viewport_rect.width + margin &&
-                       layout_rect.y + layout_rect.height >= viewport_rect.y - margin &&
-                       layout_rect.y <= viewport_rect.y + viewport_rect.height + margin;
+                return layout_rect.x + layout_rect.width >= viewport_rect.x - margin
+                    && layout_rect.x <= viewport_rect.x + viewport_rect.width + margin
+                    && layout_rect.y + layout_rect.height >= viewport_rect.y - margin
+                    && layout_rect.y <= viewport_rect.y + viewport_rect.height + margin;
             }
         }
-        
+
         true // Assume visible if we can't determine
     }
-    
+
     /// Force resource cleanup (TODO: Fix circular import)
     pub fn force_cleanup(&mut self, _priority: &str) {
         // TODO: Restore performance priority enum once circular import is fixed
         log::info!("Forcing renderer cleanup");
-        
+
         // For now, just do a basic cleanup
         self.clear_widget_cache();
-        
+
         // Clear some other caches
         if self.image_cache.len() > 100 {
             let image_keys: Vec<String> = self.image_cache.keys().cloned().collect();
@@ -2664,33 +3092,39 @@ impl CitadelRenderer {
                 self.image_cache.remove(&key);
             }
         }
-        
+
         log::info!("Renderer cleanup completed");
     }
-    
+
     /// Get render performance metrics
     pub fn get_render_metrics(&self) -> &RenderMetrics {
         &self.render_metrics
     }
-    
+
     /// Reset render metrics
     pub fn reset_render_metrics(&mut self) {
         self.render_metrics = RenderMetrics::default();
     }
-    
+
     /// Set performance monitor (TODO: Fix circular import)
     // pub fn set_performance_monitor(&mut self, monitor: Arc<PerformanceMonitor>) {
     //     self.performance_monitor = Some(monitor);
     // }
-    
+
     /// Get cache statistics
     pub fn get_cache_stats(&self) -> HashMap<String, usize> {
         let mut stats = HashMap::new();
         stats.insert("widget_cache_entries".to_string(), self.widget_cache.len());
         stats.insert("image_cache_entries".to_string(), self.image_cache.len());
         stats.insert("font_cache_entries".to_string(), self.font_cache.len());
-        stats.insert("widget_cache_hits".to_string(), self.render_metrics.widget_cache_hits);
-        stats.insert("widget_cache_misses".to_string(), self.render_metrics.widget_cache_misses);
+        stats.insert(
+            "widget_cache_hits".to_string(),
+            self.render_metrics.widget_cache_hits,
+        );
+        stats.insert(
+            "widget_cache_misses".to_string(),
+            self.render_metrics.widget_cache_misses,
+        );
         stats
     }
 }
@@ -2705,7 +3139,7 @@ impl Default for CitadelRenderer {
 trait LayoutRectExt {
     /// Check if this rectangle intersects with another
     fn intersects(&self, other: &LayoutRect) -> bool;
-    
+
     /// Calculate area of rectangle
     fn area(&self) -> f32;
 }
@@ -2713,12 +3147,12 @@ trait LayoutRectExt {
 impl LayoutRectExt for LayoutRect {
     /// Check if this rectangle intersects with another
     fn intersects(&self, other: &LayoutRect) -> bool {
-        self.x < other.x + other.width &&
-        self.x + self.width > other.x &&
-        self.y < other.y + other.height &&
-        self.y + self.height > other.y
+        self.x < other.x + other.width
+            && self.x + self.width > other.x
+            && self.y < other.y + other.height
+            && self.y + self.height > other.y
     }
-    
+
     /// Calculate area of rectangle
     fn area(&self) -> f32 {
         self.width * self.height

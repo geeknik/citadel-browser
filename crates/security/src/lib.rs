@@ -10,18 +10,17 @@ pub mod privacy;
 // pub mod policy; // Potential future module
 
 pub use context::{
-    SecurityContext, SecurityContextBuilder, UrlScheme, 
-    ContentSecurityPolicy, CspDirective, CspSource,
-    FingerprintProtection, FingerprintProtectionLevel,
-    SecurityViolation, SecurityMetrics, AdvancedSecurityConfig
+    AdvancedSecurityConfig, ContentSecurityPolicy, CspDirective, CspSource, FingerprintProtection,
+    FingerprintProtectionLevel, SecurityContext, SecurityContextBuilder, SecurityMetrics,
+    SecurityViolation, UrlScheme,
 };
-pub use error::{SecurityError, SecuritySeverity, SecurityResult};
-pub use privacy::{
-    PrivacyEvent, PrivacyEventSender, PrivacyEventReceiver, PrivacyStats,
-    TrackerCategory, create_privacy_channel, create_privacy_channel_with_capacity,
-};
+pub use error::{SecurityError, SecurityResult, SecuritySeverity};
 pub use memory::{
-    MemoryProtectionSystem, MemoryProtectionBuilder, MemoryProtectionConfig,
-    ResourceType, ResourcePoolConfig, MemoryProtectionError, MemoryProtectionResult,
-    AttackPattern, ResourcePoolStats
-}; 
+    AttackPattern, MemoryProtectionBuilder, MemoryProtectionConfig, MemoryProtectionError,
+    MemoryProtectionResult, MemoryProtectionSystem, ResourcePoolConfig, ResourcePoolStats,
+    ResourceType,
+};
+pub use privacy::{
+    create_privacy_channel, create_privacy_channel_with_capacity, PrivacyEvent,
+    PrivacyEventReceiver, PrivacyEventSender, PrivacyStats, TrackerCategory,
+};
