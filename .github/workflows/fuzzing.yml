@@ -22,17 +22,12 @@ jobs:
           - network_request
 
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
       - name: Install nightly Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      
-      - name: Add LLVM tools
-        run: rustup component add llvm-tools-preview
+          components: llvm-tools-preview
       
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz
@@ -79,14 +74,14 @@ jobs:
         
       - name: Upload crash artifacts (if any)
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.fuzz_target }}-crashes
           path: fuzz/artifacts/${{ matrix.fuzz_target }}
           retention-days: 7
           
       - name: Upload coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.fuzz_target }}-coverage
           path: fuzz/coverage_reports/${{ matrix.fuzz_target }}

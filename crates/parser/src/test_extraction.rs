@@ -90,8 +90,8 @@ pub fn test_page_content_extraction() -> Result<(), Box<dyn std::error::Error>> 
     // Display content preview
     println!("\n📖 Content Preview:");
     println!("{}", "=".repeat(50));
-    if content.len() > 500 {
-        println!("{}...", &content[..500]);
+    if content.chars().count() > 500 {
+        println!("{}...", content.chars().take(500).collect::<String>());
         println!("(truncated - showing first 500 characters)");
     } else {
         println!("{}", content);

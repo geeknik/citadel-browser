@@ -1301,8 +1301,8 @@ impl CitadelRenderer {
             NodeData::Text(text_content) => {
                 // Don't trim the text content itself, only check if it's worth rendering
                 if !text_content.trim().is_empty() {
-                    let preview = if text_content.len() > 50 {
-                        format!("{}...", &text_content[..50])
+                    let preview = if text_content.chars().count() > 50 {
+                        format!("{}...", text_content.chars().take(50).collect::<String>())
                     } else {
                         text_content.clone()
                     };

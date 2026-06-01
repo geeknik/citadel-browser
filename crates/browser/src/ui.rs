@@ -879,8 +879,8 @@ impl CitadelUI {
         match event {
             PrivacyEvent::TrackerBlocked { url, category, .. } => {
                 // Truncate the URL to keep the panel tidy
-                let short_url = if url.len() > 40 {
-                    format!("{}...", &url[..37])
+                let short_url = if url.chars().count() > 40 {
+                    format!("{}...", url.chars().take(37).collect::<String>())
                 } else {
                     url.clone()
                 };

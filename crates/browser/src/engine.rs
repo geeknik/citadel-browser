@@ -475,8 +475,8 @@ impl BrowserEngine {
 
         // Log a preview of the content for debugging (first 200 chars)
         if content.len() > 0 {
-            let preview = if content.len() > 200 {
-                format!("{}...", &content[..200])
+            let preview = if content.chars().count() > 200 {
+                format!("{}...", content.chars().take(200).collect::<String>())
             } else {
                 content.clone()
             };

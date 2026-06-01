@@ -206,8 +206,10 @@ impl Dom {
                 }
             }
         } else {
-            let preview = if raw_content.len() > 100 {
-                format!("{}...", &raw_content[..100])
+            // Char-safe truncation: byte slicing (`&s[..100]`) panics when the
+            // boundary lands inside a multi-byte char (e.g. an emoji).
+            let preview = if raw_content.chars().count() > 100 {
+                format!("{}...", raw_content.chars().take(100).collect::<String>())
             } else {
                 raw_content.clone()
             };
@@ -238,8 +240,8 @@ impl Dom {
             final_content.len()
         );
         if final_content.len() > 0 {
-            let preview = if final_content.len() > 200 {
-                format!("{}...", &final_content[..200])
+            let preview = if final_content.chars().count() > 200 {
+                format!("{}...", final_content.chars().take(200).collect::<String>())
             } else {
                 final_content.clone()
             };
