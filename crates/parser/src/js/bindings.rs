@@ -7,10 +7,10 @@
 //! clamps, fingerprint-poisoned canvas/WebGL/audio, a network exfil gate, and
 //! isolated storage — all through this same gate.
 
-use boa_engine::object::builtins::JsArray;
+use boa_engine::object::builtins::{JsArray, JsPromise};
 use boa_engine::object::ObjectInitializer;
 use boa_engine::property::Attribute;
-use boa_engine::{js_string, Context, JsResult, JsValue, NativeFunction};
+use boa_engine::{js_string, Context, JsNativeError, JsResult, JsValue, NativeFunction};
 use std::time::Instant;
 
 /// The identity and per-origin seed the bindings present to a page.
@@ -83,6 +83,58 @@ pub fn install(ctx: &mut Context, profile: &PrivacyProfile) -> JsResult<()> {
     install_navigator(ctx, profile)?;
     install_screen(ctx, profile)?;
     install_timing(ctx, profile)?;
+    install_network_gate(ctx)?;
+    Ok(())
+}
+
+/// Install the network exfil gate. Every network-capable API is bound as
+/// **present-but-denying**: the surface matches a mainstream browser (so its
+/// *absence* is not itself a fingerprint), but no request ever leaves. Default
+/// policy is deny; denials are shaped to look like ordinary network failures.
+///
+/// Covers the page's exfil/leak vectors: `fetch`, `XMLHttpRequest`, `WebSocket`,
+/// `sendBeacon` (added to `navigator`), and WebRTC `RTCPeerConnection` — the last
+/// of which, if left real, leaks the user's local/private IP via ICE candidates.
+fn install_network_gate(ctx: &mut Context) -> JsResult<()> {
+    // fetch() → a Promise that rejects like a blocked request ("Failed to fetch"),
+    // so `fetch(x).catch(...)` and `await fetch(x)` both see a normal failure.
+    let fetch_fn = NativeFunction::from_fn_ptr(|_this, _args, ctx| {
+        let reason = JsNativeError::typ().with_message("Failed to fetch");
+        Ok(JsPromise::reject(reason, ctx).into())
+    });
+    ctx.register_global_callable(js_string!("fetch"), 1, fetch_fn)?;
+
+    // WebSocket / RTCPeerConnection / webkitRTCPeerConnection: construction throws
+    // (deny). Critically, no RTCPeerConnection means no ICE gathering => the local
+    // IP cannot leak past the gate.
+    for name in ["WebSocket", "RTCPeerConnection", "webkitRTCPeerConnection"] {
+        let blocked = NativeFunction::from_fn_ptr(|_this, _args, _ctx| {
+            Err(JsNativeError::typ()
+                .with_message("blocked by Citadel Privacy Shield")
+                .into())
+        });
+        ctx.register_global_callable(js_string!(name), 1, blocked)?;
+    }
+
+    // XMLHttpRequest: present and constructible, but inert. open/send/etc. are
+    // no-ops and readyState/status stay 0, so the page detects the API yet no
+    // request is issued (a silent, fingerprint-neutral denial).
+    let xhr_ctor = NativeFunction::from_fn_ptr(|_this, _args, ctx| {
+        let noop = |_: &JsValue, _: &[JsValue], _: &mut Context| Ok(JsValue::undefined());
+        let obj = ObjectInitializer::new(ctx)
+            .function(NativeFunction::from_fn_ptr(noop), js_string!("open"), 5)
+            .function(NativeFunction::from_fn_ptr(noop), js_string!("setRequestHeader"), 2)
+            .function(NativeFunction::from_fn_ptr(noop), js_string!("send"), 1)
+            .function(NativeFunction::from_fn_ptr(noop), js_string!("abort"), 0)
+            .function(NativeFunction::from_fn_ptr(noop), js_string!("getAllResponseHeaders"), 0)
+            .property(js_string!("readyState"), JsValue::from(0), Attribute::all())
+            .property(js_string!("status"), JsValue::from(0), Attribute::all())
+            .property(js_string!("responseText"), js_string!(""), Attribute::all())
+            .build();
+        Ok(obj.into())
+    });
+    ctx.register_global_callable(js_string!("XMLHttpRequest"), 0, xhr_ctor)?;
+
     Ok(())
 }
 
@@ -135,6 +187,13 @@ fn install_navigator(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
         .property(js_string!("doNotTrack"), js_string!("1"), Attribute::all())
         .property(js_string!("webdriver"), JsValue::from(false), Attribute::all())
         .property(js_string!("cookieEnabled"), JsValue::from(false), Attribute::all())
+        // navigator.sendBeacon: present, but denied — returns false ("not queued"),
+        // which is exactly what a browser returns when the beacon is blocked.
+        .function(
+            NativeFunction::from_fn_ptr(|_this, _args, _ctx| Ok(JsValue::from(false))),
+            js_string!("sendBeacon"),
+            2,
+        )
         .build();
 
     // navigator.languages as a real JS array.

