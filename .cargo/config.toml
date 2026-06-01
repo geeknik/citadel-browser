@@ -1,5 +1,12 @@
 # Cargo configuration for Citadel Browser - macOS Apple Silicon focused
 
 [target.aarch64-apple-darwin]
-# Apple Silicon optimizations  
-rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"] 
+# Apple Silicon optimizations.
+#
+# NOTE: `target-cpu=native` is intentionally NOT set. It breaks `ring`'s
+# const CPU-feature assertions on some Apple Silicon hosts — including the
+# GitHub macOS runners, where the build fails with
+# `assertion failed: CAPS_STATIC == MIN_STATIC_FEATURES` — and it also
+# produces non-portable binaries that won't run on other Macs. Stick to the
+# portable default target-cpu and rely on opt-level for performance.
+rustflags = ["-C", "opt-level=3"]

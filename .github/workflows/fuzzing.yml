@@ -35,17 +35,21 @@ jobs:
       # cargo-fuzz runs from the repo ROOT and locates the `fuzz/` directory
       # itself. The previous `cd fuzz` made it look for `fuzz/fuzz/Cargo.toml`
       # (which does not exist), so every build failed.
+      # Build in --dev: the workspace [profile.release] sets strip=true + lto,
+      # which strips the SanitizerCoverage symbols (`__sancov_gen_*`) and breaks
+      # the libFuzzer link. Dev mode keeps them.
       - name: Build fuzz target
-        run: cargo fuzz build ${{ matrix.fuzz_target }}
+        run: cargo fuzz build --dev ${{ matrix.fuzz_target }}
 
       - name: Run fuzzer (bounded smoke run)
         run: |
           dict="fuzz/dictionaries/${{ matrix.fuzz_target }}.dict"
           args="-max_total_time=60 -max_len=65536 -rss_limit_mb=4096 -print_final_stats=1"
           if [ -f "$dict" ]; then args="$args -dict=$dict"; fi
-          # cargo-fuzz exits 0 after the time budget if no crash; non-zero on a
-          # real crash (which fails the job and triggers the artifact upload).
-          cargo fuzz run ${{ matrix.fuzz_target }} -- $args
+          # --dev for the same strip/LTO reason as the build step. cargo-fuzz
+          # exits 0 after the time budget if no crash; non-zero on a real crash
+          # (which fails the job and triggers the artifact upload).
+          cargo fuzz run --dev ${{ matrix.fuzz_target }} -- $args
 
       - name: Upload crash artifacts (if any)
         if: ${{ failure() }}
