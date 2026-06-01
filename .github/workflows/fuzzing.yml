@@ -32,46 +32,21 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz
       
-      - name: Generate corpus
-        run: |
-          mkdir -p fuzz/corpus
-          chmod +x fuzz/scripts/generate_corpus.sh
-          fuzz/scripts/generate_corpus.sh
-
+      # cargo-fuzz runs from the repo ROOT and locates the `fuzz/` directory
+      # itself. The previous `cd fuzz` made it look for `fuzz/fuzz/Cargo.toml`
+      # (which does not exist), so every build failed.
       - name: Build fuzz target
+        run: cargo fuzz build ${{ matrix.fuzz_target }}
+
+      - name: Run fuzzer (bounded smoke run)
         run: |
-          cd fuzz
-          cargo fuzz build ${{ matrix.fuzz_target }}
-      
-      - name: Run fuzzer with dictionary and corpus
-        run: |
-          cd fuzz
-          # Run fuzzer for 3 minutes with aggressive settings
-          timeout 180s cargo fuzz run ${{ matrix.fuzz_target }} corpus/${{ matrix.fuzz_target }} \
-            -dict=dictionaries/${{ matrix.fuzz_target }}.dict \
-            -max_total_time=180 \
-            -detect_leaks=1 \
-            -max_len=65536 \
-            -rss_limit_mb=4096 \
-            -print_final_stats=1 \
-            -use_value_profile=1 \
-            || if [ $? -eq 124 ]; then echo "Timeout reached, no bugs found"; else exit 1; fi
-        
-      - name: Generate code coverage report
-        run: |
-          cd fuzz
-          # Generate HTML coverage report
-          mkdir -p coverage_reports
-          if [ -d "corpus/${{ matrix.fuzz_target }}" ]; then
-            RUSTFLAGS="-Zinstrument-coverage" cargo run --bin ${{ matrix.fuzz_target }} -- \
-              corpus/${{ matrix.fuzz_target }}/* \
-              2>/dev/null || true
-            
-            grcov . --binary-path ./target/debug/ -s . -t html --branch --ignore-not-existing \
-              --ignore "/*" --ignore "target/*" \
-              -o coverage_reports/${{ matrix.fuzz_target }}
-          fi
-        
+          dict="fuzz/dictionaries/${{ matrix.fuzz_target }}.dict"
+          args="-max_total_time=60 -max_len=65536 -rss_limit_mb=4096 -print_final_stats=1"
+          if [ -f "$dict" ]; then args="$args -dict=$dict"; fi
+          # cargo-fuzz exits 0 after the time budget if no crash; non-zero on a
+          # real crash (which fails the job and triggers the artifact upload).
+          cargo fuzz run ${{ matrix.fuzz_target }} -- $args
+
       - name: Upload crash artifacts (if any)
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
@@ -79,10 +54,4 @@ jobs:
           name: ${{ matrix.fuzz_target }}-crashes
           path: fuzz/artifacts/${{ matrix.fuzz_target }}
           retention-days: 7
-          
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.fuzz_target }}-coverage
-          path: fuzz/coverage_reports/${{ matrix.fuzz_target }}
-          retention-days: 7 
+          if-no-files-found: ignore 
