@@ -204,21 +204,22 @@ impl ResourceCache {
             )));
         }
 
-        if let Ok(mut entries) = self.entries.write() {
-            // Remove existing entry if present
+        // Hold BOTH locks for the whole update and evict on the held guards. std
+        // RwLock is not reentrant, so re-locking inside (as the old ensure_space_for
+        // did) deadlocked every put.
+        if let (Ok(mut entries), Ok(mut current_size)) =
+            (self.entries.write(), self.current_size.write())
+        {
+            // Remove existing entry if present.
             if let Some(old_entry) = entries.remove(&key) {
-                if let Ok(mut size) = self.current_size.write() {
-                    *size = size.saturating_sub(old_entry.size_bytes);
-                }
+                *current_size = current_size.saturating_sub(old_entry.size_bytes);
             }
 
-            // Ensure we have space for the new entry
-            self.ensure_space_for(entry.size_bytes)?;
+            // Evict LRU entries until the new one fits.
+            self.evict_until_fits(&mut entries, &mut current_size, entry.size_bytes);
 
-            // Add the new entry
-            if let Ok(mut size) = self.current_size.write() {
-                *size += entry.size_bytes;
-            }
+            // Add the new entry.
+            *current_size = current_size.saturating_add(entry.size_bytes);
             entries.insert(key, entry);
         }
 
@@ -366,26 +367,31 @@ impl ResourceCache {
         std::cmp::min(self.config.default_ttl, self.config.max_ttl)
     }
 
-    /// Ensure there's space for a new entry of the given size
-    fn ensure_space_for(&self, size_bytes: usize) -> Result<(), NetworkError> {
-        if let (Ok(mut entries), Ok(mut current_size)) =
-            (self.entries.write(), self.current_size.write())
+    /// Evict LRU entries until there is room for `size_bytes`.
+    ///
+    /// Operates on the caller's already-held write guards — it must NOT re-lock
+    /// `entries`/`current_size` (std RwLock is not reentrant).
+    fn evict_until_fits(
+        &self,
+        entries: &mut HashMap<String, CacheEntry>,
+        current_size: &mut usize,
+        size_bytes: usize,
+    ) {
+        while (*current_size + size_bytes > self.config.max_size_bytes)
+            || (entries.len() >= self.config.max_entries)
         {
-            // Check if we need to make space
-            while (*current_size + size_bytes > self.config.max_size_bytes)
-                || (entries.len() >= self.config.max_entries)
-            {
-                if entries.is_empty() {
-                    break;
-                }
+            if entries.is_empty() {
+                break;
+            }
 
-                // Find LRU entry to evict
-                let lru_key = entries
-                    .iter()
-                    .min_by_key(|(_, entry)| (entry.last_accessed, entry.access_count))
-                    .map(|(key, _)| key.clone());
+            // Find the LRU entry to evict.
+            let lru_key = entries
+                .iter()
+                .min_by_key(|(_, entry)| (entry.last_accessed, entry.access_count))
+                .map(|(key, _)| key.clone());
 
-                if let Some(key) = lru_key {
+            match lru_key {
+                Some(key) => {
                     if let Some(removed) = entries.remove(&key) {
                         *current_size = current_size.saturating_sub(removed.size_bytes);
                         log::debug!(
@@ -394,13 +400,10 @@ impl ResourceCache {
                             removed.size_bytes
                         );
                     }
-                } else {
-                    break;
                 }
+                None => break,
             }
         }
-
-        Ok(())
     }
 }
 
