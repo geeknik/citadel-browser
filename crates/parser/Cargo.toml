@@ -32,9 +32,8 @@ futures = "0.3"
 # Security & sanitization
 ammonia = "3.3.1"  # HTML sanitization (>=3.3.1 fixes RUSTSEC-2025-0071 SVG/MathML XSS)
 
-# JavaScript engine (pure Rust - no C/C++ dependency)
-boa_engine = { version = "0.21", features = ["annex-b"] }
-boa_gc = "0.21"
+# JavaScript is disabled (no-JS-by-default). The Boa engine was removed
+# (dependency-budget Tier-3); see crates/parser/src/js/mod.rs.
 
 # Logging and metrics
 tracing = "0.1"

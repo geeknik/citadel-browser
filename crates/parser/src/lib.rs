@@ -743,76 +743,19 @@ body {
     }
 
     #[test]
-    fn test_js_engine_integration() {
-        // Test basic JavaScript execution
-        let result = execute_js_simple("5 + 3").expect("JS execution should succeed");
-        assert_eq!(result, "8");
+    fn test_js_is_disabled() {
+        // JavaScript is disabled — the Boa engine was removed (dependency-budget
+        // Tier-3) and scripts are pruned at the ZKVM rendering boundary, not run.
+        // Every execution entry point must report JS is off rather than execute.
+        assert!(execute_js_simple("5 + 3").is_err());
+        assert!(execute_js_simple("'Hello ' + 'World'").is_err());
+        assert!(execute_js_simple("eval('alert(1)')").is_err());
 
-        // Test with string operations
-        let result =
-            execute_js_simple("'Hello ' + 'World'").expect("JS string operation should succeed");
-        assert_eq!(result, "Hello World");
+        let html = "<!doctype html><html><body><h1>Hi</h1></body></html>";
+        assert!(execute_js_with_dom("10 * 2", html).is_err());
 
-        // Test boolean operations
-        let result =
-            execute_js_simple("true && false").expect("JS boolean operation should succeed");
-        assert_eq!(result, "false");
-
-        // Test null and undefined
-        let result = execute_js_simple("null").expect("JS null evaluation should succeed");
-        assert_eq!(result, "null");
-
-        let result =
-            execute_js_simple("undefined").expect("JS undefined evaluation should succeed");
-        assert_eq!(result, "undefined");
-    }
-
-    #[test]
-    fn test_js_with_dom_integration() {
-        let html = r#"
-        <!DOCTYPE html>
-        <html>
-        <head><title>JS Test Page</title></head>
-        <body>
-            <h1 id="header">Hello</h1>
-            <p>Content</p>
-        </body>
-        </html>
-        "#;
-
-        // Test simple arithmetic (DOM doesn't affect basic math)
-        let result =
-            execute_js_with_dom("10 * 2", html).expect("JS arithmetic with DOM should succeed");
-        assert_eq!(result, "20");
-
-        // Test string operations with DOM context
-        let result = execute_js_with_dom("'Citadel' + ' Browser'", html)
-            .expect("JS string operation with DOM should succeed");
-        assert_eq!(result, "Citadel Browser");
-
-        // Test math operations
-        let result = execute_js_with_dom("Math.max(5, 10)", html)
-            .expect("JS Math operation with DOM should succeed");
-        assert_eq!(result, "10");
-    }
-
-    #[test]
-    fn test_js_security_validation() {
-        // Test that dangerous JavaScript is blocked
-        let dangerous_code = "eval('alert(1)')";
-        let result = execute_js_simple(dangerous_code);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("eval("));
-
-        // Test that XMLHttpRequest is blocked
-        let xhr_code = "new XMLHttpRequest()";
-        let result = execute_js_simple(xhr_code);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .to_lowercase()
-            .contains("xmlhttprequest"));
+        let engine = create_js_engine().expect("inert engine constructs");
+        assert!(!engine.is_js_allowed());
     }
 }
 

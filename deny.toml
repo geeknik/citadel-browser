@@ -21,13 +21,12 @@ ignore = [
     # rand unsoundness, only under a narrow condition (custom global logger +
     # rand::rng()) we do not hit. Bumping to rand 0.9 everywhere is a wide cascade.
     "RUSTSEC-2026-0097",
-    # thin-vec: UAF/double-free if an element's Drop panics. Transitive via
-    # boa_engine 0.21 (JS engine). No fixed boa release yet. TODO: drop/bump boa.
-    "RUSTSEC-2026-0103",
     # lru IterMut stacked-borrows UB. Transitive via moka (cache). No fixed
     # version in our range yet. TODO: bump moka/lru when available.
     "RUSTSEC-2026-0002",
 ]
+# (thin-vec RUSTSEC-2026-0103 is CLEARED — the Boa JS engine that pulled it was
+#  removed, dependency-budget Tier-3.)
 
 [licenses]
 # Allow-only model (cargo-deny 0.18+ denies anything not listed). Expanded to

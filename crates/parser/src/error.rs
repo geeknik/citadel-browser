@@ -58,13 +58,6 @@ impl Error for ParserError {
     }
 }
 
-// Conversion from boa_engine::JsError to ParserError
-impl From<boa_engine::JsError> for ParserError {
-    fn from(err: boa_engine::JsError) -> Self {
-        ParserError::JsError(format!("Boa JS error: {}", err))
-    }
-}
-
 /// Result type for parser operations
 pub type ParserResult<T> = Result<T, ParserError>;
 

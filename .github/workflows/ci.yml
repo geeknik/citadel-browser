@@ -31,7 +31,6 @@ jobs:
       # bump rand. Unmaintained-crate warnings are not gated.
       run: |
         cargo audit \
-          --ignore RUSTSEC-2026-0103 \
           --ignore RUSTSEC-2026-0097 \
           --ignore RUSTSEC-2026-0002
 
