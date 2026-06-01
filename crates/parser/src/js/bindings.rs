@@ -10,8 +10,74 @@
 use boa_engine::object::builtins::{JsArray, JsPromise};
 use boa_engine::object::ObjectInitializer;
 use boa_engine::property::Attribute;
-use boa_engine::{js_string, Context, JsNativeError, JsResult, JsValue, NativeFunction};
+use boa_engine::{js_string, Context, JsNativeError, JsResult, JsValue, NativeFunction, Source};
 use std::time::Instant;
+
+/// Per-origin storage quota (UTF-16 code units ≈ bytes), matching the de-facto
+/// 5 MiB browser limit. Bounds memory so a page cannot exhaust the heap via
+/// `setItem` (availability is a security property).
+const STORAGE_QUOTA: usize = 5 * 1024 * 1024;
+
+/// Authored shim for `localStorage`/`sessionStorage`: in-memory, ephemeral,
+/// first-party-isolated Storage. Running it in the sandbox (rather than binding
+/// native code) means the store *cannot* touch disk or escape the cage, so it is
+/// structurally incapable of being a persistent supercookie. The backing map is a
+/// closure variable, wiped when the context dies (i.e. between executions today,
+/// and on tab close once JS runs in a long-lived per-tab context).
+const STORAGE_SHIM: &str = r#"
+(function (QUOTA) {
+  function makeStorage() {
+    var data = Object.create(null);
+    var size = 0;
+    var api = {
+      getItem: function (k) {
+        k = String(k);
+        return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null;
+      },
+      setItem: function (k, v) {
+        k = String(k); v = String(v);
+        var had = Object.prototype.hasOwnProperty.call(data, k);
+        var old = had ? k.length + data[k].length : 0;
+        var next = size - old + k.length + v.length;
+        if (next > QUOTA) { throw new Error("QuotaExceededError"); }
+        data[k] = v; size = next;
+      },
+      removeItem: function (k) {
+        k = String(k);
+        if (Object.prototype.hasOwnProperty.call(data, k)) {
+          size -= k.length + data[k].length;
+          delete data[k];
+        }
+      },
+      clear: function () { data = Object.create(null); size = 0; },
+      key: function (i) {
+        var ks = Object.keys(data);
+        return (i >= 0 && i < ks.length) ? ks[i] : null;
+      }
+    };
+    // Proxy so legacy property access (localStorage.foo = 'x') also works.
+    return new Proxy(api, {
+      get: function (t, prop) {
+        if (prop === "length") { return Object.keys(data).length; }
+        if (prop in t) { return t[prop]; }
+        return Object.prototype.hasOwnProperty.call(data, prop) ? data[prop] : undefined;
+      },
+      set: function (t, prop, val) {
+        if (prop in t) { t[prop] = val; return true; }
+        api.setItem(prop, val); return true;
+      },
+      has: function (t, prop) {
+        return (prop in t) || Object.prototype.hasOwnProperty.call(data, prop);
+      },
+      deleteProperty: function (t, prop) {
+        api.removeItem(prop); return true;
+      }
+    });
+  }
+  globalThis.localStorage = makeStorage();
+  globalThis.sessionStorage = makeStorage();
+})(QUOTA_PLACEHOLDER);
+"#;
 
 /// The identity and per-origin seed the bindings present to a page.
 ///
@@ -84,6 +150,16 @@ pub fn install(ctx: &mut Context, profile: &PrivacyProfile) -> JsResult<()> {
     install_screen(ctx, profile)?;
     install_timing(ctx, profile)?;
     install_network_gate(ctx)?;
+    install_storage(ctx)?;
+    Ok(())
+}
+
+/// Install ephemeral, first-party-isolated `localStorage`/`sessionStorage` by
+/// evaluating the authored [`STORAGE_SHIM`] (see its doc for why a sandboxed
+/// shim, not native code). No disk, no cross-origin sharing => no supercookies.
+fn install_storage(ctx: &mut Context) -> JsResult<()> {
+    let shim = STORAGE_SHIM.replace("QUOTA_PLACEHOLDER", &STORAGE_QUOTA.to_string());
+    ctx.eval(Source::from_bytes(&shim))?;
     Ok(())
 }
 

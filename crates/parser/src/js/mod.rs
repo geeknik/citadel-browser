@@ -276,12 +276,53 @@ mod tests {
     }
 
     #[test]
-    fn dom_and_storage_apis_are_not_yet_exposed() {
+    fn storage_is_present_ephemeral_and_supercookie_proof() {
         let mut e = engine();
-        // DOM bindings (future) and storage (M6) are not bound yet — undefined.
+        assert_eq!(e.execute_simple("typeof localStorage").unwrap(), "object");
+        assert_eq!(e.execute_simple("typeof sessionStorage").unwrap(), "object");
+
+        // Faithful Storage API: setItem/getItem round-trips, length, key, remove.
+        assert_eq!(
+            e.execute_simple("localStorage.setItem('a','1'); localStorage.getItem('a')")
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            e.execute_simple(
+                "localStorage.setItem('a','1'); localStorage.setItem('b','2'); localStorage.length"
+            )
+            .unwrap(),
+            "2"
+        );
+        // Legacy property-style access works too (Proxy).
+        assert_eq!(
+            e.execute_simple("localStorage.foo = 'bar'; localStorage.getItem('foo')")
+                .unwrap(),
+            "bar"
+        );
+        assert_eq!(
+            e.execute_simple(
+                "localStorage.setItem('a','1'); localStorage.removeItem('a'); \
+                 String(localStorage.getItem('a'))"
+            )
+            .unwrap(),
+            "null"
+        );
+
+        // SUPERCOOKIE-PROOF: a value written in one execution does not survive into
+        // the next — storage is ephemeral, never persisted to disk.
+        e.execute_simple("localStorage.setItem('track','123')").unwrap();
+        assert_eq!(
+            e.execute_simple("String(localStorage.getItem('track'))").unwrap(),
+            "null"
+        );
+    }
+
+    #[test]
+    fn unimplemented_apis_remain_unbound() {
+        let mut e = engine();
+        // DOM bindings and IndexedDB are not bound yet — undefined (not silently faked).
         assert_eq!(e.execute_simple("typeof document").unwrap(), "undefined");
-        assert_eq!(e.execute_simple("typeof localStorage").unwrap(), "undefined");
-        assert_eq!(e.execute_simple("typeof sessionStorage").unwrap(), "undefined");
         assert_eq!(e.execute_simple("typeof indexedDB").unwrap(), "undefined");
     }
 }
