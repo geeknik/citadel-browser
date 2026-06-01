@@ -14,7 +14,7 @@ log = "0.4"
 
 # Cryptographic dependencies
 zeroize = "1.6"  # Secure memory wiping
-rand = "0.8"     # Cryptographic randomness
+rand = "0.9"     # Cryptographic randomness
 blake3 = "1.3"   # Fast cryptographic hashing
 aes-gcm = "0.10" # AES-GCM encryption
 
