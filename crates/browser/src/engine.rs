@@ -867,9 +867,12 @@ impl BrowserEngine {
         let mut request = Request::new(method, target_url.as_str())
             .map_err(|e| format!("Failed to create request: {}", e))?;
 
-        // Set security headers using builder pattern
+        // NOTE: User-Agent / Accept / Accept-Language are NOT set here. The
+        // in-house HTTPS client (citadel_networking::http) owns the uniform,
+        // browser-like request shape and drops any caller-supplied copies of those
+        // managed headers — setting them here would be dead and could drift from
+        // the single normalized identity. See the network-fingerprint doctrine.
         request = request
-            .with_header("User-Agent", "Citadel Browser/0.0.1-alpha (Privacy-First)")
             .with_header(
                 "Accept",
                 "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",

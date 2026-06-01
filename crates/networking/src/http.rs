@@ -237,7 +237,16 @@ async fn request_once(
         tls.flush().await?;
 
         let mut buf = Vec::new();
-        tls.take(MAX_RESPONSE_BYTES).read_to_end(&mut buf).await?;
+        // Many HTTPS/1.1 servers (especially with `Connection: close`) close the
+        // TCP socket without sending a TLS close_notify. rustls reports that as
+        // `UnexpectedEof`; for HTTP it is a normal end-of-stream, so accept the
+        // bytes received rather than failing the load. Truncation is still caught
+        // downstream by HTTP framing (Content-Length / chunked) at the parse layer.
+        match tls.take(MAX_RESPONSE_BYTES).read_to_end(&mut buf).await {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok::<Vec<u8>, NetworkError>(buf)
     })
     .await
