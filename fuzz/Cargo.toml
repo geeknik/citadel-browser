@@ -5,6 +5,38 @@ edition = "2021"
 publish = false
 license = "MIT"
 
+# Required for cargo-fuzz to recognize this as a fuzz project.
+[package.metadata]
+cargo-fuzz = true
+
+[[bin]]
+name = "dns_resolver"
+path = "fuzz_targets/dns_resolver.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_parser"
+path = "fuzz_targets/html_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_parser"
+path = "fuzz_targets/css_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "network_request"
+path = "fuzz_targets/network_request.rs"
+test = false
+doc = false
+bench = false
+
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }

@@ -19,28 +19,18 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
     
-    // Convert bytes to string, handling invalid UTF-8 gracefully
-    let html_input = match std::str::from_utf8(data) {
-        Ok(s) => s,
-        Err(_) => {
-            // For invalid UTF-8, try lossy conversion
-            let lossy = String::from_utf8_lossy(data);
-            if lossy.len() > 10_000 {
-                return; // Skip excessively large inputs
-            }
-            &lossy
-        }
-    };
-    
+    // Own the (possibly lossy) string so it outlives the parse calls below.
+    let html_input = String::from_utf8_lossy(data);
+
     // Skip excessively large inputs to prevent timeout
     if html_input.len() > 50_000 {
         return;
     }
-    
+
     // Test with different security context strictness levels
-    test_with_security_context(html_input, 5);   // Very strict
-    test_with_security_context(html_input, 10);  // Moderate
-    test_with_security_context(html_input, 20);  // Permissive
+    test_with_security_context(&html_input, 5); // Very strict
+    test_with_security_context(&html_input, 10); // Moderate
+    test_with_security_context(&html_input, 20); // Permissive
 });
 
 /// Test HTML parsing with a specific security context

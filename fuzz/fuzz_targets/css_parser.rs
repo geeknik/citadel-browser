@@ -1,19 +1,16 @@
 #![no_main]
 
+use citadel_parser::{parse_css, security::SecurityContext};
 use libfuzzer_sys::fuzz_target;
-use parser::css::CssParser;
+use std::sync::Arc;
 
+// Fuzz the CSS parser: arbitrary bytes -> parse_css must never panic or hit UB.
 fuzz_target!(|data: &[u8]| {
-    // Try to convert bytes to a UTF-8 string
-    if let Ok(css_str) = std::str::from_utf8(data) {
-        // Limit input size to prevent excessive resource usage
-        if css_str.len() > 10_000 {
-            return;
+    if let Ok(css) = std::str::from_utf8(data) {
+        if css.len() > 100_000 {
+            return; // bound resource use
         }
-
-        // Attempt to parse the CSS string
-        let mut parser = CssParser::new(css_str);
-        let _ = parser.parse();
-        // The fuzzer will look for panics, crashes, or other undefined behavior
+        let ctx = Arc::new(SecurityContext::new(10));
+        let _ = parse_css(css, ctx);
     }
-}); 
+});
