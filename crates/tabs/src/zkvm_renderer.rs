@@ -321,7 +321,11 @@ pub fn render_in_isolation(request: &RenderRequest) -> RenderedContent {
         rules: Vec::new(),
         security_context,
     });
-    let ctx = StyleCtx { sheet: &sheet, vw, vh };
+    let ctx = StyleCtx {
+        sheet: &sheet,
+        vw,
+        vh,
+    };
 
     // Page background + centered content width come from the body's computed style.
     let body = sheet.compute_styles("body", &[], None);
@@ -397,12 +401,92 @@ fn run_page_scripts_in_cage(url: &str, dom: &citadel_parser::Dom) -> (usize, usi
             return (0, scripts.len(), external_skipped);
         }
     };
-    match engine.run_page_scripts(&scripts) {
+    // Mirror DOM: a bounded JSON snapshot of the parsed document so scripts can
+    // query/read/mutate it inside the cage instead of throwing on first access.
+    let document_json = serialize_dom(url, dom);
+    match engine.run_page_scripts_with_document(&document_json, &scripts) {
         Ok(outcome) => (outcome.executed, outcome.errored, external_skipped),
         Err(e) => {
             log::error!("🚨 ZKVM: page script execution failed: {}", e);
             (0, scripts.len(), external_skipped)
         }
+    }
+}
+
+/// Max nodes / depth / text length the DOM snapshot serializes, so a hostile page
+/// cannot make the JSON snapshot (or the resulting JS DOM) unboundedly large.
+const DOM_SNAPSHOT_MAX_NODES: usize = 8000;
+const DOM_SNAPSHOT_MAX_DEPTH: usize = 64;
+const DOM_SNAPSHOT_TEXT_CAP: usize = 16384;
+
+/// Serialize the parsed DOM to a bounded JSON snapshot for the JS mirror DOM:
+/// `{ "url", "tag":"#document", "children":[ {tag,attrs,children} | {text} ] }`.
+fn serialize_dom(url: &str, dom: &citadel_parser::Dom) -> String {
+    use serde_json::Value;
+    let mut budget = DOM_SNAPSHOT_MAX_NODES;
+    let value = serialize_node(&dom.root(), DOM_SNAPSHOT_MAX_DEPTH, &mut budget);
+    let mut obj = match value {
+        Some(Value::Object(m)) => m,
+        _ => {
+            let mut m = serde_json::Map::new();
+            m.insert("tag".to_string(), Value::String("#document".to_string()));
+            m.insert("children".to_string(), Value::Array(Vec::new()));
+            m
+        }
+    };
+    obj.insert("url".to_string(), Value::String(url.to_string()));
+    serde_json::to_string(&Value::Object(obj))
+        .unwrap_or_else(|_| "{\"tag\":\"#document\",\"children\":[]}".to_string())
+}
+
+/// Recursively serialize one node (depth/budget bounded). Elements become
+/// `{tag, attrs, children}`, text nodes `{text}`; comments/others are dropped.
+fn serialize_node(
+    handle: &NodeHandle,
+    depth: usize,
+    budget: &mut usize,
+) -> Option<serde_json::Value> {
+    use serde_json::Value;
+    if *budget == 0 || depth == 0 {
+        return None;
+    }
+    let node = handle.read().ok()?;
+    *budget = budget.saturating_sub(1);
+    match &node.data {
+        NodeData::Document | NodeData::Element(_) => {
+            let mut kids = Vec::new();
+            for child in node.children() {
+                if *budget == 0 {
+                    break;
+                }
+                if let Some(v) = serialize_node(child, depth.saturating_sub(1), budget) {
+                    kids.push(v);
+                }
+            }
+            let mut m = serde_json::Map::new();
+            if let NodeData::Element(el) = &node.data {
+                m.insert(
+                    "tag".to_string(),
+                    Value::String(el.local_name().to_ascii_lowercase()),
+                );
+                let mut attrs = serde_json::Map::new();
+                for a in &el.attributes {
+                    attrs.insert(a.name.local.to_string(), Value::String(a.value.clone()));
+                }
+                m.insert("attrs".to_string(), Value::Object(attrs));
+            } else {
+                m.insert("tag".to_string(), Value::String("#document".to_string()));
+            }
+            m.insert("children".to_string(), Value::Array(kids));
+            Some(Value::Object(m))
+        }
+        NodeData::Text(t) => {
+            let s: String = t.chars().take(DOM_SNAPSHOT_TEXT_CAP).collect();
+            let mut m = serde_json::Map::new();
+            m.insert("text".to_string(), Value::String(s));
+            Some(Value::Object(m))
+        }
+        _ => None,
     }
 }
 
@@ -457,7 +541,10 @@ fn applied_policies() -> Vec<String> {
 /// Falls back to the full viewport minus margins when the page sets no width.
 fn resolve_content_width(body: &citadel_parser::ComputedStyle, vw: f32, vh: f32) -> f32 {
     let from_width = body.width.as_ref().and_then(|l| length_to_px(l, vw, vh));
-    let from_max = body.max_width.as_ref().and_then(|l| length_to_px(l, vw, vh));
+    let from_max = body
+        .max_width
+        .as_ref()
+        .and_then(|l| length_to_px(l, vw, vh));
     let candidate = match (from_width, from_max) {
         (Some(w), Some(m)) => w.min(m),
         (Some(w), None) => w,
@@ -523,9 +610,15 @@ fn parse_hex(hex: &str) -> Option<[u8; 3]> {
             Some([r, g, b])
         }
         3 => {
-            let r = u8::from_str_radix(hex.get(0..1)?, 16).ok()?.saturating_mul(17);
-            let g = u8::from_str_radix(hex.get(1..2)?, 16).ok()?.saturating_mul(17);
-            let b = u8::from_str_radix(hex.get(2..3)?, 16).ok()?.saturating_mul(17);
+            let r = u8::from_str_radix(hex.get(0..1)?, 16)
+                .ok()?
+                .saturating_mul(17);
+            let g = u8::from_str_radix(hex.get(1..2)?, 16)
+                .ok()?
+                .saturating_mul(17);
+            let b = u8::from_str_radix(hex.get(2..3)?, 16)
+                .ok()?
+                .saturating_mul(17);
             Some([r, g, b])
         }
         _ => None,
@@ -576,7 +669,12 @@ fn resolve_block_style(
     let c = ctx.sheet.compute_styles(tag, classes, id);
     let px = |l: &LengthValue| length_to_px(l, ctx.vw, ctx.vh);
 
-    if let Some(fs) = c.font_size.as_ref().and_then(|l| px(l)).filter(|v| *v > 0.0) {
+    if let Some(fs) = c
+        .font_size
+        .as_ref()
+        .and_then(|l| px(l))
+        .filter(|v| *v > 0.0)
+    {
         s.font_size = fs;
     }
     match c.font_weight.as_deref() {
@@ -673,9 +771,27 @@ fn default_block_style(tag: &str, inherited_bold: bool) -> BlockStyle {
         "h2" => (26.0, true, [17, 17, 17], DisplayKind::Heading, 19.0),
         "h3" => (22.0, true, [17, 17, 17], DisplayKind::Heading, 17.0),
         "h4" | "h5" | "h6" => (18.0, true, [17, 17, 17], DisplayKind::Heading, 15.0),
-        "pre" | "code" => (14.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph, 12.0),
-        "li" => (16.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph, 4.0),
-        _ => (16.0, inherited_bold, [34, 34, 34], DisplayKind::Paragraph, 12.0),
+        "pre" | "code" => (
+            14.0,
+            inherited_bold,
+            [34, 34, 34],
+            DisplayKind::Paragraph,
+            12.0,
+        ),
+        "li" => (
+            16.0,
+            inherited_bold,
+            [34, 34, 34],
+            DisplayKind::Paragraph,
+            4.0,
+        ),
+        _ => (
+            16.0,
+            inherited_bold,
+            [34, 34, 34],
+            DisplayKind::Paragraph,
+            12.0,
+        ),
     };
     BlockStyle {
         font_size,
@@ -728,7 +844,12 @@ fn element_selectors(handle: &NodeHandle) -> (Vec<String>, Option<String>) {
 }
 
 /// Push a sanitized link run, styled by the `a` cascade (default link blue).
-fn push_link(handle: &NodeHandle, href: Option<String>, out: &mut Vec<DisplayItem>, ctx: &StyleCtx) {
+fn push_link(
+    handle: &NodeHandle,
+    href: Option<String>,
+    out: &mut Vec<DisplayItem>,
+    ctx: &StyleCtx,
+) {
     let mut text = String::new();
     collect_text(handle, &mut text);
     let text = collapse_ws(&text);
@@ -737,7 +858,11 @@ fn push_link(handle: &NodeHandle, href: Option<String>, out: &mut Vec<DisplayIte
     }
     let (classes, id) = element_selectors(handle);
     let computed = ctx.sheet.compute_styles("a", &classes, id.as_deref());
-    let color = computed.color.as_ref().and_then(color_to_rgb).unwrap_or([20, 80, 200]);
+    let color = computed
+        .color
+        .as_ref()
+        .and_then(color_to_rgb)
+        .unwrap_or([20, 80, 200]);
     let font_size = computed
         .font_size
         .as_ref()

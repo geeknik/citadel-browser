@@ -254,6 +254,307 @@ const FINGERPRINT_SHIM: &str = r#"
 })(SEED_PLACEHOLDER, MAXIMG_PLACEHOLDER);
 "#;
 
+/// Hard cap on live JS DOM nodes a page may create, so a hostile script cannot
+/// exhaust memory via `createElement`/`appendChild` loops (the loop-iteration
+/// limit alone wouldn't bound per-node allocation). Availability is a security
+/// property.
+const DOM_MAX_LIVE_NODES: usize = 20000;
+
+/// Authored, sandboxed **mirror DOM** for page scripts.
+///
+/// Seeded from a bounded JSON snapshot of the already-parsed (and sanitized) Rust
+/// DOM, passed in via `__CITADEL_DOM_JSON__`. It is a *mirror*: scripts get a
+/// real, mutable DOM API (query/read/mutate, `document`, `window`, events) and it
+/// is internally consistent, but mutations do not yet re-render to the display
+/// list (DOM-2). Canvas creation delegates to the prior (fingerprint-poisoned)
+/// `document` so `createElement('canvas')` stays poisoned.
+///
+/// Deliberate limits (documented, not hidden): common CSS selector subset only
+/// (tag / `#id` / `.class` / descendant / comma — no `>`, `[attr]`, pseudo);
+/// `innerHTML` is get-only (set falls back to text — no HTML sub-parser in the
+/// cage); no event loop (timers/rAF are no-ops); window metrics are normalized
+/// (uniform) values.
+const DOM_SHIM: &str = r##"
+(function (MAX_NODES) {
+  var TREE;
+  try { TREE = JSON.parse(globalThis.__CITADEL_DOM_JSON__ || ""); }
+  catch (e) { TREE = { tag: "#document", children: [] }; }
+  try { delete globalThis.__CITADEL_DOM_JSON__; } catch (e2) {}
+  var priorDoc = globalThis.document; // fingerprint-poisoned canvas vehicle (M4)
+  var nodeCount = 0;
+
+  function splitWs(s) { return String(s).split(/\s+/).filter(Boolean); }
+  function hasClass(el, c) { return el.nodeType === 1 && splitWs(el._attrs["class"] || "").indexOf(c) >= 0; }
+  function textOf(n) {
+    if (n.nodeType === 3) { return n.data; }
+    var s = ""; for (var i = 0; i < n.childNodes.length; i++) { s += textOf(n.childNodes[i]); } return s;
+  }
+  function detach(c) {
+    var p = c.parentNode; if (!p) { return; }
+    var i = p.childNodes.indexOf(c); if (i >= 0) { p.childNodes.splice(i, 1); } c.parentNode = null;
+  }
+  function sibling(el, dir, elementOnly) {
+    var p = el.parentNode; if (!p) { return null; }
+    for (var j = p.childNodes.indexOf(el) + dir; j >= 0 && j < p.childNodes.length; j += dir) {
+      if (!elementOnly || p.childNodes[j].nodeType === 1) { return p.childNodes[j]; }
+    }
+    return null;
+  }
+  function fire(target, type, ev) {
+    if (!type) { return true; }
+    ev = ev || { type: type }; if (!ev.target) { ev.target = target; } ev.currentTarget = target;
+    var a = target._listeners && target._listeners[type];
+    if (a) { var copy = a.slice(); for (var i = 0; i < copy.length; i++) { try { copy[i].call(target, ev); } catch (e) {} } }
+    var on = target["on" + type];
+    if (typeof on === "function") { try { on.call(target, ev); } catch (e3) {} }
+    return true;
+  }
+
+  function makeText(text) {
+    return { nodeType: 3, nodeName: "#text", data: String(text), nodeValue: String(text),
+             childNodes: [], children: [], parentNode: null, get textContent() { return this.data; } };
+  }
+
+  function parseCompound(s) {
+    var c = { tag: null, id: null, classes: [] }, m, re = /([#.]?)([a-zA-Z0-9_-]+)/g;
+    if (s.indexOf("*") >= 0) { c.tag = "*"; }
+    while ((m = re.exec(s)) !== null) {
+      if (m[1] === "#") { c.id = m[2]; } else if (m[1] === ".") { c.classes.push(m[2]); } else { c.tag = m[2].toLowerCase(); }
+    }
+    return c;
+  }
+  function matchCompound(el, c) {
+    if (el.nodeType !== 1) { return false; }
+    if (c.tag && c.tag !== "*" && el.localName !== c.tag) { return false; }
+    if (c.id && (el._attrs.id || "") !== c.id) { return false; }
+    for (var i = 0; i < c.classes.length; i++) { if (!hasClass(el, c.classes[i])) { return false; } }
+    return true;
+  }
+  function matchChain(el, comps) {
+    var i = comps.length - 1;
+    if (!matchCompound(el, comps[i])) { return false; }
+    i--; var n = el.parentNode;
+    while (i >= 0 && n && n.nodeType === 1) { if (matchCompound(n, comps[i])) { i--; } n = n.parentNode; }
+    return i < 0;
+  }
+  function parseSelector(sel) {
+    return String(sel).split(",").map(function (s) { return splitWs(s.trim()).map(parseCompound); })
+      .filter(function (p) { return p.length > 0; });
+  }
+  function matchesSel(el, sel) {
+    var parts = parseSelector(sel);
+    for (var p = 0; p < parts.length; p++) { if (matchChain(el, parts[p])) { return true; } }
+    return false;
+  }
+  function descend(root, pred, firstOnly) {
+    var out = [];
+    (function walk(n) {
+      for (var i = 0; i < n.childNodes.length; i++) {
+        var c = n.childNodes[i];
+        if (c.nodeType === 1) {
+          if (pred(c)) { out.push(c); if (firstOnly) { return; } }
+          walk(c); if (firstOnly && out.length) { return; }
+        }
+      }
+    })(root);
+    return out;
+  }
+  function query(root, sel, firstOnly) {
+    var parts = parseSelector(sel);
+    return descend(root, function (el) {
+      for (var p = 0; p < parts.length; p++) { if (matchChain(el, parts[p])) { return true; } }
+      return false;
+    }, firstOnly);
+  }
+
+  function makeElement(tag) {
+    if (++nodeCount > MAX_NODES) { throw new Error("Citadel DOM node budget exceeded"); }
+    var lname = String(tag).toLowerCase();
+    var el = {
+      nodeType: 1, tagName: String(tag).toUpperCase(), nodeName: String(tag).toUpperCase(),
+      localName: lname, _attrs: {}, childNodes: [], parentNode: null, _listeners: {}, _style: {}
+    };
+    function def(name, get, set) { Object.defineProperty(el, name, { get: get, set: set, configurable: true }); }
+    def("children", function () { return el.childNodes.filter(function (n) { return n.nodeType === 1; }); });
+    def("childElementCount", function () { return el.children.length; });
+    def("firstChild", function () { return el.childNodes[0] || null; });
+    def("lastChild", function () { return el.childNodes[el.childNodes.length - 1] || null; });
+    def("firstElementChild", function () { return el.children[0] || null; });
+    def("parentElement", function () { return el.parentNode && el.parentNode.nodeType === 1 ? el.parentNode : null; });
+    def("nextSibling", function () { return sibling(el, 1, false); });
+    def("previousSibling", function () { return sibling(el, -1, false); });
+    def("nextElementSibling", function () { return sibling(el, 1, true); });
+    def("previousElementSibling", function () { return sibling(el, -1, true); });
+    def("id", function () { return el._attrs.id || ""; }, function (v) { el._attrs.id = String(v); });
+    def("className", function () { return el._attrs["class"] || ""; }, function (v) { el._attrs["class"] = String(v); });
+    def("attributes", function () { return Object.keys(el._attrs).map(function (k) { return { name: k, value: el._attrs[k] }; }); });
+    def("style", function () { return el._style; });
+    def("classList", function () {
+      function lst() { return splitWs(el._attrs["class"] || ""); }
+      function save(a) { el._attrs["class"] = a.join(" "); }
+      return {
+        add: function () { var a = lst(); for (var i = 0; i < arguments.length; i++) { if (a.indexOf(arguments[i]) < 0) { a.push(arguments[i]); } } save(a); },
+        remove: function () { var a = lst(); for (var i = 0; i < arguments.length; i++) { var k = a.indexOf(arguments[i]); if (k >= 0) { a.splice(k, 1); } } save(a); },
+        toggle: function (c) { var a = lst(), k = a.indexOf(c); if (k >= 0) { a.splice(k, 1); save(a); return false; } a.push(c); save(a); return true; },
+        contains: function (c) { return lst().indexOf(c) >= 0; },
+        item: function (i) { return lst()[i] || null; }
+      };
+    });
+    def("textContent", function () { return textOf(el); }, function (v) { el.childNodes = [makeText(v)]; el.childNodes[0].parentNode = el; });
+    def("innerText", function () { return textOf(el); }, function (v) { el.childNodes = [makeText(v)]; el.childNodes[0].parentNode = el; });
+    def("innerHTML", function () { return serializeHTML(el); }, function (v) { el.childNodes = [makeText(v)]; el.childNodes[0].parentNode = el; });
+    def("outerHTML", function () { return openTag(el) + serializeHTML(el) + "</" + el.localName + ">"; });
+    def("value", function () { return el._attrs.value || ""; }, function (v) { el._attrs.value = String(v); });
+
+    el.getAttribute = function (n) { n = String(n).toLowerCase(); return Object.prototype.hasOwnProperty.call(el._attrs, n) ? el._attrs[n] : null; };
+    el.setAttribute = function (n, v) { el._attrs[String(n).toLowerCase()] = String(v); };
+    el.setAttributeNS = function (ns, n, v) { el.setAttribute(n, v); };
+    el.removeAttribute = function (n) { delete el._attrs[String(n).toLowerCase()]; };
+    el.hasAttribute = function (n) { return Object.prototype.hasOwnProperty.call(el._attrs, String(n).toLowerCase()); };
+    el.appendChild = function (c) { detach(c); c.parentNode = el; el.childNodes.push(c); return c; };
+    el.append = function () { for (var i = 0; i < arguments.length; i++) { var a = arguments[i]; el.appendChild(typeof a === "string" ? makeText(a) : a); } };
+    el.removeChild = function (c) { var i = el.childNodes.indexOf(c); if (i >= 0) { el.childNodes.splice(i, 1); c.parentNode = null; } return c; };
+    el.remove = function () { detach(el); };
+    el.insertBefore = function (c, ref) { detach(c); var i = ref ? el.childNodes.indexOf(ref) : -1; if (i < 0) { el.childNodes.push(c); } else { el.childNodes.splice(i, 0, c); } c.parentNode = el; return c; };
+    el.replaceChild = function (nw, old) { var i = el.childNodes.indexOf(old); if (i >= 0) { detach(nw); el.childNodes[i] = nw; nw.parentNode = el; old.parentNode = null; } return old; };
+    el.cloneNode = function (deep) {
+      var c = makeElement(el.localName); Object.keys(el._attrs).forEach(function (k) { c._attrs[k] = el._attrs[k]; });
+      if (deep) { for (var i = 0; i < el.childNodes.length; i++) { var ch = el.childNodes[i]; c.appendChild(ch.nodeType === 3 ? makeText(ch.data) : ch.cloneNode(true)); } }
+      return c;
+    };
+    el.contains = function (n) { while (n) { if (n === el) { return true; } n = n.parentNode; } return false; };
+    el.getElementsByTagName = function (t) { t = String(t).toLowerCase(); return descend(el, function (n) { return t === "*" || n.localName === t; }, false); };
+    el.getElementsByClassName = function (c) { var cls = splitWs(c); return descend(el, function (n) { return cls.every(function (x) { return hasClass(n, x); }); }, false); };
+    el.querySelector = function (s) { return query(el, s, true)[0] || null; };
+    el.querySelectorAll = function (s) { return query(el, s, false); };
+    el.matches = function (s) { return matchesSel(el, s); };
+    el.closest = function (s) { var n = el; while (n && n.nodeType === 1) { if (matchesSel(n, s)) { return n; } n = n.parentNode; } return null; };
+    el.addEventListener = function (t, fn) { (el._listeners[t] = el._listeners[t] || []).push(fn); };
+    el.removeEventListener = function (t, fn) { var a = el._listeners[t]; if (a) { var i = a.indexOf(fn); if (i >= 0) { a.splice(i, 1); } } };
+    el.dispatchEvent = function (ev) { return fire(el, ev && ev.type, ev); };
+    el.click = function () { fire(el, "click", { type: "click", target: el }); };
+    el.focus = function () {}; el.blur = function () {};
+    el.getBoundingClientRect = function () { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; };
+    return el;
+  }
+
+  function openTag(el) {
+    var s = "<" + el.localName;
+    Object.keys(el._attrs).forEach(function (k) { s += " " + k + '="' + el._attrs[k] + '"'; });
+    return s + ">";
+  }
+  function serializeHTML(el) {
+    var s = "";
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var c = el.childNodes[i];
+      s += c.nodeType === 3 ? c.data : openTag(c) + serializeHTML(c) + "</" + c.localName + ">";
+    }
+    return s;
+  }
+
+  function build(node, parent) {
+    if (node.text !== undefined) { var t = makeText(node.text); t.parentNode = parent; return t; }
+    var el = makeElement(node.tag || "div");
+    if (node.attrs) { Object.keys(node.attrs).forEach(function (k) { el._attrs[String(k).toLowerCase()] = String(node.attrs[k]); }); }
+    el.parentNode = parent;
+    if (node.children) { for (var i = 0; i < node.children.length; i++) { var ch = build(node.children[i], el); if (ch) { el.childNodes.push(ch); } } }
+    return el;
+  }
+  function findTag(nodes, tag) {
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].nodeType === 1 && nodes[i].localName === tag) { return nodes[i]; }
+      var r = findTag(nodes[i].childNodes || [], tag); if (r) { return r; }
+    }
+    return null;
+  }
+
+  var roots = [];
+  if (TREE.children) { for (var i = 0; i < TREE.children.length; i++) { roots.push(build(TREE.children[i], null)); } }
+  var elementRoots = roots.filter(function (n) { return n.nodeType === 1; });
+  var docEl = findTag(roots, "html") || elementRoots[0] || makeElement("html");
+  var headEl = findTag([docEl], "head") || makeElement("head");
+  var bodyEl = findTag([docEl], "body") || makeElement("body");
+
+  // ----- location (minimal parse; navigation is inert) --------------------
+  function parseURL(u) {
+    var m = /^([a-zA-Z][a-zA-Z0-9+.-]*:)\/\/([^\/:?#]+)(:[0-9]+)?([^?#]*)(\?[^#]*)?(#.*)?$/.exec(u || "") || [];
+    var protocol = m[1] || "https:", host = m[2] || "localhost", port = (m[3] || "").replace(":", "");
+    return {
+      href: u || "https://localhost/", protocol: protocol, hostname: host, host: host + (m[3] || ""),
+      port: port, pathname: m[4] || "/", search: m[5] || "", hash: m[6] || "",
+      origin: protocol + "//" + host + (m[3] || ""),
+      assign: function () {}, replace: function () {}, reload: function () {}, toString: function () { return this.href; }
+    };
+  }
+  var location = parseURL(TREE.url);
+
+  // ----- document ---------------------------------------------------------
+  var docListeners = {};
+  var document = {
+    nodeType: 9, nodeName: "#document", documentElement: docEl, head: headEl, body: bodyEl,
+    readyState: "complete", location: location, characterSet: "UTF-8", compatMode: "CSS1Compat",
+    getElementById: function (id) {
+      if ((docEl._attrs.id || "") === id) { return docEl; }
+      return query(docEl, "#" + id, true)[0] || null;
+    },
+    getElementsByTagName: function (t) { return docEl.getElementsByTagName(t); },
+    getElementsByClassName: function (c) { return docEl.getElementsByClassName(c); },
+    querySelector: function (s) { return matchesSel(docEl, s) ? docEl : (query(docEl, s, true)[0] || null); },
+    querySelectorAll: function (s) { var r = query(docEl, s, false); if (matchesSel(docEl, s)) { r.unshift(docEl); } return r; },
+    createElement: function (t) {
+      if (String(t).toLowerCase() === "canvas" && priorDoc && typeof priorDoc.createElement === "function") {
+        return priorDoc.createElement("canvas"); // keep fingerprint-poisoned canvas
+      }
+      return makeElement(t);
+    },
+    createElementNS: function (ns, t) { return makeElement(t); },
+    createTextNode: function (t) { return makeText(t); },
+    createDocumentFragment: function () { var f = makeElement("#fragment"); f.nodeType = 11; return f; },
+    createComment: function (t) { var c = makeText(t); c.nodeType = 8; c.nodeName = "#comment"; return c; },
+    createEvent: function () { return { type: "", initEvent: function (t) { this.type = t; } }; },
+    addEventListener: function (t, fn) { (docListeners[t] = docListeners[t] || []).push(fn); },
+    removeEventListener: function (t, fn) { var a = docListeners[t]; if (a) { var i = a.indexOf(fn); if (i >= 0) { a.splice(i, 1); } } },
+    dispatchEvent: function (ev) { return fire({ _listeners: docListeners }, ev && ev.type, ev); }
+  };
+  Object.defineProperty(document, "cookie", { get: function () { return ""; }, set: function () {}, configurable: true });
+  Object.defineProperty(document, "title", {
+    get: function () { var t = findTag([headEl], "title"); return t ? textOf(t) : ""; },
+    set: function () {}, configurable: true
+  });
+  globalThis.document = document;
+
+  // ----- window (== globalThis) ; normalized metrics ----------------------
+  var win = globalThis;
+  win.window = win; win.self = win; win.top = win; win.parent = win; win.frames = win;
+  win.document = document; win.location = location; win.name = "";
+  win.innerWidth = 1920; win.innerHeight = 1080; win.outerWidth = 1920; win.outerHeight = 1080;
+  win.devicePixelRatio = 1; win.scrollX = 0; win.scrollY = 0; win.pageXOffset = 0; win.pageYOffset = 0;
+  var winListeners = {};
+  win.addEventListener = function (t, fn) { (winListeners[t] = winListeners[t] || []).push(fn); };
+  win.removeEventListener = function (t, fn) { var a = winListeners[t]; if (a) { var i = a.indexOf(fn); if (i >= 0) { a.splice(i, 1); } } };
+  win.dispatchEvent = function (ev) { return fire({ _listeners: winListeners }, ev && ev.type, ev); };
+  win.getComputedStyle = function (el) { return (el && el._style) || {}; };
+  win.matchMedia = function (q) { return { matches: false, media: String(q), addListener: function () {}, removeListener: function () {}, addEventListener: function () {}, removeEventListener: function () {} }; };
+  win.scrollTo = function () {}; win.scroll = function () {}; win.scrollBy = function () {};
+  win.alert = function () {}; win.confirm = function () { return false; }; win.prompt = function () { return null; };
+  win.open = function () { return null; }; win.close = function () {}; win.focus = function () {}; win.blur = function () {};
+  // No event loop yet: timers/rAF are inert (documented limitation).
+  win.setTimeout = function () { return 0; }; win.setInterval = function () { return 0; };
+  win.clearTimeout = function () {}; win.clearInterval = function () {};
+  win.requestAnimationFrame = function () { return 0; }; win.cancelAnimationFrame = function () {};
+  win.requestIdleCallback = function () { return 0; }; win.cancelIdleCallback = function () {};
+
+  // ----- fire ready events (called by the host after all scripts run) -----
+  globalThis.__citadelFireReady__ = function () {
+    document.readyState = "complete";
+    fire({ _listeners: docListeners }, "DOMContentLoaded", { type: "DOMContentLoaded", target: document });
+    fire({ _listeners: docListeners }, "readystatechange", { type: "readystatechange", target: document });
+    fire({ _listeners: winListeners }, "load", { type: "load", target: win });
+    fire({ _listeners: winListeners }, "DOMContentLoaded", { type: "DOMContentLoaded", target: win });
+  };
+})(NODECAP_PLACEHOLDER);
+"##;
+
 /// The identity and per-origin seed the bindings present to a page.
 ///
 /// The defaults are a single, common, *normalized* identity — the whole point is
@@ -356,6 +657,22 @@ fn install_fingerprint_surface(ctx: &mut Context, p: &PrivacyProfile) -> JsResul
     Ok(())
 }
 
+/// Install the sandboxed mirror DOM ([`DOM_SHIM`]) from a bounded JSON snapshot of
+/// the parsed document. The JSON is passed as a JS *string value* (not embedded in
+/// the shim source), so no escaping/injection is possible; the shim `JSON.parse`s
+/// it and deletes the global. Call this AFTER [`install`] (it delegates canvas
+/// creation to the fingerprint-poisoned `document` that `install` set up).
+pub fn install_dom(ctx: &mut Context, document_json: &str) -> JsResult<()> {
+    ctx.register_global_property(
+        js_string!("__CITADEL_DOM_JSON__"),
+        js_string!(document_json),
+        Attribute::all(),
+    )?;
+    let shim = DOM_SHIM.replace("NODECAP_PLACEHOLDER", &DOM_MAX_LIVE_NODES.to_string());
+    ctx.eval(Source::from_bytes(&shim))?;
+    Ok(())
+}
+
 /// Install ephemeral, first-party-isolated `localStorage`/`sessionStorage` by
 /// evaluating the authored [`STORAGE_SHIM`] (see its doc for why a sandboxed
 /// shim, not native code). No disk, no cross-origin sharing => no supercookies.
@@ -401,10 +718,18 @@ fn install_network_gate(ctx: &mut Context) -> JsResult<()> {
         let noop = |_: &JsValue, _: &[JsValue], _: &mut Context| Ok(JsValue::undefined());
         let obj = ObjectInitializer::new(ctx)
             .function(NativeFunction::from_fn_ptr(noop), js_string!("open"), 5)
-            .function(NativeFunction::from_fn_ptr(noop), js_string!("setRequestHeader"), 2)
+            .function(
+                NativeFunction::from_fn_ptr(noop),
+                js_string!("setRequestHeader"),
+                2,
+            )
             .function(NativeFunction::from_fn_ptr(noop), js_string!("send"), 1)
             .function(NativeFunction::from_fn_ptr(noop), js_string!("abort"), 0)
-            .function(NativeFunction::from_fn_ptr(noop), js_string!("getAllResponseHeaders"), 0)
+            .function(
+                NativeFunction::from_fn_ptr(noop),
+                js_string!("getAllResponseHeaders"),
+                0,
+            )
             .property(js_string!("readyState"), JsValue::from(0), Attribute::all())
             .property(js_string!("status"), JsValue::from(0), Attribute::all())
             .property(js_string!("responseText"), js_string!(""), Attribute::all())
@@ -442,20 +767,52 @@ fn install_navigator(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
     let language = p.languages.first().map(String::as_str).unwrap_or("en-US");
 
     let navigator = ObjectInitializer::new(ctx)
-        .property(js_string!("userAgent"), js_string!(p.user_agent.as_str()), Attribute::all())
-        .property(js_string!("appVersion"), js_string!(p.app_version.as_str()), Attribute::all())
-        .property(js_string!("appName"), js_string!("Netscape"), Attribute::all())
-        .property(js_string!("appCodeName"), js_string!("Mozilla"), Attribute::all())
+        .property(
+            js_string!("userAgent"),
+            js_string!(p.user_agent.as_str()),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("appVersion"),
+            js_string!(p.app_version.as_str()),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("appName"),
+            js_string!("Netscape"),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("appCodeName"),
+            js_string!("Mozilla"),
+            Attribute::all(),
+        )
         .property(js_string!("product"), js_string!("Gecko"), Attribute::all())
-        .property(js_string!("platform"), js_string!(p.platform.as_str()), Attribute::all())
-        .property(js_string!("vendor"), js_string!(p.vendor.as_str()), Attribute::all())
-        .property(js_string!("language"), js_string!(language), Attribute::all())
+        .property(
+            js_string!("platform"),
+            js_string!(p.platform.as_str()),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("vendor"),
+            js_string!(p.vendor.as_str()),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("language"),
+            js_string!(language),
+            Attribute::all(),
+        )
         .property(
             js_string!("hardwareConcurrency"),
             JsValue::from(p.hardware_concurrency),
             Attribute::all(),
         )
-        .property(js_string!("deviceMemory"), JsValue::from(p.device_memory), Attribute::all())
+        .property(
+            js_string!("deviceMemory"),
+            JsValue::from(p.device_memory),
+            Attribute::all(),
+        )
         .property(
             js_string!("maxTouchPoints"),
             JsValue::from(p.max_touch_points),
@@ -463,8 +820,16 @@ fn install_navigator(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
         )
         // Privacy posture the page is allowed to observe.
         .property(js_string!("doNotTrack"), js_string!("1"), Attribute::all())
-        .property(js_string!("webdriver"), JsValue::from(false), Attribute::all())
-        .property(js_string!("cookieEnabled"), JsValue::from(false), Attribute::all())
+        .property(
+            js_string!("webdriver"),
+            JsValue::from(false),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("cookieEnabled"),
+            JsValue::from(false),
+            Attribute::all(),
+        )
         // navigator.sendBeacon: present, but denied — returns false ("not queued"),
         // which is exactly what a browser returns when the beacon is blocked.
         .function(
@@ -488,12 +853,36 @@ fn install_navigator(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
 /// Install a normalized `screen` object.
 fn install_screen(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
     let screen = ObjectInitializer::new(ctx)
-        .property(js_string!("width"), JsValue::from(p.screen_width), Attribute::all())
-        .property(js_string!("height"), JsValue::from(p.screen_height), Attribute::all())
-        .property(js_string!("availWidth"), JsValue::from(p.screen_width), Attribute::all())
-        .property(js_string!("availHeight"), JsValue::from(p.screen_height), Attribute::all())
-        .property(js_string!("colorDepth"), JsValue::from(p.color_depth), Attribute::all())
-        .property(js_string!("pixelDepth"), JsValue::from(p.color_depth), Attribute::all())
+        .property(
+            js_string!("width"),
+            JsValue::from(p.screen_width),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("height"),
+            JsValue::from(p.screen_height),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("availWidth"),
+            JsValue::from(p.screen_width),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("availHeight"),
+            JsValue::from(p.screen_height),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("colorDepth"),
+            JsValue::from(p.color_depth),
+            Attribute::all(),
+        )
+        .property(
+            js_string!("pixelDepth"),
+            JsValue::from(p.color_depth),
+            Attribute::all(),
+        )
         .build();
 
     ctx.register_global_property(js_string!("screen"), screen, Attribute::all())?;

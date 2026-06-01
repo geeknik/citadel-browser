@@ -281,7 +281,11 @@ fn css_cascade_drives_colors_background_and_width() {
         .find(|i| i.kind == DisplayKind::Paragraph && i.text.contains("Body text"))
         .expect("paragraph present");
     assert_eq!(para.color, [0x22, 0x22, 0x44], "p colour from CSS");
-    assert!((para.font_size - 18.0).abs() < 0.1, "p font-size from CSS, got {}", para.font_size);
+    assert!(
+        (para.font_size - 18.0).abs() < 0.1,
+        "p font-size from CSS, got {}",
+        para.font_size
+    );
 
     let link = r
         .display_list
@@ -320,11 +324,31 @@ fn css_box_styling_is_applied_to_block() {
         .find(|i| i.text.contains("Boxed paragraph"))
         .expect("boxed paragraph present");
 
-    assert_eq!(card.background, Some([0xff, 0xee, 0xcc]), "block background from CSS");
-    assert_eq!(card.border_color, Some([0x88, 0x44, 0x00]), "block border colour from CSS");
-    assert!((card.border_width - 2.0).abs() < 0.5, "border width ~2px, got {}", card.border_width);
-    assert!((card.padding - 12.0).abs() < 0.5, "padding ~12px, got {}", card.padding);
-    assert!((card.margin_top - 20.0).abs() < 0.5, "margin-top ~20px, got {}", card.margin_top);
+    assert_eq!(
+        card.background,
+        Some([0xff, 0xee, 0xcc]),
+        "block background from CSS"
+    );
+    assert_eq!(
+        card.border_color,
+        Some([0x88, 0x44, 0x00]),
+        "block border colour from CSS"
+    );
+    assert!(
+        (card.border_width - 2.0).abs() < 0.5,
+        "border width ~2px, got {}",
+        card.border_width
+    );
+    assert!(
+        (card.padding - 12.0).abs() < 0.5,
+        "padding ~12px, got {}",
+        card.padding
+    );
+    assert!(
+        (card.margin_top - 20.0).abs() < 0.5,
+        "margin-top ~20px, got {}",
+        card.margin_top
+    );
 }
 
 /// M7: with the explicit opt-in, the page's inline scripts run through the JS
@@ -333,9 +357,11 @@ fn css_box_styling_is_applied_to_block() {
 /// bindings yet); only execution counts cross back out.
 #[test]
 fn opt_in_runs_page_scripts_in_the_cage() {
+    // The inline script uses the mirror DOM (document.querySelector); if the DOM
+    // were not wired into the render path it would throw and count as errored.
     let html = r#"<!doctype html><html><head><title>JS</title></head><body>
         <h1>Heading</h1>
-        <script>var a = 2 + 2; globalThis.ok = a;</script>
+        <script>var h = document.querySelector('h1'); globalThis.heading = h ? h.textContent : 'none';</script>
         <script src="https://cdn.example/app.js"></script>
         </body></html>"#;
 
@@ -346,7 +372,10 @@ fn opt_in_runs_page_scripts_in_the_cage() {
         viewport_width: 800.0,
         enable_scripts: false,
     });
-    assert_eq!(off.security_metadata.scripts_executed, 0, "opt-out runs nothing");
+    assert_eq!(
+        off.security_metadata.scripts_executed, 0,
+        "opt-out runs nothing"
+    );
 
     // Opt-in ON: the one inline script runs in the cage; the empty-body external
     // (src=...) script is skipped (no subresource fetch yet).
@@ -356,7 +385,10 @@ fn opt_in_runs_page_scripts_in_the_cage() {
         viewport_width: 800.0,
         enable_scripts: true,
     });
-    assert_eq!(on.security_metadata.scripts_executed, 1, "one inline script ran");
+    assert_eq!(
+        on.security_metadata.scripts_executed, 1,
+        "one inline script ran"
+    );
     assert_eq!(on.security_metadata.scripts_errored, 0, "it did not throw");
     assert_eq!(
         on.security_metadata.external_scripts_skipped, 1,
@@ -364,6 +396,10 @@ fn opt_in_runs_page_scripts_in_the_cage() {
     );
 
     // The visible render is identical with or without scripts (no DOM bindings).
-    assert_eq!(off.display_list.len(), on.display_list.len(), "render unchanged");
+    assert_eq!(
+        off.display_list.len(),
+        on.display_list.len(),
+        "render unchanged"
+    );
     assert!(on.display_list.iter().any(|i| i.text == "Heading"));
 }

@@ -96,22 +96,15 @@ impl CitadelJSEngine {
             .set_loop_iteration_limit(MAX_LOOP_ITERATIONS);
         ctx.runtime_limits_mut()
             .set_recursion_limit(MAX_RECURSION_DEPTH);
-        bindings::install(&mut ctx, &self.profile).map_err(|e| {
-            ParserError::JsError(format!("privacy binding install failed: {e}"))
-        })?;
+        bindings::install(&mut ctx, &self.profile)
+            .map_err(|e| ParserError::JsError(format!("privacy binding install failed: {e}")))?;
         Ok(ctx)
     }
 
-    /// Run a page's inline scripts in a single shared caged context — a real page
-    /// shares one global across its `<script>` tags, so later scripts see earlier
-    /// ones' globals. Per-script errors are caught and counted, never propagated:
-    /// one broken script must not abort the page (or the render). Error *contents*
-    /// are not returned or logged (they can contain page data).
-    pub fn run_page_scripts(&self, scripts: &[String]) -> ParserResult<PageScriptOutcome> {
-        if !self.security_context.allows_scripts() {
-            return Ok(PageScriptOutcome::default());
-        }
-        let mut ctx = self.caged_context()?;
+    /// Evaluate each script in `ctx`, counting per-script results. Errors are
+    /// caught and counted, never propagated (one broken script must not abort the
+    /// page) and never logged (they can carry page data).
+    fn run_in_context(&self, ctx: &mut Context, scripts: &[String]) -> PageScriptOutcome {
         let mut outcome = PageScriptOutcome::default();
         for script in scripts {
             match ctx.eval(Source::from_bytes(script.as_str())) {
@@ -125,7 +118,59 @@ impl CitadelJSEngine {
                 }
             }
         }
+        outcome
+    }
+
+    /// Run a page's inline scripts in a single shared caged context — a real page
+    /// shares one global across its `<script>` tags, so later scripts see earlier
+    /// ones' globals. No DOM is installed (use [`Self::run_page_scripts_with_document`]
+    /// for that).
+    pub fn run_page_scripts(&self, scripts: &[String]) -> ParserResult<PageScriptOutcome> {
+        if !self.security_context.allows_scripts() {
+            return Ok(PageScriptOutcome::default());
+        }
+        let mut ctx = self.caged_context()?;
+        Ok(self.run_in_context(&mut ctx, scripts))
+    }
+
+    /// Like [`Self::run_page_scripts`], but first installs the sandboxed mirror
+    /// DOM built from `document_json` (a bounded snapshot of the parsed document),
+    /// then fires `DOMContentLoaded`/`load` after all scripts run.
+    pub fn run_page_scripts_with_document(
+        &self,
+        document_json: &str,
+        scripts: &[String],
+    ) -> ParserResult<PageScriptOutcome> {
+        if !self.security_context.allows_scripts() {
+            return Ok(PageScriptOutcome::default());
+        }
+        let mut ctx = self.caged_context()?;
+        bindings::install_dom(&mut ctx, document_json)
+            .map_err(|e| ParserError::JsError(format!("DOM install failed: {e}")))?;
+        let outcome = self.run_in_context(&mut ctx, scripts);
+        // Fire ready events to whatever listeners the scripts registered.
+        let _ = ctx.eval(Source::from_bytes(
+            "if(typeof __citadelFireReady__==='function'){__citadelFireReady__();}",
+        ));
         Ok(outcome)
+    }
+
+    /// Evaluate one expression against a freshly built mirror DOM and return its
+    /// string value. For tests/tools that need to observe DOM behavior; the render
+    /// path uses [`Self::run_page_scripts_with_document`] (which returns counts).
+    pub fn evaluate_with_document(&self, document_json: &str, code: &str) -> ParserResult<String> {
+        if !self.security_context.allows_scripts() {
+            return Err(ParserError::SecurityViolation(
+                "JavaScript is disabled by security policy (explicit opt-in required)".to_string(),
+            ));
+        }
+        let mut ctx = self.caged_context()?;
+        bindings::install_dom(&mut ctx, document_json)
+            .map_err(|e| ParserError::JsError(format!("DOM install failed: {e}")))?;
+        match ctx.eval(Source::from_bytes(code)) {
+            Ok(value) => Ok(js_value_to_string(&value, &mut ctx)),
+            Err(e) => Err(ParserError::JsError(format!("JS execution error: {e}"))),
+        }
     }
 
     /// Run the page's JS in the cage and return its result as a string.
@@ -261,7 +306,10 @@ mod tests {
         let mut e = engine();
         assert_eq!(e.execute_simple("2 + 2").unwrap(), "4");
         assert_eq!(e.execute_simple("'a' + 'b' + 'c'").unwrap(), "abc");
-        assert_eq!(e.execute_simple("[1,2,3].map(x => x*2).join(',')").unwrap(), "2,4,6");
+        assert_eq!(
+            e.execute_simple("[1,2,3].map(x => x*2).join(',')").unwrap(),
+            "2,4,6"
+        );
     }
 
     #[test]
@@ -281,10 +329,8 @@ mod tests {
         // Two back-to-back reads cannot resolve a sub-quantum interval: the delta
         // is always a multiple of the quantum (microsecond timing is dead).
         assert_eq!(
-            e.execute_simple(
-                "var a = performance.now(); var b = performance.now(); (b - a) % 100"
-            )
-            .unwrap(),
+            e.execute_simple("var a = performance.now(); var b = performance.now(); (b - a) % 100")
+                .unwrap(),
             "0"
         );
     }
@@ -295,10 +341,19 @@ mod tests {
         // Present, so their *absence* isn't itself a fingerprint (they match a
         // mainstream browser's surface)...
         assert_eq!(e.execute_simple("typeof fetch").unwrap(), "function");
-        assert_eq!(e.execute_simple("typeof XMLHttpRequest").unwrap(), "function");
+        assert_eq!(
+            e.execute_simple("typeof XMLHttpRequest").unwrap(),
+            "function"
+        );
         assert_eq!(e.execute_simple("typeof WebSocket").unwrap(), "function");
-        assert_eq!(e.execute_simple("typeof RTCPeerConnection").unwrap(), "function");
-        assert_eq!(e.execute_simple("typeof navigator.sendBeacon").unwrap(), "function");
+        assert_eq!(
+            e.execute_simple("typeof RTCPeerConnection").unwrap(),
+            "function"
+        );
+        assert_eq!(
+            e.execute_simple("typeof navigator.sendBeacon").unwrap(),
+            "function"
+        );
 
         // ...but every exfil path is denied.
         // fetch → a rejected Promise (looks like a blocked/failed request).
@@ -315,7 +370,9 @@ mod tests {
         );
         // WebSocket and WebRTC construction is blocked (no socket, no ICE => no
         // local-IP leak).
-        assert!(e.execute_simple("new WebSocket('wss://evil.example/')").is_err());
+        assert!(e
+            .execute_simple("new WebSocket('wss://evil.example/')")
+            .is_err());
         assert!(e.execute_simple("new RTCPeerConnection()").is_err());
         // XHR is present but inert: send() issues nothing, status stays 0.
         assert_eq!(
@@ -364,9 +421,11 @@ mod tests {
 
         // SUPERCOOKIE-PROOF: a value written in one execution does not survive into
         // the next — storage is ephemeral, never persisted to disk.
-        e.execute_simple("localStorage.setItem('track','123')").unwrap();
+        e.execute_simple("localStorage.setItem('track','123')")
+            .unwrap();
         assert_eq!(
-            e.execute_simple("String(localStorage.getItem('track'))").unwrap(),
+            e.execute_simple("String(localStorage.getItem('track'))")
+                .unwrap(),
             "null"
         );
     }
@@ -411,16 +470,28 @@ mod tests {
         // poisoning, not a full DOM (no body, no query/lookup yet) — and IndexedDB
         // is still unbound (not silently faked).
         assert_eq!(e.execute_simple("typeof indexedDB").unwrap(), "undefined");
-        assert_eq!(e.execute_simple("typeof document.body").unwrap(), "undefined");
-        assert_eq!(e.execute_simple("typeof document.getElementById").unwrap(), "undefined");
+        assert_eq!(
+            e.execute_simple("typeof document.body").unwrap(),
+            "undefined"
+        );
+        assert_eq!(
+            e.execute_simple("typeof document.getElementById").unwrap(),
+            "undefined"
+        );
     }
 
     #[test]
     fn canvas_webgl_audio_readback_is_poisoned_and_uniform() {
         let mut e = engine();
         // The fingerprint vehicle exists (absence would itself be a tell).
-        assert_eq!(e.execute_simple("typeof document.createElement").unwrap(), "function");
-        assert_eq!(e.execute_simple("typeof OfflineAudioContext").unwrap(), "function");
+        assert_eq!(
+            e.execute_simple("typeof document.createElement").unwrap(),
+            "function"
+        );
+        assert_eq!(
+            e.execute_simple("typeof OfflineAudioContext").unwrap(),
+            "function"
+        );
 
         // Canvas readback is authored, not a real raster, and STABLE (same engine
         // → same value): the poison is deterministic, not per-call random.
@@ -431,7 +502,10 @@ mod tests {
         let url2 = e
             .execute_simple("document.createElement('canvas').toDataURL()")
             .unwrap();
-        assert_eq!(url1, url2, "canvas readback is stable (uniform), not random");
+        assert_eq!(
+            url1, url2,
+            "canvas readback is stable (uniform), not random"
+        );
 
         // getImageData yields seeded bytes of the requested size.
         assert_eq!(
@@ -465,11 +539,15 @@ mod tests {
     #[test]
     fn fingerprint_poison_is_per_origin_uniform_and_uncorrelated() {
         let readback = "document.createElement('canvas').toDataURL()";
-        let mut a = CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://a.example/").unwrap();
-        let mut a2 =
-            CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://a.example/other/page?q=1")
-                .unwrap();
-        let mut b = CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://b.example/").unwrap();
+        let mut a =
+            CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://a.example/").unwrap();
+        let mut a2 = CitadelJSEngine::for_origin(
+            Arc::new(scripted_sc()),
+            "https://a.example/other/page?q=1",
+        )
+        .unwrap();
+        let mut b =
+            CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://b.example/").unwrap();
 
         let ra = a.execute_simple(readback).unwrap();
         let ra2 = a2.execute_simple(readback).unwrap();
@@ -480,5 +558,109 @@ mod tests {
         assert_eq!(ra, ra2, "same origin must produce the same canvas");
         // Different origins → DIFFERENT poison (uncorrelatable across sites).
         assert_ne!(ra, rb, "different origins must not correlate");
+    }
+
+    // The document JSON uses r##"..."## because it contains `"#document"`.
+    const DOM_DOC: &str = r##"{"tag":"#document","url":"https://x.example/p","children":[{"tag":"html","attrs":{},"children":[{"tag":"body","attrs":{},"children":[{"tag":"h1","attrs":{"id":"title","class":"big head"},"children":[{"text":"Hello"}]},{"tag":"p","attrs":{"class":"body"},"children":[{"text":"World"}]}]}]}]}"##;
+
+    #[test]
+    fn dom_mirror_supports_query_read_and_mutate() {
+        let e = engine();
+        // getElementById + textContent read.
+        assert_eq!(
+            e.evaluate_with_document(DOM_DOC, "document.getElementById('title').textContent")
+                .unwrap(),
+            "Hello"
+        );
+        // querySelector by class → tagName.
+        assert_eq!(
+            e.evaluate_with_document(DOM_DOC, "document.querySelector('.big').tagName")
+                .unwrap(),
+            "H1"
+        );
+        // getElementsByTagName count.
+        assert_eq!(
+            e.evaluate_with_document(DOM_DOC, "'' + document.getElementsByTagName('p').length")
+                .unwrap(),
+            "1"
+        );
+        // Descendant selector.
+        assert_eq!(
+            e.evaluate_with_document(
+                DOM_DOC,
+                "'' + document.querySelectorAll('body .body').length"
+            )
+            .unwrap(),
+            "1"
+        );
+        // classList mutate.
+        assert_eq!(
+            e.evaluate_with_document(
+                DOM_DOC,
+                "var h=document.getElementById('title'); h.classList.add('x'); '' + h.classList.contains('x')"
+            )
+            .unwrap(),
+            "true"
+        );
+        // textContent mutate.
+        assert_eq!(
+            e.evaluate_with_document(
+                DOM_DOC,
+                "var p=document.querySelector('p'); p.textContent='Changed'; p.textContent"
+            )
+            .unwrap(),
+            "Changed"
+        );
+        // createElement + appendChild + re-query.
+        assert_eq!(
+            e.evaluate_with_document(
+                DOM_DOC,
+                "var d=document.createElement('div'); d.id='new'; document.body.appendChild(d); document.getElementById('new').tagName"
+            )
+            .unwrap(),
+            "DIV"
+        );
+        // body aggregates descendant text.
+        assert!(e
+            .evaluate_with_document(DOM_DOC, "document.body.textContent")
+            .unwrap()
+            .contains("Hello"));
+    }
+
+    #[test]
+    fn dom_events_window_and_canvas_delegation() {
+        let e = engine();
+        // addEventListener + dispatchEvent invokes the handler.
+        assert_eq!(
+            e.evaluate_with_document(
+                DOM_DOC,
+                "var n=0; document.body.addEventListener('click', function(){ n++; }); \
+                 document.body.dispatchEvent({type:'click'}); '' + n"
+            )
+            .unwrap(),
+            "1"
+        );
+        // window === globalThis; location parsed from the document URL.
+        assert_eq!(
+            e.evaluate_with_document(DOM_DOC, "'' + (window === globalThis)")
+                .unwrap(),
+            "true"
+        );
+        assert_eq!(
+            e.evaluate_with_document(DOM_DOC, "location.protocol")
+                .unwrap(),
+            "https:"
+        );
+        // window metrics are normalized (uniform across users).
+        assert_eq!(
+            e.evaluate_with_document(DOM_DOC, "'' + window.devicePixelRatio")
+                .unwrap(),
+            "1"
+        );
+        // Canvas via document.createElement stays fingerprint-poisoned (M4).
+        assert!(e
+            .evaluate_with_document(DOM_DOC, "document.createElement('canvas').toDataURL()")
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
     }
 }

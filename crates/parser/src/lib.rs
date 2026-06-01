@@ -746,15 +746,24 @@ body {
     fn test_js_runs_in_privacy_cage() {
         // The page's real JS executes correctly...
         assert_eq!(execute_js_simple("5 + 3").unwrap(), "8");
-        assert_eq!(execute_js_simple("'Hello ' + 'World'").unwrap(), "Hello World");
+        assert_eq!(
+            execute_js_simple("'Hello ' + 'World'").unwrap(),
+            "Hello World"
+        );
 
         // ...but every environment observation is the normalized identity we
         // authored, not the real machine.
-        assert_eq!(execute_js_simple("navigator.hardwareConcurrency").unwrap(), "4");
+        assert_eq!(
+            execute_js_simple("navigator.hardwareConcurrency").unwrap(),
+            "4"
+        );
         assert_eq!(execute_js_simple("navigator.platform").unwrap(), "Win32");
         assert_eq!(execute_js_simple("navigator.deviceMemory").unwrap(), "8");
         assert_eq!(execute_js_simple("navigator.webdriver").unwrap(), "false");
-        assert_eq!(execute_js_simple("navigator.languages.length").unwrap(), "2");
+        assert_eq!(
+            execute_js_simple("navigator.languages.length").unwrap(),
+            "2"
+        );
         assert_eq!(execute_js_simple("screen.width").unwrap(), "1920");
 
         // Network APIs are present (so their absence isn't a tell) but gated:
@@ -771,10 +780,15 @@ body {
         );
         // `document` is a minimal canvas-fingerprint vehicle, not a full DOM:
         // createElement exists, but the canvas readback is poisoned (authored).
-        assert_eq!(execute_js_simple("typeof document.createElement").unwrap(), "function");
-        assert!(execute_js_simple("document.createElement('canvas').toDataURL()")
-            .unwrap()
-            .starts_with("data:image/png;base64,"));
+        assert_eq!(
+            execute_js_simple("typeof document.createElement").unwrap(),
+            "function"
+        );
+        assert!(
+            execute_js_simple("document.createElement('canvas').toDataURL()")
+                .unwrap()
+                .starts_with("data:image/png;base64,")
+        );
     }
 }
 
