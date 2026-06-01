@@ -235,9 +235,15 @@ impl ResourceLoader {
         html: &str,
         base_url: Url,
     ) -> Result<LoadResult, NetworkError> {
-        let context = ResourceContext::new(base_url.clone())
-            .include_non_critical(self.options.load_non_critical)
-            .allowed_types(self.options.allowed_types.clone().unwrap_or_default());
+        // `allowed_types`: None = allow ALL types; Some(list) = restrict to list.
+        // (Bug fix: this previously used `unwrap_or_default()`, turning None into
+        // Some(empty) — which the discovery filter reads as "allow NOTHING", so
+        // every resource was skipped and nothing was ever discovered.)
+        let mut context = ResourceContext::new(base_url.clone())
+            .include_non_critical(self.options.load_non_critical);
+        if let Some(types) = self.options.allowed_types.clone() {
+            context = context.allowed_types(types);
+        }
 
         // Discover resources
         let mut progress = LoadProgress::new(0);
