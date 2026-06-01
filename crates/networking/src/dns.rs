@@ -156,7 +156,6 @@ impl CitadelDnsResolver {
         Ok(resolver)
     }
 
-
     /// Resolve a hostname to IP addresses with privacy protections
     pub async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>, NetworkError> {
         log::debug!("🔍 Resolving hostname: {}", hostname);

@@ -935,7 +935,11 @@ impl Application for CitadelBrowser {
                 let Some(tab_id) = self.get_active_tab_id() else {
                     return Command::none();
                 };
-                if let Some(url) = self.tab_history.get_mut(&tab_id).and_then(TabHistory::go_back) {
+                if let Some(url) = self
+                    .tab_history
+                    .get_mut(&tab_id)
+                    .and_then(TabHistory::go_back)
+                {
                     log::info!("⬅️ Back to {}", url);
                     self.history_suppress = true;
                     return self.update(Message::Navigate(url));

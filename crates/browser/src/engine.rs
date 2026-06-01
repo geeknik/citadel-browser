@@ -165,10 +165,7 @@ impl BrowserEngine {
         })?;
 
         // DNS resolution is handled by the std resolver (TcpStream::connect)
-        log::debug!(
-            "📍 Using std system DNS resolution for host: {}",
-            host
-        );
+        log::debug!("📍 Using std system DNS resolution for host: {}", host);
 
         // Make HTTP request
         let response = self

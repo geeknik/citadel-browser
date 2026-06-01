@@ -62,7 +62,8 @@ const ACCEPT_LANGUAGE: &str = "en-US,en;q=0.9";
 /// `gzip, deflate, br, zstd` — needs brotli/zstd decoders.)
 const ACCEPT_ENCODING: &str = "gzip, deflate";
 /// Client-hint brand list for Chrome 120.
-const SEC_CH_UA: &str = "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"";
+const SEC_CH_UA: &str =
+    "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"";
 
 /// Headers we author and own: a caller may not override them (that would break
 /// the uniform shape) — they are dropped from `extra_headers`, case-insensitively.
@@ -121,9 +122,7 @@ pub async fn fetch(
         let resp = request_once(&current, extra_headers).await?;
         if (300..400).contains(&resp.status) && resp.status != 304 {
             if let Some(location) = resp.header("location") {
-                let next = current
-                    .join(location)
-                    .map_err(NetworkError::UrlError)?;
+                let next = current.join(location).map_err(NetworkError::UrlError)?;
                 if next.scheme() != "https" {
                     return Err(NetworkError::HttpsEnforcementError(format!(
                         "redirect to non-HTTPS URL: {next}"

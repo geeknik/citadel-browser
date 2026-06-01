@@ -390,7 +390,9 @@ impl CitadelRenderer {
                 container(widget)
                     .width(Length::Fill)
                     .padding(item.padding.max(0.0) as u16)
-                    .style(theme::Container::Custom(Box::new(BlockBoxStyle::from_item(item))))
+                    .style(theme::Container::Custom(Box::new(
+                        BlockBoxStyle::from_item(item),
+                    )))
                     .into()
             } else {
                 container(widget).width(Length::Fill).into()
