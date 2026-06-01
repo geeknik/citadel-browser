@@ -1,6 +1,5 @@
 pub mod advanced_loader;
 pub mod cache;
-pub mod connection;
 pub mod dns;
 pub mod error;
 pub mod http;
@@ -19,7 +18,6 @@ pub use advanced_loader::{
     AdvancedResourceLoader, BandwidthTracker, LoadingStrategy, NetworkCondition, Priority,
 };
 pub use cache::{CacheConfig, CacheEntry, ResourceCache};
-pub use connection::Connection;
 /// Re-export common types for easier usage
 pub use dns::{CitadelDnsResolver, DnsMode, DohProviders};
 pub use error::NetworkError;

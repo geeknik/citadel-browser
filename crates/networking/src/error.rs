@@ -7,10 +7,6 @@ pub enum NetworkError {
     #[error("DNS resolution error: {0}")]
     DnsError(String),
 
-    /// HTTP request errors
-    #[error("HTTP request error: {0}")]
-    HttpError(#[from] hyper::Error),
-
     /// TLS/SSL errors
     #[error("TLS/SSL error: {0}")]
     TlsError(String),

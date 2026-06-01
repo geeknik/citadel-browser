@@ -1,14 +1,7 @@
 use std::sync::Arc;
-use std::time::Duration;
 
-use hyper::body::to_bytes;
-use hyper::client::connect::HttpConnector;
-use hyper::{Body, Client, Request as HyperRequest, Response as HyperResponse};
-use hyper_rustls::HttpsConnector;
-use tokio::time::timeout;
-use url::Url;
+use bytes::Bytes;
 
-use crate::connection::{Connection, SecurityLevel};
 use crate::dns::CitadelDnsResolver;
 use crate::error::NetworkError;
 use crate::request::{Method, Request};
@@ -42,12 +35,6 @@ pub enum ResourceType {
 
 /// Resource fetching client with privacy protections
 pub struct Resource {
-    /// HTTP client
-    client: Client<HttpsConnector<HttpConnector>>,
-
-    /// Connection manager
-    connection: Connection,
-
     /// DNS resolver
     dns_resolver: Arc<CitadelDnsResolver>,
 
@@ -58,116 +45,50 @@ pub struct Resource {
 impl Resource {
     /// Create a new resource fetcher with the specified configuration
     pub async fn new(config: NetworkConfig) -> Result<Self, NetworkError> {
-        // Create the DNS resolver
         let dns_resolver = Arc::new(CitadelDnsResolver::with_mode(config.dns_mode.clone()).await?);
-
-        // Create the connection manager
-        let connection = Connection::new(Arc::clone(&dns_resolver), SecurityLevel::High)?;
-
-        // Create the HTTP client
-        let client = Client::builder().build(connection.connector().clone());
-
         Ok(Self {
-            client,
-            connection,
             dns_resolver,
             config,
         })
     }
 
-    /// Fetch a resource with the provided request
+    /// Fetch a resource with the provided request, via the in-house HTTPS client.
     pub async fn fetch(&self, request: Request) -> Result<Response, NetworkError> {
-        // Apply privacy enhancements based on current settings
+        // Apply privacy enhancements based on current settings.
         let prepared_request = if self.config.privacy_level == request.privacy_level() {
-            // Use global privacy level
             request.prepare()
         } else {
-            // Use request-specific privacy level
             request
         };
 
-        // Get the timeout before converting the request
-        let timeout_duration = prepared_request
-            .timeout()
-            .unwrap_or_else(|| Duration::from_secs(30));
-
-        // Get the final URL and method before converting
-        let final_url = prepared_request.url().clone();
-        let method = prepared_request.method().clone();
-
-        // Convert our Request to a hyper Request
-        let hyper_request = self.to_hyper_request(prepared_request)?;
-
-        // Execute the request with timeout
-        let hyper_response =
-            match timeout(timeout_duration, self.client.request(hyper_request)).await {
-                Ok(Ok(response)) => response,
-                Ok(Err(e)) => return Err(NetworkError::HttpError(e)),
-                Err(_) => return Err(NetworkError::TimeoutError(timeout_duration)),
-            };
-
-        // Convert hyper Response to our Response
-        self.from_hyper_response(hyper_response, final_url, method)
-            .await
-    }
-
-    /// Convert our Request to a hyper Request
-    fn to_hyper_request(&self, request: Request) -> Result<HyperRequest<Body>, NetworkError> {
-        // Create a new builder
-        let mut builder = HyperRequest::builder()
-            .method(request.method().to_string().as_str())
-            .uri(request.url().as_str());
-
-        // Add headers
-        for (name, value) in request.headers() {
-            builder = builder.header(name, value);
+        // The in-house client is GET-only over HTTPS.
+        if !matches!(prepared_request.method(), Method::GET) {
+            return Err(NetworkError::ConnectionError(
+                "only GET is supported by the in-house HTTPS client".to_string(),
+            ));
         }
 
-        // Set the body if present
-        let body = match request.body() {
-            Some(data) => Body::from(data.to_vec()),
-            None => Body::empty(),
-        };
-
-        // Build the request
-        builder
-            .body(body)
-            .map_err(|e| NetworkError::ConnectionError(format!("Failed to build request: {}", e)))
-    }
-
-    /// Convert a hyper Response to our Response
-    async fn from_hyper_response(
-        &self,
-        hyper_response: HyperResponse<Body>,
-        url: Url,
-        method: Method,
-    ) -> Result<Response, NetworkError> {
-        // Extract status code
-        let status = hyper_response.status().as_u16();
-
-        // Extract headers
-        let headers = hyper_response
+        let final_url = prepared_request.url().clone();
+        let method = prepared_request.method().clone();
+        let headers: Vec<(String, String)> = prepared_request
             .headers()
             .iter()
-            .map(|(name, value)| {
-                (
-                    name.to_string(),
-                    String::from_utf8_lossy(value.as_bytes()).to_string(),
-                )
-            })
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        // Extract body
-        let body_bytes = to_bytes(hyper_response.into_body()).await.map_err(|e| {
-            NetworkError::ConnectionError(format!("Failed to read response body: {}", e))
-        })?;
+        let http_response = crate::http::fetch(&final_url, &headers).await?;
 
-        // Create our Response
-        let mut response = Response::new(status, headers, body_bytes, url, method);
+        let header_map = http_response.headers.into_iter().collect();
+        let mut response = Response::new(
+            http_response.status,
+            header_map,
+            Bytes::from(http_response.body),
+            final_url,
+            method,
+        );
 
-        // Check for and flag any tracking attempts based on response content
+        // Flag any tracking attempts based on the response URL.
         self.detect_tracking_attempts(&mut response);
-
         Ok(response)
     }
 
@@ -237,11 +158,6 @@ impl Resource {
         &self.dns_resolver
     }
 
-    /// Get the connection manager
-    pub fn connection(&self) -> &Connection {
-        &self.connection
-    }
-
     /// Get the current network configuration
     pub fn config(&self) -> &NetworkConfig {
         &self.config
@@ -249,17 +165,10 @@ impl Resource {
 
     /// Set a new network configuration
     pub async fn set_config(&mut self, config: NetworkConfig) -> Result<(), NetworkError> {
-        // Update DNS mode if it changed
+        // Update DNS mode if it changed.
         if self.config.dns_mode != config.dns_mode {
-            let dns_resolver =
+            self.dns_resolver =
                 Arc::new(CitadelDnsResolver::with_mode(config.dns_mode.clone()).await?);
-
-            // Create the new connection manager with the updated DNS resolver
-            self.dns_resolver = dns_resolver;
-            self.connection = Connection::new(Arc::clone(&self.dns_resolver), SecurityLevel::High)?;
-
-            // Recreate the HTTP client
-            self.client = Client::builder().build(self.connection.connector().clone());
         }
 
         // Update the configuration

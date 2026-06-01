@@ -26,14 +26,14 @@ jobs:
       
     - name: Security Audit
       # Tracked transitive advisories ignored here AND in deny.toml (same list).
-      # TODO(security): bump the rustls stack (0.21->0.23) and rand (0.8->0.9) to
-      # clear rustls-webpki/rand; bump boa to clear thin-vec. Unmaintained-crate
-      # warnings are not gated.
+      # The rustls-webpki advisories are CLEARED (in-house client uses rustls 0.23).
+      # Remaining: thin-vec (boa) and rand (narrow unsoundness). TODO: drop boa /
+      # bump rand. Unmaintained-crate warnings are not gated.
       run: |
         cargo audit \
-          --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 \
-          --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2026-0103 \
-          --ignore RUSTSEC-2026-0097
+          --ignore RUSTSEC-2026-0103 \
+          --ignore RUSTSEC-2026-0097 \
+          --ignore RUSTSEC-2026-0002
 
   code-quality:
     name: Code Quality

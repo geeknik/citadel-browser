@@ -15,20 +15,18 @@ yanked = "deny"
 # tree shrinks. Ratchet back to "all" later.
 unmaintained = "none"
 # Transitive advisories with no clean fix yet. TRACKED — revisit each.
+# (The rustls-webpki cert-validation advisories are CLEARED: the old rustls 0.21 /
+# hyper-rustls stack is gone, and rustls-webpki is bumped to 0.103.13.)
 ignore = [
-    # rand 0.8.5 unsoundness, only under a narrow condition (custom global logger
-    # + rand::rng()) we do not hit. Bumping to rand 0.9 is a wide cascade. TODO.
+    # rand unsoundness, only under a narrow condition (custom global logger +
+    # rand::rng()) we do not hit. Bumping to rand 0.9 everywhere is a wide cascade.
     "RUSTSEC-2026-0097",
-    # rustls-webpki: TLS name-constraint / CRL-parsing bugs. Pulled transitively
-    # via rustls 0.21 + hyper-rustls 0.24 (crates/networking/src/connection.rs)
-    # and hickory 0.26. Proper fix = bump the rustls stack to 0.23 / hyper-rustls
-    # 0.27. TODO(security): prioritize — these are cert-validation issues.
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
-    "RUSTSEC-2026-0104",
     # thin-vec: UAF/double-free if an element's Drop panics. Transitive via
-    # boa_engine 0.21 (JS engine). No fixed boa release yet. TODO: bump boa.
+    # boa_engine 0.21 (JS engine). No fixed boa release yet. TODO: drop/bump boa.
     "RUSTSEC-2026-0103",
+    # lru IterMut stacked-borrows UB. Transitive via moka (cache). No fixed
+    # version in our range yet. TODO: bump moka/lru when available.
+    "RUSTSEC-2026-0002",
 ]
 
 [licenses]
@@ -48,17 +46,25 @@ allow = [
     "BSL-1.0", # Boost: error-code, clipboard-win, xxhash-rust (permissive)
     "MPL-2.0", # weak/file-level copyleft: cssparser + Servo CSS stack (our parser)
     "NCSA",    # libfuzzer-sys (permissive)
+    "CDLA-Permissive-2.0", # webpki-roots (Mozilla root-cert data, permissive)
 ]
 confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"
-# Privacy-motivated bans (no reqwest/native-tls/openssl — "use our own
-# networking") are DEFERRED: the browser engine currently fetches via reqwest
-# with default-tls, which transitively pulls native-tls/openssl. TODO: migrate
-# the engine fetch to citadel-networking + rustls, then re-add these hard bans.
-deny = []
+# Privacy/supply-chain bans, RESTORED now that the engine fetches via the in-house
+# citadel-networking HTTPS client (rustls) instead of reqwest. These crates are no
+# longer in the tree; the bans keep them out.
+deny = [
+    { name = "reqwest" },   # use citadel-networking::http
+    { name = "ureq" },      # use citadel-networking::http
+    { name = "curl" },      # use citadel-networking::http
+    { name = "native-tls" }, # rustls only
+    { name = "openssl" },    # rustls only
+    { name = "hyper" },      # in-house HTTP/1.1 client instead
+    { name = "hickory-resolver" }, # std/DoH resolution instead
+]
 skip = [
     { name = "windows-sys" },
     { name = "libc" },

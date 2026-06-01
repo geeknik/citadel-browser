@@ -59,7 +59,9 @@ citadel-security = { path = "../security" }
 [dev-dependencies]
 tokio-test = "0.4"
 pretty_assertions = "1.0"
-reqwest = { version = "0.11", default-features = false, features = ["json", "native-tls"] }
+# rendering_audit example fetches via the in-house client (no reqwest/native-tls).
+# Dev-only dependency on networking (acyclic: networking does not depend on parser).
+citadel-networking = { path = "../networking" }
 
 [features]
 default = []

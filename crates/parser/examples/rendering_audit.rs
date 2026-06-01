@@ -47,18 +47,13 @@ fn main() {
     ];
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Citadel/0.0.1-alpha")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .expect("Failed to create HTTP client");
 
     let mut results: Vec<SiteResult> = Vec::new();
 
     for (url, tier) in &sites {
         print!("[{}] {} ... ", tier, url);
         let start = Instant::now();
-        let result = rt.block_on(test_site(&client, url, tier));
+        let result = rt.block_on(test_site(url, tier));
         let duration = start.elapsed().as_millis();
 
         let mut result = result;
@@ -91,7 +86,7 @@ fn main() {
     print_gap_analysis(&results);
 }
 
-async fn test_site(client: &reqwest::Client, url: &str, tier: &'static str) -> SiteResult {
+async fn test_site(url: &str, tier: &'static str) -> SiteResult {
     let mut result = SiteResult {
         url: url.to_string(),
         tier,
@@ -108,24 +103,28 @@ async fn test_site(client: &reqwest::Client, url: &str, tier: &'static str) -> S
         duration_ms: 0,
     };
 
-    // Step 1: Fetch
-    let html = match client.get(url).send().await {
+    // Step 1: Fetch via the in-house HTTPS client (no reqwest).
+    let parsed = match url::Url::parse(url) {
+        Ok(u) => u,
+        Err(e) => {
+            result.errors.push(format!("URL parse error: {}", e));
+            return result;
+        }
+    };
+    let headers = vec![(
+        "User-Agent".to_string(),
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Citadel/0.0.1-alpha".to_string(),
+    )];
+    let html = match citadel_networking::https_fetch(&parsed, &headers).await {
         Ok(response) => {
-            if !response.status().is_success() {
-                result.errors.push(format!("HTTP {}", response.status()));
+            if !(200..300).contains(&response.status) {
+                result.errors.push(format!("HTTP {}", response.status));
                 return result;
             }
-            match response.text().await {
-                Ok(text) => {
-                    result.fetch_ok = true;
-                    result.fetch_size = text.len();
-                    text
-                }
-                Err(e) => {
-                    result.errors.push(format!("Body read error: {}", e));
-                    return result;
-                }
-            }
+            result.fetch_ok = true;
+            let text = response.body_text();
+            result.fetch_size = text.len();
+            text
         }
         Err(e) => {
             result.errors.push(format!("Fetch error: {}", e));

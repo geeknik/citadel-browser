@@ -9,10 +9,6 @@ license = "MIT"
 
 [dependencies]
 tokio = { workspace = true }
-hyper = { version = "0.14", features = ["full"] }
-rustls = { workspace = true }
-rustls-native-certs = { workspace = true }
-hyper-rustls = { workspace = true }
 # Minimal in-house HTTPS client (Tier-2 dep cut): current rustls 0.23 stack +
 # bundled Mozilla roots. Replaces reqwest/hyper for page fetches. Use the `ring`
 # crypto provider (no aws-lc-sys / cmake native build).
