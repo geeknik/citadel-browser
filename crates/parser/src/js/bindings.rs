@@ -12,6 +12,7 @@ use boa_engine::object::ObjectInitializer;
 use boa_engine::property::Attribute;
 use boa_engine::{js_string, Context, JsNativeError, JsResult, JsValue, NativeFunction, Source};
 use std::time::Instant;
+use url::Url;
 
 /// Per-origin storage quota (UTF-16 code units ≈ bytes), matching the de-facto
 /// 5 MiB browser limit. Bounds memory so a page cannot exhaust the heap via
@@ -79,6 +80,180 @@ const STORAGE_SHIM: &str = r#"
 })(QUOTA_PLACEHOLDER);
 "#;
 
+/// Maximum pixels a single `getImageData` readback will synthesize (bounds the
+/// per-call allocation; real fingerprint canvases are tiny).
+const FP_MAX_IMAGE_BYTES: u32 = 1024 * 1024;
+
+/// Authored fingerprint-poisoning surface: canvas (2D + WebGL) and audio.
+///
+/// We have no real rasterizer/GPU/DSP, so draw/render calls are accepted but
+/// produce nothing visible; every *readback* returns an authored value:
+/// - WebGL identity params (vendor/renderer/version) are a single NORMALIZED set
+///   — uniform for every user (a per-origin GPU would be inconsistent/suspicious).
+/// - Canvas `toDataURL`/`getImageData`/`measureText` and audio buffers are seeded
+///   by a deterministic PRNG keyed on the per-origin SEED: identical for all users
+///   on a site (uniform), uncorrelated across sites, stable within a site.
+const FINGERPRINT_SHIM: &str = r#"
+(function (SEED, MAX_IMG) {
+  function makeRng(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ----- Canvas 2D: drawing is a no-op; readback is seeded ----------------
+  function make2d(canvas) {
+    var noop = function () {};
+    var grad = function () { return { addColorStop: noop }; };
+    return {
+      canvas: canvas,
+      fillRect: noop, clearRect: noop, strokeRect: noop, fillText: noop,
+      strokeText: noop, beginPath: noop, closePath: noop, moveTo: noop,
+      lineTo: noop, arc: noop, arcTo: noop, rect: noop, ellipse: noop,
+      fill: noop, stroke: noop, clip: noop, save: noop, restore: noop,
+      translate: noop, rotate: noop, scale: noop, transform: noop,
+      setTransform: noop, resetTransform: noop, drawImage: noop,
+      putImageData: noop, setLineDash: noop, bezierCurveTo: noop,
+      quadraticCurveTo: noop, createLinearGradient: grad,
+      createRadialGradient: grad, createPattern: function () { return {}; },
+      getImageData: function (sx, sy, sw, sh) {
+        var w = (sw | 0) || canvas.width || 1;
+        var h = (sh | 0) || canvas.height || 1;
+        var n = w * h * 4;
+        if (n > MAX_IMG) { n = MAX_IMG; }
+        if (n < 4) { n = 4; }
+        var rng = makeRng(SEED ^ Math.imul(w, 73856093) ^ Math.imul(h, 19349663));
+        var data = new Uint8ClampedArray(n);
+        for (var i = 0; i < n; i++) { data[i] = (rng() * 256) | 0; }
+        return { data: data, width: w, height: h };
+      },
+      measureText: function (t) {
+        var len = t ? String(t).length : 0;
+        var rng = makeRng(SEED ^ Math.imul(len, 2654435761));
+        return { width: len * 8 + rng() };
+      }
+    };
+  }
+
+  // ----- WebGL: NORMALIZED, uniform for every user ------------------------
+  function makeGL(canvas) {
+    var P = {};
+    P[0x1F00] = "WebKit";                                             // VENDOR
+    P[0x1F01] = "WebKit WebGL";                                       // RENDERER
+    P[0x1F02] = "WebGL 1.0 (OpenGL ES 2.0 Chromium)";                 // VERSION
+    P[0x8B8C] = "WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)"; // SHADING_LANGUAGE_VERSION
+    P[0x9245] = "Google Inc. (Intel)";                               // UNMASKED_VENDOR_WEBGL
+    P[0x9246] = "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"; // UNMASKED_RENDERER_WEBGL
+    P[0x0D33] = 16384; P[0x851C] = 16384; P[0x8869] = 16; P[0x8DFB] = 1024;
+    P[0x8B4D] = 32; P[0x8B4C] = 16; P[0x8872] = 16; P[0x846E] = new Int32Array([0, 16384]);
+    var debugExt = { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
+    return {
+      canvas: canvas,
+      getParameter: function (pname) { return (pname in P) ? P[pname] : null; },
+      getExtension: function (name) {
+        return name === "WEBGL_debug_renderer_info" ? debugExt : null;
+      },
+      getSupportedExtensions: function () {
+        return ["WEBGL_debug_renderer_info", "OES_texture_float", "OES_standard_derivatives"];
+      },
+      getContextAttributes: function () {
+        return { alpha: true, antialias: true, depth: true, stencil: false };
+      },
+      getShaderPrecisionFormat: function () {
+        return { precision: 23, rangeMin: 127, rangeMax: 127 };
+      },
+      createShader: function () { return {}; }, createProgram: function () { return {}; },
+      createBuffer: function () { return {}; }, createTexture: function () { return {}; },
+      bindBuffer: function () {}, bufferData: function () {}, viewport: function () {}
+    };
+  }
+
+  function makeCanvas() {
+    var canvas = { width: 300, height: 150, nodeName: "CANVAS", style: {} };
+    canvas.getContext = function (type) {
+      type = String(type).toLowerCase();
+      if (type === "2d") { return make2d(canvas); }
+      if (type === "webgl" || type === "experimental-webgl" || type === "webgl2") {
+        return makeGL(canvas);
+      }
+      return null;
+    };
+    canvas.toDataURL = function () {
+      var rng = makeRng(SEED ^ Math.imul(canvas.width, 2654435761) ^ canvas.height);
+      var abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      var s = "";
+      for (var i = 0; i < 64; i++) { s += abc.charAt((rng() * 64) | 0); }
+      return "data:image/png;base64,iVBORw0KGgo" + s;
+    };
+    canvas.toBlob = function (cb) { if (typeof cb === "function") { cb(null); } };
+    canvas.setAttribute = function () {}; canvas.getAttribute = function () { return null; };
+    canvas.addEventListener = function () {}; canvas.appendChild = function (c) { return c; };
+    return canvas;
+  }
+
+  // ----- document.createElement (minimal — vehicle for canvas) ------------
+  var doc = (typeof globalThis.document === "object" && globalThis.document) || {};
+  doc.createElement = function (tag) {
+    if (String(tag).toLowerCase() === "canvas") { return makeCanvas(); }
+    return {
+      tagName: String(tag).toUpperCase(), style: {}, setAttribute: function () {},
+      getAttribute: function () { return null; }, appendChild: function (c) { return c; },
+      addEventListener: function () {}, getContext: function () { return null; }
+    };
+  };
+  globalThis.document = doc;
+
+  // ----- Audio: graph is inert; readback is seeded ------------------------
+  function seededFloat32(len, salt) {
+    var rng = makeRng(SEED ^ salt);
+    var a = new Float32Array(len);
+    for (var i = 0; i < len; i++) { a[i] = rng() * 2 - 1; }
+    return a;
+  }
+  function param() { return { value: 0, setValueAtTime: function () {}, setTargetAtTime: function () {}, linearRampToValueAtTime: function () {} }; }
+  function makeNode() {
+    return {
+      connect: function (n) { return n; }, disconnect: function () {}, start: function () {}, stop: function () {},
+      frequency: param(), gain: param(), Q: param(), detune: param(), threshold: param(),
+      knee: param(), ratio: param(), attack: param(), release: param(),
+      fftSize: 2048, frequencyBinCount: 1024,
+      getFloatFrequencyData: function (arr) { var s = seededFloat32(arr.length, 7); for (var i = 0; i < arr.length; i++) { arr[i] = -100 + s[i] * 40; } },
+      getByteFrequencyData: function (arr) { var s = seededFloat32(arr.length, 9); for (var i = 0; i < arr.length; i++) { arr[i] = ((s[i] * 0.5 + 0.5) * 255) | 0; } },
+      getFloatTimeDomainData: function (arr) { var s = seededFloat32(arr.length, 11); for (var i = 0; i < arr.length; i++) { arr[i] = s[i]; } }
+    };
+  }
+  function makeAudioCtx(length, rate) {
+    var sr = rate || 44100;
+    var ctx = {
+      sampleRate: sr, currentTime: 0, destination: makeNode(),
+      createOscillator: makeNode, createDynamicsCompressor: makeNode, createAnalyser: makeNode,
+      createGain: makeNode, createBiquadFilter: makeNode, createBufferSource: makeNode,
+      createScriptProcessor: function () { var n = makeNode(); n.onaudioprocess = null; return n; },
+      createBuffer: function (ch, len, r) {
+        return { length: len, numberOfChannels: ch, sampleRate: r, getChannelData: function () { return seededFloat32(len, 13); } };
+      },
+      close: function () { return Promise.resolve(); }, resume: function () { return Promise.resolve(); },
+      startRendering: function () {
+        var len = length || sr;
+        return Promise.resolve({
+          length: len, numberOfChannels: 1, sampleRate: sr,
+          getChannelData: function () { return seededFloat32(len, 17); }
+        });
+      }
+    };
+    return ctx;
+  }
+  globalThis.AudioContext = function () { return makeAudioCtx(0, 44100); };
+  globalThis.webkitAudioContext = globalThis.AudioContext;
+  globalThis.OfflineAudioContext = function (ch, len, rate) { return makeAudioCtx(len, rate); };
+  globalThis.webkitOfflineAudioContext = globalThis.OfflineAudioContext;
+})(SEED_PLACEHOLDER, MAXIMG_PLACEHOLDER);
+"#;
+
 /// The identity and per-origin seed the bindings present to a page.
 ///
 /// The defaults are a single, common, *normalized* identity — the whole point is
@@ -136,9 +311,19 @@ impl PrivacyProfile {
     }
 
     /// The normalized identity plus a per-origin seed (for fingerprint noise).
+    ///
+    /// The seed is derived from the *origin* (scheme://host:port), not the full
+    /// URL, so every page of a site shares one seed (first-party consistency) and
+    /// two different sites get different seeds (no cross-site correlation). The
+    /// seed carries no per-user/per-install entropy: all Citadel users on a site
+    /// share it — uniform across users, uncorrelated across sites.
     pub fn for_origin(origin: &str) -> Self {
+        let normalized = Url::parse(origin)
+            .ok()
+            .map(|u| u.origin().ascii_serialization())
+            .unwrap_or_else(|| origin.to_string());
         Self {
-            origin_seed: fnv1a(origin),
+            origin_seed: fnv1a(&normalized),
             ..Self::normalized()
         }
     }
@@ -151,6 +336,23 @@ pub fn install(ctx: &mut Context, profile: &PrivacyProfile) -> JsResult<()> {
     install_timing(ctx, profile)?;
     install_network_gate(ctx)?;
     install_storage(ctx)?;
+    install_fingerprint_surface(ctx, profile)?;
+    Ok(())
+}
+
+/// Install the fingerprint-poisoning surface (canvas / WebGL / audio) by
+/// evaluating the authored [`FINGERPRINT_SHIM`], seeded from the profile's
+/// per-origin seed. Identity-like params (WebGL vendor/renderer) are normalized
+/// (uniform for every user); high-entropy readback (canvas/audio) is seeded
+/// per-origin (uniform across users, uncorrelated across sites). Sandboxed JS,
+/// not native code: it cannot reach a real GPU/canvas/audio device.
+fn install_fingerprint_surface(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
+    // Fold the 64-bit origin seed into the 32-bit space the shim's PRNG uses.
+    let seed = (p.origin_seed ^ (p.origin_seed >> 32)) as u32;
+    let shim = FINGERPRINT_SHIM
+        .replace("SEED_PLACEHOLDER", &seed.to_string())
+        .replace("MAXIMG_PLACEHOLDER", &FP_MAX_IMAGE_BYTES.to_string());
+    ctx.eval(Source::from_bytes(&shim))?;
     Ok(())
 }
 

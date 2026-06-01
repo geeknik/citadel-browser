@@ -246,9 +246,14 @@ mod tests {
     use super::*;
 
     fn engine() -> CitadelJSEngine {
+        CitadelJSEngine::new(Arc::new(scripted_sc())).expect("engine")
+    }
+
+    /// A scripts-enabled security context (explicit opt-in) for building engines.
+    fn scripted_sc() -> SecurityContext {
         let mut sc = SecurityContext::new(10);
-        sc.enable_scripts(); // explicit opt-in
-        CitadelJSEngine::new(Arc::new(sc)).expect("engine")
+        sc.enable_scripts();
+        sc
     }
 
     #[test]
@@ -402,8 +407,78 @@ mod tests {
     #[test]
     fn unimplemented_apis_remain_unbound() {
         let mut e = engine();
-        // DOM bindings and IndexedDB are not bound yet — undefined (not silently faked).
-        assert_eq!(e.execute_simple("typeof document").unwrap(), "undefined");
+        // `document` is present but MINIMAL — a vehicle for canvas fingerprint
+        // poisoning, not a full DOM (no body, no query/lookup yet) — and IndexedDB
+        // is still unbound (not silently faked).
         assert_eq!(e.execute_simple("typeof indexedDB").unwrap(), "undefined");
+        assert_eq!(e.execute_simple("typeof document.body").unwrap(), "undefined");
+        assert_eq!(e.execute_simple("typeof document.getElementById").unwrap(), "undefined");
+    }
+
+    #[test]
+    fn canvas_webgl_audio_readback_is_poisoned_and_uniform() {
+        let mut e = engine();
+        // The fingerprint vehicle exists (absence would itself be a tell).
+        assert_eq!(e.execute_simple("typeof document.createElement").unwrap(), "function");
+        assert_eq!(e.execute_simple("typeof OfflineAudioContext").unwrap(), "function");
+
+        // Canvas readback is authored, not a real raster, and STABLE (same engine
+        // → same value): the poison is deterministic, not per-call random.
+        let url1 = e
+            .execute_simple("document.createElement('canvas').toDataURL()")
+            .unwrap();
+        assert!(url1.starts_with("data:image/png;base64,"));
+        let url2 = e
+            .execute_simple("document.createElement('canvas').toDataURL()")
+            .unwrap();
+        assert_eq!(url1, url2, "canvas readback is stable (uniform), not random");
+
+        // getImageData yields seeded bytes of the requested size.
+        assert_eq!(
+            e.execute_simple(
+                "var c=document.createElement('canvas'); var d=c.getContext('2d')\
+                 .getImageData(0,0,2,2); '' + d.data.length"
+            )
+            .unwrap(),
+            "16"
+        );
+
+        // WebGL identity is NORMALIZED — uniform for every user (not per-origin).
+        assert_eq!(
+            e.execute_simple(
+                "document.createElement('canvas').getContext('webgl').getParameter(0x1F00)"
+            )
+            .unwrap(),
+            "WebKit"
+        );
+
+        // Audio readback exists and is finite seeded data.
+        assert_eq!(
+            e.execute_simple(
+                "typeof (new OfflineAudioContext(1,128,44100)).createAnalyser().getFloatFrequencyData"
+            )
+            .unwrap(),
+            "function"
+        );
+    }
+
+    #[test]
+    fn fingerprint_poison_is_per_origin_uniform_and_uncorrelated() {
+        let readback = "document.createElement('canvas').toDataURL()";
+        let mut a = CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://a.example/").unwrap();
+        let mut a2 =
+            CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://a.example/other/page?q=1")
+                .unwrap();
+        let mut b = CitadelJSEngine::for_origin(Arc::new(scripted_sc()), "https://b.example/").unwrap();
+
+        let ra = a.execute_simple(readback).unwrap();
+        let ra2 = a2.execute_simple(readback).unwrap();
+        let rb = b.execute_simple(readback).unwrap();
+
+        // Same origin, different path → SAME poison (first-party consistent; all
+        // Citadel users on the site agree → uniform across users).
+        assert_eq!(ra, ra2, "same origin must produce the same canvas");
+        // Different origins → DIFFERENT poison (uncorrelatable across sites).
+        assert_ne!(ra, rb, "different origins must not correlate");
     }
 }

