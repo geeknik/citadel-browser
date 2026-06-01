@@ -25,6 +25,10 @@ url = { workspace = true }
 regex = { workspace = true }
 sha2 = "0.10"
 base64 = "0.22"
+# Response decompression (gzip/deflate) so the wire request can advertise a
+# browser-like Accept-Encoding instead of the scripted-client `identity` tell.
+# Pure-Rust miniz_oxide backend (no C/zlib-ng), already in the tree via image.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 citadel-security = { path = "../security" }
 
 # Examples dependencies
