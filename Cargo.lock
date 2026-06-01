@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "citadel-antifingerprint"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 dependencies = [
  "anyhow",
  "citadel-security",
@@ -852,12 +852,13 @@ dependencies = [
 
 [[package]]
 name = "citadel-networking"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "citadel-security",
  "env_logger 0.10.2",
+ "flate2",
  "futures",
  "log",
  "rand 0.8.5",
@@ -874,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "citadel-parser"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -906,7 +907,7 @@ dependencies = [
 
 [[package]]
 name = "citadel-security"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 dependencies = [
  "log",
  "rand 0.8.5",
@@ -919,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "citadel-tabs"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 dependencies = [
  "anyhow",
  "chrono",
@@ -942,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "citadel-zkvm"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 dependencies = [
  "aes-gcm",
  "bincode",

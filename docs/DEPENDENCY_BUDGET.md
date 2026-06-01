@@ -66,14 +66,25 @@ hard part; a single bundled font + basic shaping is a defensible v1.
 ### Tier 3 — DROP (remove entirely)
 | Crate(s) | Rationale |
 |----------|-----------|
-| `boa_engine` + tree (`thin-vec` CVE, Unlicense) | Scripts are **already pruned at the ZK boundary** — JS is effectively off. Dropping Boa matches the privacy posture and removes a large tree. Re-add a sandboxed engine later only as explicit opt-in. |
 | `env_logger` | Already banned in `deny.toml`; use a minimal logger. |
 | `chrono` | Prefer `std::time` where feasible. |
 
+> **`boa_engine` — dropped, then deliberately re-introduced.** Boa was first
+> removed (commit `37993b6`) when JS was off. It is now **back, on purpose**, as
+> the vetted **engine core** of **CitadelJSEngine**: pure Rust (no native attack
+> surface), run inside the per-tab ZK boundary, behind a from-scratch
+> privacy binding cage, and only as **explicit opt-in**. The earlier `thin-vec`
+> advisory is gone (Boa re-resolved to a patched version; `cargo deny`/`audit`
+> clean). This is the intended end-state, not a budget regression — we keep a
+> *vetted* engine rather than hand-roll a JS interpreter. The binding cage, not
+> ECMAScript, is where the effort goes.
+
 ## Targets
 
-- **Total crates:** 766 → **≤ ~200** after Tier 2 GUI + Tier 3 Boa; **≤ ~120** after
-  networking/DNS. (Servo parsers + Unicode + crypto keep a floor.)
+- **Total crates:** 766 → 659 (networking cut) → 602 (Boa removed) → back up with
+  Boa re-introduced as the vetted JS core; **≤ ~200** target after the Tier 2 GUI
+  cut, **≤ ~120** after further trimming. (Servo parsers + Unicode + crypto + the
+  vetted JS engine keep a floor.)
 - **Direct workspace dependencies:** curated; every entry maps to a tier above.
 - Track the number in CI (a simple `cargo tree`/`deny list` count step) and treat
   regressions as review-blocking.
@@ -97,6 +108,7 @@ hard part; a single bundled font + basic shaping is a defensible v1.
 3. **GUI cut:** software rasterizer + windowing → drop iced/wgpu; re-add openssl/
    native-tls bans become possible once HTTP is also migrated.
 4. **Networking cut:** minimal HTTP+DoH over rustls → drop reqwest/hickory; restore
-   the network-stack bans; remove the rustls-webpki ignores.
-5. **Boa drop:** remove JS engine (explicit opt-in re-add later).
+   the network-stack bans; remove the rustls-webpki ignores. **(done)**
+5. **Boa:** removed while JS was off, then **re-introduced as the vetted JS core**
+   of CitadelJSEngine (opt-in, inside the ZK cage). **(done)**
 6. **Re-ratchet** advisories/bans/clippy/coverage to the smaller, audited tree.

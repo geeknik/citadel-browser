@@ -6,7 +6,7 @@ A from-scratch browser engine engineered to obliterate tracking, crush fingerpri
 
 ## ⚠️ ALPHA SOFTWARE DISCLAIMER ⚠️
 
-**Version: 0.0.1-alpha**
+**Version: 0.0.2-alpha**
 
 🚨 **THIS IS ALPHA SOFTWARE - USE AT YOUR OWN RISK** 🚨
 
@@ -46,15 +46,18 @@ This project is in the early stages of development and is not yet ready for prod
 - ✅ Privacy-first networking layer with LOCAL_CACHE as default DNS mode
 - ✅ Privacy-preserving DNS resolver with local caching
 - ✅ HTTPS-only secure connections
-- ✅ Privacy-enhancing request headers
+- ✅ In-house HTTPS client over rustls — no reqwest/hyper/native-tls on the page-fetch path
+- ✅ Uniform, browser-like request shape — every user emits the *same* bytes (uniformity, **not** randomization)
 - ✅ Tracking parameter removal from URLs
-- ✅ Header fingerprint randomization
-- ✅ **JavaScript engine integration with Boa (pure-Rust)**
-- ✅ **DOM bindings for JavaScript execution**
-- ✅ **Security policies for script execution and CSP compliance**
-- ✅ **JavaScript engine tests with DOM integration (all passing)**
-- 🔄 Enhancing additional privacy and security features
-- 🔄 Implementing advanced browsing functionality
+- ✅ Zero-knowledge tab rendering: untrusted HTML is parsed, sanitized, and laid out inside an AES-256-GCM-encrypted isolation boundary; the host only ever paints a sanitized display list
+- ✅ **CitadelJSEngine** — Boa (pure-Rust) core inside a from-scratch privacy binding cage; JavaScript is explicit opt-in and runs inside the ZK boundary:
+  - ✅ Single normalized identity (navigator/screen) — uniform across users
+  - ✅ Clamped `performance.now()` — kills high-resolution timing fingerprints
+  - ✅ Default-deny network exfil gate (fetch / XHR / WebSocket / sendBeacon / WebRTC) — closes the WebRTC local-IP leak
+  - ✅ Ephemeral, first-party-isolated storage — structurally supercookie-proof
+  - ✅ Untrusted-JS DoS bounds (loop-iteration and recursion limits)
+- 🔄 DOM bindings + canvas/WebGL/audio fingerprint poisoning (active work)
+- 🔄 Uniform TLS ClientHello (JA3/JA4), ECH + encrypted DNS (DoH/DoT)
 
 ## 𝗢𝘂𝗿 𝗠𝗶𝘀𝘀𝗶𝗼𝗻
 
@@ -79,13 +82,13 @@ Users control their data with no forced third-party dependencies.
 Dynamic blocklists + machine learning detection that annihilates even the most persistent tracking attempts.
 
 ### 𝗔𝗻𝘁𝗶-𝗙𝗶𝗻𝗴𝗲𝗿𝗽𝗿𝗶𝗻𝘁𝗶𝗻𝗴
-Canvas fingerprinting prevention, hardware API restriction, and tactical noise injection to mask your digital identity.
+A single normalized identity served to *every* user (uniformity, not randomization), high-resolution timer clamping, and a default-deny hardware/network API surface — you blend into the crowd instead of standing out. Canvas/WebGL/audio readback poisoning is in progress.
 
 ### 𝗛𝗮𝗿𝗱𝗰𝗼𝗿𝗲 𝗦𝗮𝗻𝗱𝗯𝗼𝘅𝗶𝗻𝗴
 Per-site process isolation with strict content security policies and cross-site data access prevention.
 
 ### 𝗡𝗲𝘁𝘄𝗼𝗿𝗸 𝗣𝗿𝗶𝘃𝗮𝗰𝘆
-User-controlled DNS resolution, minimal HTTP headers, and connection fingerprint randomization.
+User-controlled DNS resolution and a uniform, browser-like request shape — every Citadel user emits the same bytes, so the network fingerprint identifies the software, not the individual.
 
 ### 𝗖𝗼𝗼𝗸𝗶𝗲 𝗖𝗼𝗻𝘁𝗿𝗼𝗹
 First-party isolation, automatic expiration, and granular user-controlled storage permissions.
@@ -102,17 +105,20 @@ Citadel is built with these core components, all implemented with Rust's strong 
 - Attack surface minimization through careful API implementation and selective standard support
 - Security-first input handling designed to fail closed rather than open when encountering edge cases
 
-### 𝗝𝗮𝘃𝗮𝗦𝗰𝗿𝗶𝗽𝘁 𝗘𝗻𝗴𝗶𝗻𝗲 ✅
-- **Integrated Boa engine (pure Rust)** with hardcore sandbox environment and surgically removed tracking APIs
-- **DOM bindings implemented** with security policies and CSP compliance enforcement
-- **Privacy-preserving execution** with zero external data transmission capabilities for scripts
-- **Comprehensive test suite** with DOM integration and security validation (all tests passing)
-- Performance-optimized execution that doesn't sacrifice security for convenience
+### 𝗝𝗮𝘃𝗮𝗦𝗰𝗿𝗶𝗽𝘁 𝗘𝗻𝗴𝗶𝗻𝗲 — 𝗖𝗶𝘁𝗮𝗱𝗲𝗹𝗝𝗦𝗘𝗻𝗴𝗶𝗻𝗲
+- **Boa core (pure Rust, no native attack surface)** wrapped in a from-scratch **privacy binding cage** — a bare engine exposes no browser/DOM/network/storage APIs, so the page sees only what we deliberately, defensively bind. The binding layer *is* the product; we do not re-derive ECMAScript.
+- **Explicit opt-in**: JavaScript is OFF by default and runs only inside the per-tab zero-knowledge boundary.
+- **Normalized identity** (uniform navigator/screen) and **clamped `performance.now()`** kill identity and timing fingerprints.
+- **Default-deny network exfil gate** (fetch / XHR / WebSocket / sendBeacon / WebRTC) — no request leaves the cage, and the WebRTC local-IP leak is closed.
+- **Ephemeral, first-party-isolated storage** — structurally incapable of being a persistent supercookie.
+- **Untrusted-JS DoS bounds** (loop-iteration and recursion limits) so a hostile script cannot hang the renderer.
+- 🔄 DOM bindings and canvas/WebGL/audio fingerprint poisoning are the active work.
 
 ### 𝗡𝗲𝘁𝘄𝗼𝗿𝗸𝗶𝗻𝗴 𝗟𝗮𝘆𝗲𝗿
+- In-house HTTPS client over rustls (no reqwest/hyper/native-tls) with bundled Mozilla roots — small, HTTPS-only, size-bounded, and fail-closed. We never hand-roll crypto.
 - User-controlled DNS resolution with local cache by default and no reliance on third-party DNS services
-- HTTPS-or-die approach that defaults to secure connections and hardens TLS implementation
-- Connection fingerprint randomization to prevent server-side tracking and correlation
+- Uniform, browser-like request shape — identical for every user, so the HTTP/TLS fingerprint identifies the *software*, not the individual (per-connection randomization would make you more unique, not less)
+- 🔄 Roadmap: uniform TLS ClientHello (JA3/JA4), ECH + encrypted DNS (DoH/DoT) to stop plaintext SNI/DNS leakage
 
 ### 𝗨𝘀𝗲𝗿 𝗜𝗻𝘁𝗲𝗿𝗳𝗮𝗰𝗲
 - Granular privacy controls that give users complete visibility and authority over their data
@@ -139,9 +145,9 @@ The networking layer is the foundation of Citadel's privacy-preserving architect
 
 ### Privacy-Enhanced Requests
 
-- **Header Management**: Remove or normalize headers that could be used for tracking
-- **Fingerprint Randomization**: Prevent browser fingerprinting through request headers
-- **User-Agent Control**: Randomize or normalize your User-Agent
+- **Header Management**: A fixed, browser-like header set/order/casing — identical for every user
+- **Uniformity, not randomization**: every Citadel user emits the same request bytes, so per-user fingerprints collapse (per-connection jitter would make you *more* unique)
+- **User-Agent**: a single normalized User-Agent, byte-identical to the JS `navigator.userAgent` (a mismatch would itself be a fingerprint)
 - **URL Cleaning**: Automatically strip tracking parameters from URLs
 - **Privacy Levels**: Configure maximum, high, or balanced privacy settings
 
@@ -189,8 +195,8 @@ Citadel Browser is primarily designed for **macOS**, with limited Linux support 
 - Xcode Command Line Tools
 - For Linux development/testing only:
   - pkg-config
-  - OpenSSL dev packages
-  - Fontconfig dev packages
+  - Fontconfig dev packages (for the iced GUI)
+  - (No OpenSSL: TLS is rustls, pure Rust)
 
 ### Building from Source
 
@@ -222,6 +228,7 @@ citadel-browser-rust/
 │   ├── networking/        # Privacy-preserving networking components
 │   │   ├── src/           # Source code
 │   │   │   ├── dns.rs     # Privacy-focused DNS resolver
+│   │   │   ├── http.rs    # In-house HTTPS client over rustls (uniform request shape)
 │   │   │   ├── request.rs # Privacy-enhancing HTTP requests
 │   │   │   ├── response.rs # HTTP response handling
 │   │   │   ├── connection.rs # Secure connection management

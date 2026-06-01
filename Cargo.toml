@@ -13,7 +13,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 authors = ["geeknik <b@deepforkcyber.com>"]
 repository = "https://github.com/geeknik/citadel-browser"
 license = "MIT"
