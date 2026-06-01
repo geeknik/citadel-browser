@@ -1674,8 +1674,7 @@ mod tests {
         assert!(result.is_ok());
         let layout_result = result.unwrap();
 
-        // Check that we have layouts for nodes (empty DOM is acceptable for basic test)
-        assert!(layout_result.node_layouts.len() >= 0);
+        // Layout produced a non-negative document size (empty DOM is acceptable).
         assert!(layout_result.document_size.width >= 0.0);
         assert!(layout_result.document_size.height >= 0.0);
     }
@@ -1698,8 +1697,8 @@ mod tests {
         assert!(result.is_ok());
         let layout_result = result.unwrap();
 
-        // Verify flex layout was computed (empty DOM is acceptable for basic test)
-        assert!(layout_result.node_layouts.len() >= 0); // Accept empty DOM for now
+        // Verify flex layout was computed (empty DOM is acceptable for basic test).
+        assert!(layout_result.document_size.width >= 0.0);
     }
 
     #[test]
@@ -2039,8 +2038,7 @@ mod tests {
         assert!(result.is_ok());
         let layout_result = result.unwrap();
 
-        // Verify layout metrics
-        assert!(layout_result.metrics.layout_time_ms >= 0);
+        // Verify layout metrics (layout_time_ms is unsigned; just check memory).
         assert!(layout_result.metrics.memory_used_kb > 0);
         assert_eq!(layout_result.document_size.width, 1200.0);
         assert_eq!(layout_result.document_size.height, 800.0);

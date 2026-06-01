@@ -350,9 +350,8 @@ mod canvas_protection_tests {
         let original_color = 128u8;
         let noisy_color = protection.get_color_noise(original_color, "example.com");
 
-        // Should add subtle noise but stay within valid range
+        // Should add subtle noise (the u8 return type already bounds the range).
         assert_ne!(noisy_color, original_color);
-        assert!(noisy_color <= 255);
 
         // Color change should be subtle
         let change = (noisy_color as i16 - original_color as i16).abs();
