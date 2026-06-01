@@ -220,6 +220,23 @@ mod tests {
     }
 
     #[test]
+    fn timing_is_clamped_to_kill_high_res_fingerprints() {
+        let mut e = engine();
+        // performance.now() exists but is quantized to the coarse resolution, so
+        // every reading is a multiple of the quantum (no sub-quantum entropy).
+        assert_eq!(e.execute_simple("performance.now() % 100").unwrap(), "0");
+        // Two back-to-back reads cannot resolve a sub-quantum interval: the delta
+        // is always a multiple of the quantum (microsecond timing is dead).
+        assert_eq!(
+            e.execute_simple(
+                "var a = performance.now(); var b = performance.now(); (b - a) % 100"
+            )
+            .unwrap(),
+            "0"
+        );
+    }
+
+    #[test]
     fn no_network_or_dom_apis_exist_in_the_cage() {
         let mut e = engine();
         // The bare cage exposes none of these — they are simply undefined.

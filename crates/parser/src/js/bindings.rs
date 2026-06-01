@@ -10,7 +10,8 @@
 use boa_engine::object::builtins::JsArray;
 use boa_engine::object::ObjectInitializer;
 use boa_engine::property::Attribute;
-use boa_engine::{js_string, Context, JsResult, JsValue};
+use boa_engine::{js_string, Context, JsResult, JsValue, NativeFunction};
+use std::time::Instant;
 
 /// The identity and per-origin seed the bindings present to a page.
 ///
@@ -32,6 +33,9 @@ pub struct PrivacyProfile {
     pub screen_width: u32,
     pub screen_height: u32,
     pub color_depth: u32,
+    /// Resolution (ms) that `performance.now()` is quantized to — kills high-res
+    /// timing fingerprints/side-channels. Uniform across users.
+    pub time_quantum_ms: u64,
     /// Per-first-party seed for fingerprint noise. 0 for the shared identity.
     pub origin_seed: u64,
 }
@@ -59,6 +63,8 @@ impl PrivacyProfile {
             screen_width: 1920,
             screen_height: 1080,
             color_depth: 24,
+            // Tor-style coarse clock: the page cannot measure sub-100ms intervals.
+            time_quantum_ms: 100,
             origin_seed: 0,
         }
     }
@@ -76,6 +82,28 @@ impl PrivacyProfile {
 pub fn install(ctx: &mut Context, profile: &PrivacyProfile) -> JsResult<()> {
     install_navigator(ctx, profile)?;
     install_screen(ctx, profile)?;
+    install_timing(ctx, profile)?;
+    Ok(())
+}
+
+/// Install a coarse `performance.now()` that quantizes elapsed time, so the page
+/// cannot measure sub-quantum intervals (kills high-resolution timing
+/// fingerprints and timing side-channels). Uniform resolution for every user.
+fn install_timing(ctx: &mut Context, p: &PrivacyProfile) -> JsResult<()> {
+    let start = Instant::now();
+    let quantum = u128::from(p.time_quantum_ms.max(1));
+
+    let now_fn = NativeFunction::from_copy_closure(move |_this, _args, _ctx| {
+        let elapsed_ms = start.elapsed().as_millis();
+        let clamped = (elapsed_ms / quantum) * quantum;
+        Ok(JsValue::from(clamped as f64))
+    });
+
+    let performance = ObjectInitializer::new(ctx)
+        .function(now_fn, js_string!("now"), 0)
+        .build();
+
+    ctx.register_global_property(js_string!("performance"), performance, Attribute::all())?;
     Ok(())
 }
 
