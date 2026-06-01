@@ -32,8 +32,12 @@ futures = "0.3"
 # Security & sanitization
 ammonia = "3.3.1"  # HTML sanitization (>=3.3.1 fixes RUSTSEC-2025-0071 SVG/MathML XSS)
 
-# JavaScript is disabled (no-JS-by-default). The Boa engine was removed
-# (dependency-budget Tier-3); see crates/parser/src/js/mod.rs.
+# JavaScript engine core (Boa — pure Rust, no native attack surface). JS is OFF
+# by default and runs only as an explicit opt-in, inside the per-tab ZK boundary,
+# behind the privacy-hardened binding layer in src/js/. Boa runs the page's real
+# JS; our bindings decide what that JS is allowed to see and do.
+boa_engine = { version = "0.21", features = ["annex-b"] }
+boa_gc = "0.21"
 
 # Logging and metrics
 tracing = "0.1"

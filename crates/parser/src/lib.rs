@@ -743,19 +743,23 @@ body {
     }
 
     #[test]
-    fn test_js_is_disabled() {
-        // JavaScript is disabled — the Boa engine was removed (dependency-budget
-        // Tier-3) and scripts are pruned at the ZKVM rendering boundary, not run.
-        // Every execution entry point must report JS is off rather than execute.
-        assert!(execute_js_simple("5 + 3").is_err());
-        assert!(execute_js_simple("'Hello ' + 'World'").is_err());
-        assert!(execute_js_simple("eval('alert(1)')").is_err());
+    fn test_js_runs_in_privacy_cage() {
+        // The page's real JS executes correctly...
+        assert_eq!(execute_js_simple("5 + 3").unwrap(), "8");
+        assert_eq!(execute_js_simple("'Hello ' + 'World'").unwrap(), "Hello World");
 
-        let html = "<!doctype html><html><body><h1>Hi</h1></body></html>";
-        assert!(execute_js_with_dom("10 * 2", html).is_err());
+        // ...but every environment observation is the normalized identity we
+        // authored, not the real machine.
+        assert_eq!(execute_js_simple("navigator.hardwareConcurrency").unwrap(), "4");
+        assert_eq!(execute_js_simple("navigator.platform").unwrap(), "Win32");
+        assert_eq!(execute_js_simple("navigator.deviceMemory").unwrap(), "8");
+        assert_eq!(execute_js_simple("navigator.webdriver").unwrap(), "false");
+        assert_eq!(execute_js_simple("navigator.languages.length").unwrap(), "2");
+        assert_eq!(execute_js_simple("screen.width").unwrap(), "1920");
 
-        let engine = create_js_engine().expect("inert engine constructs");
-        assert!(!engine.is_js_allowed());
+        // Network/DOM APIs simply do not exist in the cage.
+        assert_eq!(execute_js_simple("typeof fetch").unwrap(), "undefined");
+        assert_eq!(execute_js_simple("typeof XMLHttpRequest").unwrap(), "undefined");
     }
 }
 

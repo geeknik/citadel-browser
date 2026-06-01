@@ -1,83 +1,163 @@
-//! JavaScript is disabled in Citadel (no-JS-by-default privacy posture).
+//! CitadelJSEngine — the page's real JavaScript, run in a cage we built.
 //!
-//! The Boa engine was removed (dependency-budget Tier-3): it pulled a large
-//! dependency tree and a CVE (thin-vec), and scripts are already pruned at the
-//! ZKVM rendering boundary rather than executed. This module keeps a minimal,
-//! INERT surface so the public API and its callers still compile — every
-//! execution entry point reports that JavaScript is off. A sandboxed engine may
-//! be re-added later as an explicit opt-in.
+//! The engine *core* is Boa (pure Rust, no native attack surface). The product is
+//! the **binding layer**: a bare Boa [`Context`] exposes no browser, network, DOM,
+//! or storage APIs, so the page can only see and do what we deliberately bind.
+//! Every binding is privacy-hardened — normalized identity, poisoned fingerprint
+//! readbacks, a network exfil gate, isolated storage. Boa runs the site's actual
+//! logic correctly; every *observation* it makes is something we authored.
+//!
+//! JavaScript is OFF by default and runs only as an explicit opt-in
+//! (`SecurityContext::allows_scripts`), inside the per-tab ZK boundary.
+
+mod bindings;
+
+pub use bindings::PrivacyProfile;
 
 use crate::error::{ParserError, ParserResult};
 use crate::security::SecurityContext;
+use boa_engine::{Context, JsValue, Source};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// The error every JS entry point returns now that no engine is built in.
-fn js_disabled<T>() -> ParserResult<T> {
-    Err(ParserError::SecurityViolation(
-        "JavaScript execution is disabled (no JS engine is built in)".to_string(),
-    ))
+/// Convert a Boa `JsValue` to a display string (handles undefined/null).
+fn js_value_to_string(value: &JsValue, ctx: &mut Context) -> String {
+    if value.is_undefined() {
+        return "undefined".to_string();
+    }
+    if value.is_null() {
+        return "null".to_string();
+    }
+    value
+        .to_string(ctx)
+        .map(|s| s.to_std_string_escaped())
+        .unwrap_or_else(|_| format!("{:?}", value))
 }
 
-/// Inert JavaScript engine — never executes any script.
+/// The page's JavaScript engine: Boa core + our privacy binding layer.
 pub struct CitadelJSEngine {
-    #[allow(dead_code)]
+    /// Security policy (gates whether scripts run at all).
     security_context: Arc<SecurityContext>,
+    /// The privacy identity/seed the bindings present to the page.
+    profile: PrivacyProfile,
+    /// Whether the engine is running inside ZKVM isolation.
     zkvm_isolated: bool,
+    /// Total scripts executed.
+    scripts_executed: AtomicU64,
+    /// Security/eval errors observed.
+    security_violations: AtomicU64,
+    /// Sandboxed executions.
+    sandboxed_executions: AtomicU64,
 }
 
 impl CitadelJSEngine {
-    /// Construct the inert engine.
+    /// Create an engine with the single normalized privacy identity.
     pub fn new(security_context: Arc<SecurityContext>) -> ParserResult<Self> {
         Ok(Self {
             security_context,
+            profile: PrivacyProfile::normalized(),
             zkvm_isolated: false,
+            scripts_executed: AtomicU64::new(0),
+            security_violations: AtomicU64::new(0),
+            sandboxed_executions: AtomicU64::new(0),
         })
     }
 
-    /// Mark the engine as ZKVM-isolated (no behavioural effect — JS is off).
+    /// Create an engine whose fingerprint noise is seeded per first-party origin
+    /// (so a site sees a stable identity, but two sites cannot correlate it).
+    pub fn for_origin(security_context: Arc<SecurityContext>, origin: &str) -> ParserResult<Self> {
+        let mut engine = Self::new(security_context)?;
+        engine.profile = PrivacyProfile::for_origin(origin);
+        Ok(engine)
+    }
+
+    /// Enable ZKVM isolation for this engine.
     pub fn enable_zkvm_isolation(&mut self) -> ParserResult<()> {
         self.zkvm_isolated = true;
         Ok(())
     }
 
-    /// JS is disabled.
-    pub fn execute_simple(&mut self, _code: &str) -> ParserResult<String> {
-        js_disabled()
+    /// Build a fresh, caged context with the privacy binding layer installed.
+    ///
+    /// Per-call isolation: every execution gets a new context. The context starts
+    /// bare (no browser APIs) and we install only our authored, gated bindings.
+    fn caged_context(&self) -> ParserResult<Context> {
+        let mut ctx = Context::default();
+        bindings::install(&mut ctx, &self.profile).map_err(|e| {
+            ParserError::JsError(format!("privacy binding install failed: {e}"))
+        })?;
+        Ok(ctx)
     }
 
-    /// JS is disabled.
-    pub fn execute_sandboxed(&mut self, _code: &str) -> ParserResult<String> {
-        js_disabled()
+    /// Run the page's JS in the cage and return its result as a string.
+    pub fn execute_simple(&mut self, code: &str) -> ParserResult<String> {
+        if !self.security_context.allows_scripts() {
+            return Err(ParserError::SecurityViolation(
+                "JavaScript is disabled by security policy (explicit opt-in required)".to_string(),
+            ));
+        }
+
+        let mut ctx = self.caged_context()?;
+        match ctx.eval(Source::from_bytes(code)) {
+            Ok(value) => {
+                self.scripts_executed.fetch_add(1, Ordering::Relaxed);
+                Ok(js_value_to_string(&value, &mut ctx))
+            }
+            Err(e) => {
+                self.security_violations.fetch_add(1, Ordering::Relaxed);
+                Err(ParserError::JsError(format!("JS execution error: {e}")))
+            }
+        }
     }
 
-    /// JS is disabled.
+    /// Run JS in the cage and count it as a sandboxed execution.
+    pub fn execute_sandboxed(&mut self, code: &str) -> ParserResult<String> {
+        let result = self.execute_simple(code)?;
+        self.sandboxed_executions.fetch_add(1, Ordering::Relaxed);
+        Ok(result)
+    }
+
+    /// Run JS with DOM context. DOM bindings are not wired yet (future milestone);
+    /// for now this runs the script in the same caged context.
     pub fn execute_browser_script(
         &self,
-        _code: &str,
+        code: &str,
         _dom: &crate::dom::Dom,
     ) -> ParserResult<String> {
-        js_disabled()
+        if !self.security_context.allows_scripts() {
+            return Err(ParserError::SecurityViolation(
+                "JavaScript is disabled by security policy (explicit opt-in required)".to_string(),
+            ));
+        }
+        let mut ctx = self.caged_context()?;
+        match ctx.eval(Source::from_bytes(code)) {
+            Ok(value) => Ok(js_value_to_string(&value, &mut ctx)),
+            Err(e) => Err(ParserError::JsError(format!("JS execution error: {e}"))),
+        }
     }
 
-    /// JS is disabled.
+    /// Run JS with secure DOM bindings (delegates to `execute_browser_script`).
     pub fn execute_with_secure_dom(
         &mut self,
-        _dom: &crate::dom::Dom,
-        _script: &str,
+        dom: &crate::dom::Dom,
+        script: &str,
     ) -> Result<String, ParserError> {
-        js_disabled()
+        self.execute_browser_script(script, dom)
     }
 
-    /// Always false — no engine is built in.
+    /// Whether JS execution is permitted by the security policy.
     pub fn is_js_allowed(&self) -> bool {
-        false
+        self.security_context.allows_scripts()
     }
 
-    /// Engine statistics (always zero — nothing executes).
+    /// Engine statistics.
     pub fn get_stats(&self) -> JSEngineStats {
         JSEngineStats {
             zkvm_isolated: self.zkvm_isolated,
-            ..JSEngineStats::default()
+            scripts_executed: self.scripts_executed.load(Ordering::Relaxed),
+            security_violations: self.security_violations.load(Ordering::Relaxed),
+            sandboxed_executions: self.sandboxed_executions.load(Ordering::Relaxed),
+            avg_execution_time: 0.0,
         }
     }
 
@@ -87,7 +167,7 @@ impl CitadelJSEngine {
     }
 }
 
-/// Statistics for JavaScript engine usage (all zero — JS is off).
+/// Statistics for JavaScript engine usage.
 #[derive(Debug, Clone, Default)]
 pub struct JSEngineStats {
     pub zkvm_isolated: bool,
@@ -98,14 +178,18 @@ pub struct JSEngineStats {
 }
 
 impl JSEngineStats {
-    /// No scripts run, so the security score is perfect.
+    /// Security score based on violations.
     pub fn get_security_score(&self) -> u64 {
-        100
+        if self.security_violations == 0 {
+            100
+        } else {
+            100u64.saturating_sub((self.security_violations.saturating_mul(10)).min(100))
+        }
     }
 
-    /// Always operating safely — nothing executes.
+    /// Whether the engine is operating safely.
     pub fn is_operating_safely(&self) -> bool {
-        true
+        self.security_violations < 5
     }
 }
 
@@ -113,18 +197,36 @@ impl JSEngineStats {
 mod tests {
     use super::*;
 
-    fn ctx() -> Arc<SecurityContext> {
-        Arc::new(SecurityContext::new(10))
+    fn engine() -> CitadelJSEngine {
+        let mut sc = SecurityContext::new(10);
+        sc.enable_scripts(); // explicit opt-in
+        CitadelJSEngine::new(Arc::new(sc)).expect("engine")
     }
 
     #[test]
-    fn js_is_disabled() {
-        let mut engine = CitadelJSEngine::new(ctx()).expect("constructs");
-        assert!(!engine.is_js_allowed());
-        assert!(engine.execute_simple("2 + 2").is_err());
-        assert!(engine.execute_sandboxed("2 + 2").is_err());
-        let dom = crate::dom::Dom::new();
-        assert!(engine.execute_with_secure_dom(&dom, "1").is_err());
-        assert!(engine.get_stats().is_operating_safely());
+    fn runs_the_pages_real_js() {
+        let mut e = engine();
+        assert_eq!(e.execute_simple("2 + 2").unwrap(), "4");
+        assert_eq!(e.execute_simple("'a' + 'b' + 'c'").unwrap(), "abc");
+        assert_eq!(e.execute_simple("[1,2,3].map(x => x*2).join(',')").unwrap(), "2,4,6");
+    }
+
+    #[test]
+    fn disabled_without_opt_in() {
+        let sc = SecurityContext::new(10); // scripts NOT enabled
+        let mut e = CitadelJSEngine::new(Arc::new(sc)).unwrap();
+        assert!(!e.is_js_allowed());
+        assert!(e.execute_simple("2 + 2").is_err());
+    }
+
+    #[test]
+    fn no_network_or_dom_apis_exist_in_the_cage() {
+        let mut e = engine();
+        // The bare cage exposes none of these — they are simply undefined.
+        assert!(e.execute_simple("typeof fetch").unwrap() == "undefined");
+        assert!(e.execute_simple("typeof XMLHttpRequest").unwrap() == "undefined");
+        assert!(e.execute_simple("typeof document").unwrap() == "undefined");
+        assert!(e.execute_simple("typeof WebSocket").unwrap() == "undefined");
+        assert!(e.execute_simple("typeof localStorage").unwrap() == "undefined");
     }
 }
