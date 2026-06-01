@@ -61,6 +61,7 @@ async fn render_in_zk_tab(
         url: url.to_string(),
         html,
         viewport_width: 800.0,
+        enable_scripts: false,
     };
     host_side
         .send(ChannelMessage::Control {

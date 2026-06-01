@@ -1380,6 +1380,8 @@ impl CitadelBrowser {
             url,
             html: raw_html,
             viewport_width,
+            // JS stays opt-in; the live render path runs static HTML for now.
+            enable_scripts: false,
         };
         let params = match serde_json::to_string(&request) {
             Ok(p) => p,

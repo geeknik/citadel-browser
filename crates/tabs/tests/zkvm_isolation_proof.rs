@@ -19,6 +19,7 @@ fn req(html: &str) -> RenderRequest {
         url: "https://tab.example/".to_string(),
         html: html.to_string(),
         viewport_width: 800.0,
+        enable_scripts: false,
     }
 }
 

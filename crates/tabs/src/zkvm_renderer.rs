@@ -29,6 +29,11 @@ pub struct RenderRequest {
     pub html: String,
     /// Viewport width in logical pixels used for block-flow layout.
     pub viewport_width: f32,
+    /// Opt-in: run the page's inline scripts through the JS privacy cage. OFF by
+    /// default — JavaScript is always explicit opt-in. `#[serde(default)]` keeps
+    /// older serialized requests (without the field) deserializable.
+    #[serde(default)]
+    pub enable_scripts: bool,
 }
 
 /// Kind of a rendered primitive, used by the host painter to pick styling.
@@ -92,6 +97,15 @@ pub struct SecurityMetadata {
     pub blocked_elements: usize,
     /// Names of the security policies applied at the boundary.
     pub applied_policies: Vec<String>,
+    /// Inline scripts that ran in the JS privacy cage (0 unless opted in).
+    #[serde(default)]
+    pub scripts_executed: usize,
+    /// Inline scripts that threw inside the cage (caught at the boundary).
+    #[serde(default)]
+    pub scripts_errored: usize,
+    /// External `<script src=...>` not executed (subresource fetch is future work).
+    #[serde(default)]
+    pub external_scripts_skipped: usize,
 }
 
 /// Fully rendered, sanitized content ready for the host to paint.
@@ -265,7 +279,10 @@ impl ZkVmRenderer {
 
 /// Parse, sanitize, and lay out untrusted HTML entirely within the boundary.
 ///
-/// This is a pure function of the request: same bytes in, same display list out.
+/// The display list is a deterministic function of the bytes (same HTML in, same
+/// display list out) — page JS cannot touch it (no DOM bindings yet). When the
+/// request opts in, the page's scripts additionally run through the privacy cage
+/// here inside the boundary; only execution *counts* (not script content) leave.
 pub fn render_in_isolation(request: &RenderRequest) -> RenderedContent {
     // Parse the untrusted bytes inside the boundary with a bounded-depth context.
     let security_context = Arc::new(ParserSecurityContext::new(15));
@@ -289,6 +306,9 @@ pub fn render_in_isolation(request: &RenderRequest) -> RenderedContent {
                     sanitized: true,
                     blocked_elements: blocked,
                     applied_policies: applied_policies(),
+                    scripts_executed: 0,
+                    scripts_errored: 0,
+                    external_scripts_skipped: 0,
                 },
             };
         }
@@ -316,6 +336,25 @@ pub fn render_in_isolation(request: &RenderRequest) -> RenderedContent {
     collect_blocks(&dom.root(), &mut items, &mut blocked, false, &ctx);
     let (_w, height) = layout_blocks(&mut items, content_width);
 
+    // Run the page's own JS — only when explicitly opted in — through the privacy
+    // cage, here inside the isolation boundary. No DOM bindings yet, so scripts
+    // cannot alter the display list above; this proves the cage applies to a real
+    // page load and is the seam the DOM bindings will hook onto. Counts only (no
+    // script content) cross the boundary.
+    let (scripts_executed, scripts_errored, external_scripts_skipped) = if request.enable_scripts {
+        run_page_scripts_in_cage(&request.url, &dom)
+    } else {
+        (0, 0, 0)
+    };
+    if request.enable_scripts {
+        log::info!(
+            "🔒 ZKVM: page JS in cage — {} ran, {} errored, {} external skipped",
+            scripts_executed,
+            scripts_errored,
+            external_scripts_skipped
+        );
+    }
+
     RenderedContent {
         url: request.url.clone(),
         title: dom.get_title(),
@@ -328,7 +367,78 @@ pub fn render_in_isolation(request: &RenderRequest) -> RenderedContent {
             sanitized: true,
             blocked_elements: blocked,
             applied_policies: applied_policies(),
+            scripts_executed,
+            scripts_errored,
+            external_scripts_skipped,
         },
+    }
+}
+
+/// Extract the page's inline scripts and run them through the JS privacy cage.
+///
+/// Returns `(executed, errored, external_skipped)`. The engine is per-origin (so
+/// fingerprint noise/storage are first-party-isolated) and scripts-enabled (the
+/// caller already checked the opt-in). Any failure to build the engine fails
+/// closed: the scripts are reported as errored, never run unguarded.
+fn run_page_scripts_in_cage(url: &str, dom: &citadel_parser::Dom) -> (usize, usize, usize) {
+    let mut scripts = Vec::new();
+    let mut external_skipped = 0usize;
+    extract_scripts(&dom.root(), &mut scripts, &mut external_skipped);
+    if scripts.is_empty() {
+        return (0, 0, external_skipped);
+    }
+
+    let mut sc = ParserSecurityContext::new(15);
+    sc.enable_scripts();
+    let engine = match citadel_parser::js::CitadelJSEngine::for_origin(Arc::new(sc), url) {
+        Ok(engine) => engine,
+        Err(e) => {
+            log::error!("🚨 ZKVM: JS engine init failed (failing closed): {}", e);
+            return (0, scripts.len(), external_skipped);
+        }
+    };
+    match engine.run_page_scripts(&scripts) {
+        Ok(outcome) => (outcome.executed, outcome.errored, external_skipped),
+        Err(e) => {
+            log::error!("🚨 ZKVM: page script execution failed: {}", e);
+            (0, scripts.len(), external_skipped)
+        }
+    }
+}
+
+/// Collect inline `<script>` bodies for cage execution.
+///
+/// The boundary sanitizer strips *all* attributes from `<script>` (it is not an
+/// allowed element), so `type`/`src` are not readable here. We therefore run any
+/// script that has an inline body, and treat an empty-body script as an external
+/// (`src=...`) or empty one that we do not fetch — counted in `external_skipped`,
+/// never run. Known limitation: a data block (e.g. `type="application/ld+json"`)
+/// has a body and so will run and harmlessly error inside the cage; honoring
+/// script `type`/`src` would require preserving those attributes (future work).
+fn extract_scripts(handle: &NodeHandle, out: &mut Vec<String>, external_skipped: &mut usize) {
+    let Ok(node) = handle.read() else { return };
+    match &node.data {
+        NodeData::Element(el) => {
+            if el.local_name().eq_ignore_ascii_case("script") {
+                let mut text = String::new();
+                collect_raw_text(&node.children, &mut text);
+                if text.trim().is_empty() {
+                    *external_skipped = external_skipped.saturating_add(1);
+                } else {
+                    out.push(text);
+                }
+                return; // never descend into a <script> subtree
+            }
+            for child in node.children() {
+                extract_scripts(child, out, external_skipped);
+            }
+        }
+        NodeData::Document => {
+            for child in node.children() {
+                extract_scripts(child, out, external_skipped);
+            }
+        }
+        _ => {}
     }
 }
 

@@ -20,6 +20,14 @@ use boa_engine::{Context, JsValue, Source};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// Bound untrusted page JS so a runaway loop throws instead of hanging the
+/// renderer (Boa's default loop limit is unlimited). Generous enough for real
+/// scripts; `while (true) {}` dies at the cap. Availability is a security
+/// property — untrusted input must never control a blocking operation.
+const MAX_LOOP_ITERATIONS: u64 = 50_000_000;
+/// Cap recursion depth (below Boa's 512 default) to bound deep-recursion abuse.
+const MAX_RECURSION_DEPTH: usize = 400;
+
 /// Convert a Boa `JsValue` to a display string (handles undefined/null).
 fn js_value_to_string(value: &JsValue, ctx: &mut Context) -> String {
     if value.is_undefined() {
@@ -83,10 +91,41 @@ impl CitadelJSEngine {
     /// bare (no browser APIs) and we install only our authored, gated bindings.
     fn caged_context(&self) -> ParserResult<Context> {
         let mut ctx = Context::default();
+        // DoS guard FIRST: bound CPU/stack before any untrusted code can run.
+        ctx.runtime_limits_mut()
+            .set_loop_iteration_limit(MAX_LOOP_ITERATIONS);
+        ctx.runtime_limits_mut()
+            .set_recursion_limit(MAX_RECURSION_DEPTH);
         bindings::install(&mut ctx, &self.profile).map_err(|e| {
             ParserError::JsError(format!("privacy binding install failed: {e}"))
         })?;
         Ok(ctx)
+    }
+
+    /// Run a page's inline scripts in a single shared caged context — a real page
+    /// shares one global across its `<script>` tags, so later scripts see earlier
+    /// ones' globals. Per-script errors are caught and counted, never propagated:
+    /// one broken script must not abort the page (or the render). Error *contents*
+    /// are not returned or logged (they can contain page data).
+    pub fn run_page_scripts(&self, scripts: &[String]) -> ParserResult<PageScriptOutcome> {
+        if !self.security_context.allows_scripts() {
+            return Ok(PageScriptOutcome::default());
+        }
+        let mut ctx = self.caged_context()?;
+        let mut outcome = PageScriptOutcome::default();
+        for script in scripts {
+            match ctx.eval(Source::from_bytes(script.as_str())) {
+                Ok(_) => {
+                    outcome.executed += 1;
+                    self.scripts_executed.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(_) => {
+                    outcome.errored += 1;
+                    self.security_violations.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+        Ok(outcome)
     }
 
     /// Run the page's JS in the cage and return its result as a string.
@@ -165,6 +204,15 @@ impl CitadelJSEngine {
     pub fn get_resource_stats(&self) -> Option<JSEngineStats> {
         Some(self.get_stats())
     }
+}
+
+/// Result of running a page's inline scripts through the cage.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PageScriptOutcome {
+    /// Scripts that evaluated without throwing.
+    pub executed: usize,
+    /// Scripts that threw (caught and counted, not propagated).
+    pub errored: usize,
 }
 
 /// Statistics for JavaScript engine usage.
@@ -316,6 +364,39 @@ mod tests {
             e.execute_simple("String(localStorage.getItem('track'))").unwrap(),
             "null"
         );
+    }
+
+    #[test]
+    fn page_scripts_share_one_context_and_dos_is_bounded() {
+        let e = engine();
+        // A page's <script> tags share one global: later scripts see earlier ones.
+        let out = e
+            .run_page_scripts(&[
+                "var shared = 41;".to_string(),
+                "globalThis.result = shared + 1;".to_string(),
+            ])
+            .unwrap();
+        assert_eq!(out.executed, 2);
+        assert_eq!(out.errored, 0);
+
+        // Unbounded recursion is capped — it throws (caught + counted) instead of
+        // overflowing the stack, proving the runtime DoS limits are wired on. (The
+        // loop-iteration cap is set by the same mechanism; tested implicitly.)
+        let out = e
+            .run_page_scripts(&["function f(){ return f(); } f();".to_string()])
+            .unwrap();
+        assert_eq!(out.executed, 0);
+        assert_eq!(out.errored, 1);
+    }
+
+    #[test]
+    fn page_scripts_do_not_run_without_opt_in() {
+        let sc = SecurityContext::new(10); // scripts NOT enabled
+        let e = CitadelJSEngine::new(Arc::new(sc)).unwrap();
+        let out = e
+            .run_page_scripts(&["globalThis.x = 1".to_string()])
+            .unwrap();
+        assert_eq!(out, PageScriptOutcome::default());
     }
 
     #[test]
