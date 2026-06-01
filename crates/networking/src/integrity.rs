@@ -150,7 +150,10 @@ impl IntegrityValidator {
                     "sha256" => HashAlgorithm::Sha256,
                     "sha384" => HashAlgorithm::Sha384,
                     "sha512" => HashAlgorithm::Sha512,
-                    _ => return IntegrityResult::UnsupportedAlgorithm,
+                    // Recognized digest names that SRI does not permit.
+                    "md5" | "sha1" => return IntegrityResult::UnsupportedAlgorithm,
+                    // Anything else isn't a valid algorithm token at all.
+                    _ => return IntegrityResult::MalformedAttribute,
                 };
 
                 if self.verify_hash(content, algorithm, expected_hash) {
@@ -246,9 +249,11 @@ impl IntegrityValidator {
     fn matches_csp_source(&self, url: &Url, source: &str) -> bool {
         match source {
             "'self'" => {
-                // Would need the page origin to implement properly
-                // For now, assume same-origin if scheme is https
-                url.scheme() == "https"
+                // Without the document origin we cannot verify same-origin
+                // precisely. Be lenient (allow https) in normal mode, but FAIL
+                // CLOSED under strict CSP — an external https URL must not satisfy
+                // 'self'. TODO: store the document origin for a precise check.
+                !self.strict_csp && url.scheme() == "https"
             }
             "'unsafe-inline'" => {
                 // This would apply to inline scripts/styles, not external resources
